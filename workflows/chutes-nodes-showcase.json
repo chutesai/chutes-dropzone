@@ -1,0 +1,132 @@
+{
+  "name": "Chutes Nodes Showcase",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-520, 720],
+      "id": "b9caaa0c-f81e-4a97-9a9a-3906dcf40e76",
+      "name": "When clicking 'Execute workflow'"
+    },
+    {
+      "parameters": {
+        "numberInputs": 5
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [1180, 620],
+      "id": "27635904-a077-4d5e-b34c-02c1118542be",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "chuteUrl": "https://llm.chutes.ai",
+        "prompt": "Tell me a short story about a cat with a hat that sat on a fat stack of pancakes.",
+        "additionalOptions": {}
+      },
+      "type": "CUSTOM.chutes",
+      "typeVersion": 1,
+      "position": [-20, -140],
+      "id": "2dd68d1e-6238-48ee-8c75-1b3e0eb0727c",
+      "name": "Text Generation"
+    },
+    {
+      "parameters": {
+        "chuteUrl": "https://llm.chutes.ai",
+        "operation": "chat",
+        "messages": {
+          "messageValues": [
+            {
+              "role": "system",
+              "content": "You are a helpful assistant."
+            },
+            {
+              "content": "What are the top 3 uses of AI in creative workflows?"
+            }
+          ]
+        },
+        "additionalOptions": {}
+      },
+      "type": "CUSTOM.chutes",
+      "typeVersion": 1,
+      "position": [-20, 60],
+      "id": "25deb3e8-3108-4383-a03b-1374efb51b02",
+      "name": "Chat"
+    },
+    {
+      "parameters": {
+        "resource": "imageGeneration",
+        "chuteUrl": "https://chutes.ai",
+        "prompt": "A cat wearing a top hat sitting on a stack of golden pancakes, studio lighting, photorealistic",
+        "additionalOptions": {}
+      },
+      "type": "CUSTOM.chutes",
+      "typeVersion": 1,
+      "position": [-20, 260],
+      "id": "4563139a-e979-4a5d-b32d-6fc5bc035b30",
+      "name": "Image Generation"
+    },
+    {
+      "parameters": {
+        "resource": "embeddings",
+        "chuteUrl": "https://chutes.ai",
+        "text": "Chutes AI provides decentralized GPU inference for text, image, video, and audio generation.",
+        "additionalOptions": {}
+      },
+      "type": "CUSTOM.chutes",
+      "typeVersion": 1,
+      "position": [-20, 460],
+      "id": "55d86c43-3fa2-4fae-adf9-b9980e7990ab",
+      "name": "Embeddings"
+    },
+    {
+      "parameters": {
+        "resource": "textToSpeech",
+        "chuteUrl": "https://chutes.ai",
+        "text": "Welcome to Chutes AI. This is a demonstration of text to speech capabilities.",
+        "voice": "af_jessica",
+        "additionalOptions": {}
+      },
+      "type": "CUSTOM.chutes",
+      "typeVersion": 1,
+      "position": [-20, 660],
+      "id": "2343ada1-554d-4d16-897d-5c997b15b4ad",
+      "name": "Text to Speech"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [
+        [
+          { "node": "Text Generation", "type": "main", "index": 0 },
+          { "node": "Chat", "type": "main", "index": 0 },
+          { "node": "Image Generation", "type": "main", "index": 0 },
+          { "node": "Embeddings", "type": "main", "index": 0 },
+          { "node": "Text to Speech", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Text Generation": {
+      "main": [[{ "node": "Merge", "type": "main", "index": 0 }]]
+    },
+    "Chat": {
+      "main": [[{ "node": "Merge", "type": "main", "index": 1 }]]
+    },
+    "Image Generation": {
+      "main": [[{ "node": "Merge", "type": "main", "index": 2 }]]
+    },
+    "Embeddings": {
+      "main": [[{ "node": "Merge", "type": "main", "index": 3 }]]
+    },
+    "Text to Speech": {
+      "main": [[{ "node": "Merge", "type": "main", "index": 4 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

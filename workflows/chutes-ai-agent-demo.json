@@ -1,0 +1,63 @@
+{
+  "name": "Chutes AI Agent Demo",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a7f6e8b4-1234-5678-9abc-def012345678",
+      "name": "When clicking 'Test workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "chuteUrl": "https://llm.chutes.ai",
+        "prompt": "Explain what Chutes AI is and how it enables decentralized GPU inference, in three sentences.",
+        "additionalOptions": {}
+      },
+      "id": "c1d2e3f4-5678-9abc-def0-123456789abc",
+      "name": "Chutes Text Generation",
+      "type": "CUSTOM.chutes",
+      "typeVersion": 1,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d2e3f4a5-6789-0abc-def1-234567890bcd",
+              "name": "response",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e3d2c1b0-8765-4321-0fed-cba987654321",
+      "name": "Display Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [720, 300]
+    }
+  ],
+  "connections": {
+    "When clicking 'Test workflow'": {
+      "main": [
+        [{ "node": "Chutes Text Generation", "type": "main", "index": 0 }]
+      ]
+    },
+    "Chutes Text Generation": {
+      "main": [
+        [{ "node": "Display Response", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "tags": []
+}

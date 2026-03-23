@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - DEV
+      - "beta-*"
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+env:
+  N8N_NODES_CHUTES_REPO: sirouk/n8n-nodes-chutes
+  N8N_NODES_CHUTES_REF: d98eb1c02e966a99eb0c8ce66434feaa2c9049c3
+
+jobs:
+  syntax-smoke:
+    name: Syntax Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout chutes-dropzone
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Run syntax smoke checks
+        run: ./scripts/smoke-test.sh --syntax
+
+  local-e2e:
+    name: Local E2E (Test IdP)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: syntax-smoke
+
+    steps:
+      - name: Checkout chutes-dropzone
+        uses: actions/checkout@v6
+        with:
+          path: chutes-dropzone
+
+      - name: Checkout n8n-nodes-chutes
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.N8N_NODES_CHUTES_REPO }}
+          ref: ${{ env.N8N_NODES_CHUTES_REF }}
+          path: n8n-nodes-chutes
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Run destructive test-IdP E2E
+        working-directory: chutes-dropzone
+        run: ./scripts/e2e-test.sh

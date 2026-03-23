@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+.git
+.github
+*.log
+certs/
+coverage/
+test-output/
+tests/
+README.md
