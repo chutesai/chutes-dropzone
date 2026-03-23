@@ -131,6 +131,8 @@ INTERACTIVE=false
 TTY_DEVICE=""
 INSTALL_ACTION="${INSTALL_ACTION:-}"
 EXISTING_INSTALL=false
+SKIP_BUILD="${SKIP_BUILD:-false}"
+SKIP_APP_BUILDS="${SKIP_APP_BUILDS:-false}"
 
 if [ -t 1 ] && [ -r /dev/tty ] && [ -w /dev/tty ]; then
     TTY_DEVICE="/dev/tty"
@@ -1536,13 +1538,36 @@ elif [ "$EXISTING_INSTALL" = true ] && [ "$INSTALL_ACTION" = "update" ]; then
     remove_stale_project_containers
 fi
 
-info "Building images ..."
-compose build
+if [ "$SKIP_BUILD" = true ]; then
+    warn "SKIP_BUILD=true; assuming all referenced images already exist locally"
+elif [ "$SKIP_APP_BUILDS" = true ]; then
+    info "Building edge/helper images only ..."
+    build_services=()
+    case "$INSTALL_MODE" in
+        local) build_services+=(local-proxy) ;;
+        domain) ;;
+    esac
+    if [ "$CHUTES_TRAFFIC_MODE" = "e2ee-proxy" ] && [ "$INSTALL_MODE" = "domain" ]; then
+        build_services+=(e2ee-proxy)
+    fi
+    if [ "${#build_services[@]}" -gt 0 ]; then
+        compose build "${build_services[@]}"
+    else
+        info "No edge/helper images need building for this stack shape"
+    fi
+else
+    info "Building images ..."
+    compose build
+fi
 
 remove_stale_edge_container
 
 info "Starting services ..."
-compose up -d
+if [ "$SKIP_BUILD" = true ] || [ "$SKIP_APP_BUILDS" = true ]; then
+    compose up -d --no-build
+else
+    compose up -d
+fi
 
 info "Waiting for n8n to become healthy ..."
 attempts=0

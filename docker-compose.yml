@@ -17,9 +17,11 @@ services:
     restart: unless-stopped
 
   n8n:
+    image: ${DROPZONE_N8N_IMAGE:-chutes-dropzone-n8n:local}
     build:
       context: .
       dockerfile: Dockerfile.local-repo
+      target: n8n-runtime
       args:
         NODE_VERSION: 24.13.1
         N8N_VERSION: ${N8N_VERSION:-2.12.1}
@@ -82,6 +84,7 @@ services:
     restart: unless-stopped
 
   openwebui:
+    image: ${DROPZONE_OPENWEBUI_IMAGE:-chutes-dropzone-openwebui:local}
     build:
       context: .
       dockerfile: Dockerfile.local-repo
@@ -141,13 +144,7 @@ services:
     restart: unless-stopped
 
   openwebui-order-sync:
-    build:
-      context: .
-      dockerfile: Dockerfile.local-repo
-      target: openwebui-runtime
-      args:
-        OPENWEBUI_VERSION: ${OPENWEBUI_VERSION:-v0.8.10}
-        OPENWEBUI_IMAGE: ${OPENWEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.8.10@sha256:7eb132b5f14905ef4b07872428681151b6a98e024132cdc9e8124119780e2261}
+    image: ${DROPZONE_OPENWEBUI_IMAGE:-chutes-dropzone-openwebui:local}
     command: ["/opt/dropzone/openwebui-model-order-sync-loop.sh"]
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-dropzone}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_OPENWEBUI_DB:-openwebui}

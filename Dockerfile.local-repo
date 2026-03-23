@@ -133,6 +133,51 @@ COPY scripts/openwebui-model-order-sync-loop.sh /opt/dropzone/openwebui-model-or
 RUN chmod +x /opt/dropzone/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync-loop.sh
 
 # ---------------------------------------------------------------------------
+# Stage 6c: repo-pinned n8n runtime for compose/local use
+# ---------------------------------------------------------------------------
+FROM --platform=$IMAGE_PLATFORM ${N8N_BASE_IMAGE} AS n8n-runtime
+
+ENV NODE_ENV=production \
+    SHELL=/bin/sh \
+    N8N_CUSTOM_EXTENSIONS=/opt/custom-nodes
+
+WORKDIR /home/node
+
+COPY --from=native-addon-builder /usr/local/lib/node_modules/n8n /usr/local/lib/node_modules/n8n
+COPY --from=n8n-builder /src/docker/images/n8n/docker-entrypoint.sh /docker-entrypoint.sh
+
+USER root
+
+RUN ln -s /usr/local/lib/node_modules/n8n/bin/n8n /usr/local/bin/n8n && \
+    mkdir -p /home/node/.n8n /opt/custom-nodes/n8n-nodes-chutes && \
+    chown -R node:node /home/node /opt/custom-nodes && \
+    rm -rf /root/.npm /tmp/*
+
+COPY branding/n8n/custom.css /opt/branding/n8n/custom.css
+COPY branding/n8n/custom.js /opt/branding/n8n/custom.js
+COPY branding/n8n/chutes-logo.svg /opt/branding/n8n/chutes-logo.svg
+COPY branding/n8n/n8n-logo.svg /opt/branding/n8n/n8n-logo.svg
+COPY scripts/patch-n8n-build.mjs /opt/build-tools/patch-n8n-build.mjs
+RUN N8N_UI_DIST="/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-editor-ui@file+packages+frontend+editor-ui/node_modules/n8n-editor-ui/dist" && \
+    install -m 0644 /opt/branding/n8n/custom.css "$N8N_UI_DIST/static/chutes-custom.css" && \
+    install -m 0644 /opt/branding/n8n/custom.js "$N8N_UI_DIST/static/chutes-custom.js" && \
+    install -m 0644 /opt/branding/n8n/chutes-logo.svg "$N8N_UI_DIST/static/chutes-logo.svg" && \
+    install -m 0644 /opt/branding/n8n/n8n-logo.svg "$N8N_UI_DIST/static/n8n-logo.svg" && \
+    node /opt/build-tools/patch-n8n-build.mjs \
+        "$N8N_UI_DIST/index.html" \
+        "/{{BASE_PATH}}/static/chutes-custom.css" \
+        "/{{BASE_PATH}}/static/chutes-custom.js"
+
+COPY --from=chutes-nodes-builder /build/dist/ /opt/custom-nodes/n8n-nodes-chutes/dist/
+COPY --from=chutes-nodes-builder /build/package.json /opt/custom-nodes/n8n-nodes-chutes/
+COPY --from=chutes-nodes-builder /build/node_modules/ /opt/custom-nodes/n8n-nodes-chutes/node_modules/
+
+RUN chown -R node:node /opt/custom-nodes
+
+USER node
+ENTRYPOINT ["tini", "--", "/docker-entrypoint.sh"]
+
+# ---------------------------------------------------------------------------
 # Stage 7: runtime — OpenWebUI + n8n + openresty + Caddy + s6-overlay
 # ---------------------------------------------------------------------------
 FROM --platform=$IMAGE_PLATFORM openwebui-src

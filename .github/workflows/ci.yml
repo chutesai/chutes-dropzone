@@ -1,5 +1,9 @@
 name: CI
 
+concurrency:
+  group: chutes-dropzone-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches:
@@ -44,7 +48,7 @@ jobs:
   local-e2e:
     name: Local E2E (Test IdP)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     needs: syntax-smoke
 
     steps:
@@ -65,6 +69,35 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Prebuild n8n runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: chutes-dropzone
+          file: chutes-dropzone/Dockerfile.local-repo
+          target: n8n-runtime
+          load: true
+          tags: chutes-dropzone-ci-n8n:latest
+          cache-from: type=gha,scope=local-e2e-n8n-runtime
+          cache-to: type=gha,mode=max,scope=local-e2e-n8n-runtime
+
+      - name: Prebuild OpenWebUI runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: chutes-dropzone
+          file: chutes-dropzone/Dockerfile.local-repo
+          target: openwebui-runtime
+          load: true
+          tags: chutes-dropzone-ci-openwebui:latest
+          cache-from: type=gha,scope=local-e2e-openwebui-runtime
+          cache-to: type=gha,mode=max,scope=local-e2e-openwebui-runtime
+
       - name: Run destructive test-IdP E2E
         working-directory: chutes-dropzone
+        env:
+          DROPZONE_N8N_IMAGE: chutes-dropzone-ci-n8n:latest
+          DROPZONE_OPENWEBUI_IMAGE: chutes-dropzone-ci-openwebui:latest
+          SKIP_APP_BUILDS: "true"
         run: ./scripts/e2e-test.sh

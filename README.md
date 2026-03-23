@@ -84,6 +84,15 @@ You can also temporarily test a different branch or commit without changing the 
 CHUTES_N8N_NODES_GIT_REF=<branch-or-commit> ./deploy.sh
 ```
 
+Advanced CI/testing runs can also point deploy at prebuilt local app images and skip the heavy app rebuild:
+
+```bash
+DROPZONE_N8N_IMAGE=chutes-dropzone-n8n:local \
+DROPZONE_OPENWEBUI_IMAGE=chutes-dropzone-openwebui:local \
+SKIP_APP_BUILDS=true \
+./deploy.sh --force
+```
+
 Interactive deploy asks for:
 
 - `INSTALL_MODE`: `local` or `domain`
