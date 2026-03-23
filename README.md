@@ -11,14 +11,71 @@ Self-hosted Chutes workspace with:
 
 `chutes-dropzone` keeps the same local-vs-domain deployment model as `chutes-n8n-local`, but turns it into a single-host AI workspace instead of a single-app install.
 
+This repo supports two packaging shapes:
+
+- a single-container standalone image built from `Dockerfile.local-repo`
+- a Docker Compose deployment driven by `deploy.sh`
+
 ## Quick Start
 
-### Repo-Based Deploy
+### Docker
+
+```bash
+docker run --rm -it \
+  --pull always \
+  --platform linux/amd64 \
+  -p 443:443 \
+  ghcr.io/chutesai/chutes-dropzone:latest
+```
+
+See [Standalone Image](#standalone-image) for non-interactive runs, domain mode, runtime flags, persisted state layout, and building from source.
+
+### Repo-Based
+
+macOS/Linux/WSL:
+
+```bash
+bash <(curl -fsSL -H 'Cache-Control: no-cache' \
+  "https://raw.githubusercontent.com/chutesai/chutes-dropzone/main/deploy.sh?$(date +%s)")
+```
+
+The deploy script:
+
+- clones or refreshes `chutesai/chutes-dropzone`
+- runs `deploy.sh`
+- auto-clones `sirouk/n8n-nodes-chutes` beside it if missing
+- fast-forwards `n8n-nodes-chutes` on clean reruns so the embedded nodes do not drift stale
+
+When launched from a terminal, the deploy script prompts for install mode and the required Chutes OAuth settings even when invoked via `curl ... | bash`.
+
+For headless or CI usage, preseed the required environment variables:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chutesai/chutes-dropzone/main/deploy.sh | \
+  INSTALL_MODE=local \
+  CHUTES_OAUTH_CLIENT_ID=... \
+  CHUTES_OAUTH_CLIENT_SECRET=... \
+  bash
+```
+
+Manual clone:
 
 ```bash
 git clone https://github.com/chutesai/chutes-dropzone.git
 cd chutes-dropzone
 ./deploy.sh
+```
+
+If `../n8n-nodes-chutes` is missing, deploy will clone:
+
+```text
+https://github.com/sirouk/n8n-nodes-chutes.git
+```
+
+You can override that source if needed with:
+
+```bash
+CHUTES_N8N_NODES_GIT_URL=git@github.com:sirouk/n8n-nodes-chutes.git ./deploy.sh
 ```
 
 Interactive deploy asks for:
@@ -144,6 +201,13 @@ then restart the stack, use the seeded OpenWebUI admin account, and revert those
 - bundled `n8n-nodes-chutes`
 - starter workflows
 
+Published image:
+
+- `ghcr.io/chutesai/chutes-dropzone:latest`
+- release tags are also published as semver tags when releases are cut
+
+Releases are published for `linux/amd64`.
+
 Build locally:
 
 ```bash
@@ -166,6 +230,23 @@ Persistent standalone state lives under `/data`:
 - `/data/openwebui`
 - `/data/caddy`
 - `/data/.env`
+
+## Releases
+
+`release.sh` is the interactive helper for cutting a GitHub release that drives the published GHCR image.
+
+```bash
+./release.sh --dry-run
+./release.sh --version v0.1.0
+./release.sh --yes
+```
+
+It:
+
+- proposes the next patch version from existing tags
+- prints the pinned refs and image inputs used by CI and release builds
+- requires a clean worktree before publishing
+- uses `gh` to create the GitHub release that triggers `.github/workflows/release.yml`
 
 ## Verification
 

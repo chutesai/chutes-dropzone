@@ -33,17 +33,20 @@
 
 #side-menu [data-chutes-nav-slot="chat"] .chutes-crosslink-mark {
   display: inline-flex;
-  min-width: 2.2rem;
+  min-width: 2.7rem;
   height: 2.2rem;
   align-items: center;
   justify-content: center;
   border-radius: 12px;
   background: rgba(248, 248, 247, 0.08);
-  color: #f7f7f6;
-  font-size: 0.69rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  padding: 0 0.4rem;
+}
+
+#side-menu [data-chutes-nav-slot="chat"] .chutes-crosslink-logo {
+  display: block;
+  width: 100%;
+  height: 1.05rem;
+  object-fit: contain;
 }
 
 #side-menu [data-chutes-nav-slot="chat"] .chutes-crosslink-copy {
@@ -79,4 +82,9 @@
 
 #side-menu [data-chutes-nav-slot="chat"] .chutes-crosslink.is-compact .chutes-crosslink-copy {
   display: none;
+}
+
+#side-menu [data-chutes-nav-slot="chat"] .chutes-crosslink.is-compact .chutes-crosslink-mark {
+  min-width: 2.2rem;
+  padding: 0 0.28rem;
 }

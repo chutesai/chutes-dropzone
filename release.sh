@@ -18,6 +18,7 @@ DOCKERFILE_PATH="$SCRIPT_DIR/Dockerfile.local-repo"
 CI_WORKFLOW_PATH="$SCRIPT_DIR/.github/workflows/ci.yml"
 RELEASE_WORKFLOW_PATH="$SCRIPT_DIR/.github/workflows/release.yml"
 DEPLOY_SCRIPT_PATH="$SCRIPT_DIR/deploy.sh"
+DEFAULT_REMOTE="${GIT_REMOTE:-}"
 
 VERSION_OVERRIDE=""
 DRY_RUN=false
@@ -83,6 +84,30 @@ current_head() {
     git rev-parse --short=12 HEAD
 }
 
+preferred_remote() {
+    local upstream_remote=""
+    local first_remote=""
+
+    if [ -n "$DEFAULT_REMOTE" ]; then
+        printf '%s' "$DEFAULT_REMOTE"
+        return
+    fi
+
+    upstream_remote="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null | sed 's#/.*##' || true)"
+    if [ -n "$upstream_remote" ]; then
+        printf '%s' "$upstream_remote"
+        return
+    fi
+
+    if git remote | grep -qx origin; then
+        printf 'origin'
+        return
+    fi
+
+    first_remote="$(git remote | head -n 1 || true)"
+    printf '%s' "$first_remote"
+}
+
 ensure_clean_worktree() {
     local status
     status="$(git status --porcelain)"
@@ -93,11 +118,15 @@ ensure_clean_worktree() {
 }
 
 fetch_tags() {
-    git fetch --quiet --tags origin >/dev/null 2>&1 || true
+    local remote="$1"
+    [ -n "$remote" ] || return 0
+    git fetch --quiet --tags "$remote" >/dev/null 2>&1 || true
 }
 
 latest_version_tag() {
-    git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1
+    local latest=""
+    latest="$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+    printf '%s' "$latest"
 }
 
 suggest_next_version() {
@@ -232,8 +261,11 @@ confirm() {
 
 tag_exists() {
     local version="$1"
+    local remote="${2:-}"
     git rev-parse -q --verify "refs/tags/$version" >/dev/null 2>&1 && return 0
-    git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null 2>&1 && return 0
+    if [ -n "$remote" ]; then
+        git ls-remote --exit-code --tags "$remote" "refs/tags/$version" >/dev/null 2>&1 && return 0
+    fi
     return 1
 }
 
@@ -241,25 +273,29 @@ print_release_plan() {
     local latest_tag="$1"
     local proposed_tag="$2"
     local chosen_tag="$3"
-    local ci_nodes_ref="$4"
-    local release_nodes_ref="$5"
-    local n8n_source_ref="$6"
-    local n8n_source_sha="$7"
-    local proxy_image="$8"
-    local node_image="$9"
-    local n8n_base_image="${10}"
-    local openwebui_version="${11}"
-    local caddy_image="${12}"
+    local git_remote="$4"
+    local ci_nodes_repo="$5"
+    local ci_nodes_ref="$6"
+    local release_nodes_ref="$7"
+    local n8n_source_ref="$8"
+    local n8n_source_sha="$9"
+    local proxy_image="${10}"
+    local node_image="${11}"
+    local n8n_base_image="${12}"
+    local openwebui_version="${13}"
+    local caddy_image="${14}"
 
     cat <<EOF
 Release plan
   branch: $(current_branch)
   head:   $(current_head)
+  remote: ${git_remote:-<none>}
   latest: ${latest_tag:-<none>}
   next:   $proposed_tag
   chosen: $chosen_tag
 
 Pinned refs and images
+  n8n-nodes-chutes repo:      $ci_nodes_repo
   n8n-nodes-chutes (ci):      $ci_nodes_ref
   n8n-nodes-chutes (release): $release_nodes_ref
   n8n source ref:             $n8n_source_ref
@@ -311,10 +347,12 @@ done
 
 require_cmd git
 
+git_remote="$(preferred_remote)"
+
 if [ "$DRY_RUN" != true ]; then
     ensure_clean_worktree
 fi
-fetch_tags
+fetch_tags "$git_remote"
 
 latest_tag="$(latest_version_tag)"
 proposed_tag="$(suggest_next_version "$latest_tag")"
@@ -330,11 +368,12 @@ if ! validate_version "$chosen_tag"; then
     exit 1
 fi
 
-if tag_exists "$chosen_tag"; then
+if tag_exists "$chosen_tag" "$git_remote"; then
     err "tag already exists: $chosen_tag"
     exit 1
 fi
 
+ci_nodes_repo="$(extract_yaml_value "$CI_WORKFLOW_PATH" "N8N_NODES_CHUTES_REPO")"
 ci_nodes_ref="$(extract_yaml_value "$CI_WORKFLOW_PATH" "N8N_NODES_CHUTES_REF")"
 release_nodes_ref="$(extract_yaml_value "$RELEASE_WORKFLOW_PATH" "N8N_NODES_CHUTES_REF")"
 n8n_source_ref="$(extract_arg "N8N_SOURCE_REF")"
@@ -345,9 +384,10 @@ n8n_base_image="$(extract_arg "N8N_BASE_IMAGE")"
 openwebui_version="$(extract_arg "OPENWEBUI_VERSION")"
 caddy_image="$(extract_arg "CADDY_IMAGE")"
 deploy_nodes_ref="$(extract_shell_value "$DEPLOY_SCRIPT_PATH" "PROJECT_NODES_REF")"
+deploy_nodes_repo="$(extract_shell_value "$DEPLOY_SCRIPT_PATH" "PROJECT_NODES_REPO")"
 
-if [ -z "$ci_nodes_ref" ] || [ -z "$release_nodes_ref" ]; then
-    err "could not determine pinned n8n-nodes-chutes ref from workflows"
+if [ -z "$ci_nodes_repo" ] || [ -z "$ci_nodes_ref" ] || [ -z "$release_nodes_ref" ]; then
+    err "could not determine pinned n8n-nodes-chutes settings from workflows"
     exit 1
 fi
 
@@ -356,6 +396,10 @@ if [ "$ci_nodes_ref" != "$release_nodes_ref" ]; then
     exit 1
 fi
 
+review_pin_value \
+    "n8n-nodes-chutes repo" \
+    "$ci_nodes_repo" \
+    ".github/workflows/ci.yml"
 review_pin_value \
     "n8n-nodes-chutes ref" \
     "$ci_nodes_ref" \
@@ -393,6 +437,8 @@ print_release_plan \
     "$latest_tag" \
     "$proposed_tag" \
     "$chosen_tag" \
+    "$git_remote" \
+    "$ci_nodes_repo" \
     "$ci_nodes_ref" \
     "$release_nodes_ref" \
     "$n8n_source_ref" \
@@ -408,7 +454,7 @@ cat <<EOF
 Reminder
   - The n8n-nodes-chutes commit above is pinned in CI/release for supply-chain safety.
   - If you bump upstream versions, update the matching pins before publishing.
-  - repo-based deploys currently default n8n-nodes-chutes to: ${deploy_nodes_ref:-<unknown>}
+  - repo-based deploys currently default n8n-nodes-chutes to: ${deploy_nodes_repo:-<unknown>} @ ${deploy_nodes_ref:-<unknown>}
   - Shipping happens when this script publishes a GitHub release.
 EOF
 
@@ -417,6 +463,11 @@ if [ "$DRY_RUN" = true ]; then
 fi
 
 ensure_gh_available
+
+if [ -z "$git_remote" ] && [ -z "${GH_REPO:-}" ]; then
+    err "no git remote configured; add your GitHub remote or set GH_REPO before publishing"
+    exit 1
+fi
 
 if ! confirm "Publish GitHub release $chosen_tag from $(current_head)?"; then
     log "release cancelled"

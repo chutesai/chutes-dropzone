@@ -79,7 +79,7 @@ const {
 			</button>
 		</div>
 		<div :class="$style.crossAppLinkContainer">
-			<a href="/chat/" :class="$style.crossAppLink">Open Chutes Chat</a>
+			<a href="/chat/" :class="$style.crossAppLink">Open Chat</a>
 		</div>
 	</div>
 </template>

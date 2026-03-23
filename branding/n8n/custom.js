@@ -13,10 +13,12 @@
     link.className = "chutes-crosslink";
     link.href = CHAT_URL;
     link.innerHTML =
-      '<span class="chutes-crosslink-mark">Chat</span>' +
+      '<span class="chutes-crosslink-mark">' +
+      '<img class="chutes-crosslink-logo chutes-crosslink-logo-chutes" src="/n8n/static/chutes-logo.svg" alt="Chutes" />' +
+      "</span>" +
       '<span class="chutes-crosslink-copy">' +
       '<span class="chutes-crosslink-meta">Chutes</span>' +
-      '<span class="chutes-crosslink-label">Open Chutes Chat</span>' +
+      '<span class="chutes-crosslink-label">Open Chat</span>' +
       "</span>";
     return link;
   }
@@ -24,7 +26,7 @@
   function updateCompactState(link, sideMenu) {
     var compact = !!sideMenu && sideMenu.getBoundingClientRect().width < 112;
     link.classList.toggle("is-compact", compact);
-    link.setAttribute("aria-label", "Open Chutes Chat");
+    link.setAttribute("aria-label", "Open Chat");
   }
 
   function cleanupDuplicateSlots(keepSlot) {

@@ -71,7 +71,9 @@
     link.className = "chutes-crosslink";
     link.href = N8N_URL;
     link.innerHTML =
-      '<span class="chutes-crosslink-mark">n8n</span>' +
+      '<span class="chutes-crosslink-mark">' +
+      '<img class="chutes-crosslink-logo chutes-crosslink-logo-n8n" src="/static/n8n-logo.svg" alt="n8n" />' +
+      "</span>" +
       '<span class="chutes-crosslink-copy">' +
       '<span class="chutes-crosslink-meta">Automation</span>' +
       '<span class="chutes-crosslink-label">Open n8n</span>' +
