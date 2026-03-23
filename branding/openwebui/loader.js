@@ -1,5 +1,6 @@
 (function () {
   var CHAT_NAME = "Chutes Chat";
+  var CHUTES_LOGO_URL = "/static/chutes-logo.svg";
   var N8N_URL = "/n8n/";
   var MENU_MARKERS = ["New Chat", "Search", "Notes", "Folders", "Chats"];
   var scheduled = false;
@@ -54,6 +55,14 @@
           node.textContent = text.replace(/\s+\(Open WebUI\)$/, "");
         }
       });
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll("img.sidebar-new-chat-icon"), function (img) {
+      if (img.getAttribute("src") !== CHUTES_LOGO_URL) {
+        img.setAttribute("src", CHUTES_LOGO_URL);
+      }
+      img.setAttribute("alt", "Chutes");
+      img.classList.add("chutes-brand-icon");
     });
   }
 

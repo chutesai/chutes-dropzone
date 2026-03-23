@@ -5,6 +5,11 @@
   --chutes-crosslink-meta: rgba(248, 248, 247, 0.62);
 }
 
+img.sidebar-new-chat-icon.chutes-brand-icon {
+  border-radius: 0.55rem;
+  object-fit: contain;
+}
+
 [data-chutes-nav-slot="n8n"] {
   margin-top: auto;
   padding: 0.7rem 0.9rem 0.55rem;
