@@ -106,6 +106,8 @@ services:
       - ENABLE_OAUTH_SIGNUP=true
       - ENABLE_LOGIN_FORM=false
       - ENABLE_PASSWORD_AUTH=false
+      - ENABLE_OLLAMA_API=false
+      - ENABLE_EVALUATION_ARENA_MODELS=false
       - DEFAULT_USER_ROLE=user
       - BYPASS_MODEL_ACCESS_CONTROL=true
       - ENABLE_OAUTH_EMAIL_FALLBACK=true

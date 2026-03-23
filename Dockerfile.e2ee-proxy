@@ -3,3 +3,5 @@ ARG E2EE_PROXY_IMAGE=parachutes/e2ee-proxy:latest@sha256:0af4965c84e3eace05063fe
 FROM ${E2EE_PROXY_IMAGE}
 
 COPY n8n-overlays/e2ee-proxy/lua/e2ee_discovery.lua /usr/local/openresty/lua/e2ee_discovery.lua
+COPY n8n-overlays/e2ee-proxy/lua/model_catalog.lua /usr/local/openresty/lua/model_catalog.lua
+COPY conf/e2ee-proxy.nginx.conf /usr/local/openresty/nginx/conf/nginx.conf

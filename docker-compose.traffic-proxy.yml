@@ -7,11 +7,9 @@ services:
       args:
         E2EE_PROXY_IMAGE: ${E2EE_PROXY_IMAGE:-parachutes/e2ee-proxy:latest@sha256:0af4965c84e3eace05063fe2a013e818c30dd3687e9690a3bea83ae1df3b9a56}
     environment:
-      TLS_SELF_SIGNED: "true"
-      TLS_DOMAIN: ${DROPZONE_HOST:-e2ee-local-proxy.chutes.dev}
       ALLOW_NON_CONFIDENTIAL: ${ALLOW_NON_CONFIDENTIAL:-false}
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- --no-check-certificate https://127.0.0.1/health >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1/health >/dev/null 2>&1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -20,13 +18,15 @@ services:
     restart: unless-stopped
 
   n8n:
+    environment:
+      - CHUTES_PROXY_BASE_URL=http://e2ee-proxy:80
     depends_on:
       e2ee-proxy:
         condition: service_healthy
 
   openwebui:
     environment:
-      - OPENAI_API_BASE_URLS=https://e2ee-proxy:443/v1
+      - OPENAI_API_BASE_URLS=http://e2ee-proxy:80/v1
     depends_on:
       e2ee-proxy:
         condition: service_healthy

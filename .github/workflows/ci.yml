@@ -46,10 +46,16 @@ jobs:
         run: ./release.sh --dry-run
 
   local-e2e:
-    name: Local E2E (Test IdP)
+    name: Local E2E (Test IdP, ${{ matrix.traffic_mode }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
     needs: syntax-smoke
+    strategy:
+      fail-fast: false
+      matrix:
+        traffic_mode:
+          - direct
+          - e2ee-proxy
 
     steps:
       - name: Checkout chutes-dropzone
@@ -108,6 +114,9 @@ jobs:
       - name: Run destructive test-IdP E2E
         working-directory: chutes-dropzone
         env:
+          E2E_TRAFFIC_MODE: ${{ matrix.traffic_mode }}
+          ALLOW_NON_CONFIDENTIAL: "false"
+          CHUTES_SSO_PROXY_BYPASS: "false"
           DROPZONE_N8N_IMAGE: chutes-dropzone-ci-n8n:latest
           DROPZONE_OPENWEBUI_IMAGE: chutes-dropzone-ci-openwebui:latest
           SKIP_APP_BUILDS: "true"

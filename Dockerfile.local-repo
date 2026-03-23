@@ -290,6 +290,7 @@ COPY --from=chutes-nodes-builder /build/node_modules/ /opt/custom-nodes/n8n-node
 # openresty (only the installation dir, not system libs)
 COPY --from=openresty-layer /usr/local/openresty /usr/local/openresty
 COPY n8n-overlays/e2ee-proxy/lua/e2ee_discovery.lua /usr/local/openresty/lua/e2ee_discovery.lua
+COPY n8n-overlays/e2ee-proxy/lua/model_catalog.lua /usr/local/openresty/lua/model_catalog.lua
 
 # Caddy
 COPY --from=caddy-binary /usr/bin/caddy /usr/bin/caddy

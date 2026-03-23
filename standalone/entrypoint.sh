@@ -194,19 +194,17 @@ nginx_chutes_v1_block() {
         location = /v1/models {
             if ($request_method = 'OPTIONS') {
                 more_set_headers 'Access-Control-Allow-Origin: *';
-                more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
+                more_set_headers 'Access-Control-Allow-Methods: GET, HEAD, OPTIONS';
                 more_set_headers 'Access-Control-Allow-Headers: *';
                 more_set_headers 'Access-Control-Max-Age: 86400';
                 more_set_headers 'Content-Length: 0';
                 return 204;
             }
 
-            proxy_pass https://llm.chutes.ai/v1/models;
-            proxy_ssl_server_name on;
-            proxy_set_header Host llm.chutes.ai;
-            proxy_set_header Authorization "";
-            proxy_set_header X-API-Key "";
-            proxy_pass_request_headers off;
+            content_by_lua_block {
+                local handler = require("model_catalog")
+                handler.handle()
+            }
         }
 
         location = /v1/messages {
@@ -218,6 +216,8 @@ nginx_chutes_v1_block() {
                 more_set_headers 'Content-Length: 0';
                 return 204;
             }
+
+            more_set_headers 'X-Dropzone-Proxy: e2ee-proxy';
 
             content_by_lua_block {
                 local handler = require("claude_handler")
@@ -235,6 +235,8 @@ nginx_chutes_v1_block() {
                 return 204;
             }
 
+            more_set_headers 'X-Dropzone-Proxy: e2ee-proxy';
+
             content_by_lua_block {
                 local handler = require("responses_handler")
                 handler.handle()
@@ -250,6 +252,8 @@ nginx_chutes_v1_block() {
                 more_set_headers 'Content-Length: 0';
                 return 204;
             }
+
+            more_set_headers 'X-Dropzone-Proxy: e2ee-proxy';
 
             content_by_lua_block {
                 local handler = require("e2ee_handler")
@@ -410,11 +414,7 @@ else
     fi
 
     # --- SSO proxy bypass (e2ee-proxy only) ---
-    if [ "$CHUTES_TRAFFIC_MODE" != "e2ee-proxy" ]; then
-        CHUTES_SSO_PROXY_BYPASS="false"
-    else
-        CHUTES_SSO_PROXY_BYPASS="${CHUTES_SSO_PROXY_BYPASS:-true}"
-    fi
+    CHUTES_SSO_PROXY_BYPASS="false"
 
     # --- Domain-specific settings ---
     if [ "$INSTALL_MODE" = "local" ]; then

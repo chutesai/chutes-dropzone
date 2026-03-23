@@ -375,11 +375,8 @@ caddy_chutes_v1_block() {
 
     cat <<'EOF'
     @chutes_v1 path /v1/*
-    reverse_proxy @chutes_v1 https://e2ee-proxy:443 {
+    reverse_proxy @chutes_v1 http://e2ee-proxy:80 {
         header_up Host e2ee-proxy
-        transport http {
-            tls_insecure_skip_verify
-        }
     }
 
 EOF
@@ -391,56 +388,6 @@ nginx_chutes_v1_block() {
     fi
 
     cat <<'EOF'
-        location = /v1/models {
-            if ($request_method = 'OPTIONS') {
-                more_set_headers 'Access-Control-Allow-Origin: *';
-                more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
-                more_set_headers 'Access-Control-Allow-Headers: *';
-                more_set_headers 'Access-Control-Max-Age: 86400';
-                more_set_headers 'Content-Length: 0';
-                return 204;
-            }
-
-            proxy_pass https://llm.chutes.ai/v1/models;
-            proxy_ssl_server_name on;
-            proxy_set_header Host llm.chutes.ai;
-            proxy_set_header Authorization "";
-            proxy_set_header X-API-Key "";
-            proxy_pass_request_headers off;
-        }
-
-        location = /v1/messages {
-            if ($request_method = 'OPTIONS') {
-                more_set_headers 'Access-Control-Allow-Origin: *';
-                more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
-                more_set_headers 'Access-Control-Allow-Headers: *';
-                more_set_headers 'Access-Control-Max-Age: 86400';
-                more_set_headers 'Content-Length: 0';
-                return 204;
-            }
-
-            content_by_lua_block {
-                local handler = require("claude_handler")
-                handler.handle()
-            }
-        }
-
-        location = /v1/responses {
-            if ($request_method = 'OPTIONS') {
-                more_set_headers 'Access-Control-Allow-Origin: *';
-                more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
-                more_set_headers 'Access-Control-Allow-Headers: *';
-                more_set_headers 'Access-Control-Max-Age: 86400';
-                more_set_headers 'Content-Length: 0';
-                return 204;
-            }
-
-            content_by_lua_block {
-                local handler = require("responses_handler")
-                handler.handle()
-            }
-        }
-
         location /v1/ {
             if ($request_method = 'OPTIONS') {
                 more_set_headers 'Access-Control-Allow-Origin: *';
@@ -451,10 +398,15 @@ nginx_chutes_v1_block() {
                 return 204;
             }
 
-            content_by_lua_block {
-                local handler = require("e2ee_handler")
-                handler.handle()
-            }
+            proxy_pass http://e2ee-proxy:80;
+            proxy_http_version 1.1;
+            proxy_set_header Host e2ee-proxy;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
         }
 
 EOF
@@ -1059,7 +1011,7 @@ prompt_e2ee_proxy_confidential_mode() {
 }
 
 normalize_sso_proxy_bypass() {
-    local default_bypass="true"
+    local default_bypass="false"
 
     if [ "$CHUTES_TRAFFIC_MODE" != "e2ee-proxy" ]; then
         CHUTES_SSO_PROXY_BYPASS="false"
@@ -1067,7 +1019,7 @@ normalize_sso_proxy_bypass() {
     fi
 
     if [ "${BOOTSTRAP_OVERRIDE_SET_CHUTES_SSO_PROXY_BYPASS:-false}" = "true" ]; then
-        case "${CHUTES_SSO_PROXY_BYPASS:-true}" in
+        case "${CHUTES_SSO_PROXY_BYPASS:-$default_bypass}" in
             true|false)
                 ;;
             *)
@@ -1079,8 +1031,12 @@ normalize_sso_proxy_bypass() {
     fi
 
     if [ "$EXISTING_INSTALL" = true ] && [ "${INSTALL_ACTION:-update}" = "update" ]; then
-        case "${CHUTES_SSO_PROXY_BYPASS:-true}" in
+        case "${CHUTES_SSO_PROXY_BYPASS:-$default_bypass}" in
             true|false)
+                if [ "${CHUTES_SSO_PROXY_BYPASS:-$default_bypass}" = "true" ]; then
+                    warn "Disabling legacy CHUTES_SSO_PROXY_BYPASS so n8n SSO text traffic stays on e2ee-proxy."
+                    CHUTES_SSO_PROXY_BYPASS="$default_bypass"
+                fi
                 ;;
             *)
                 CHUTES_SSO_PROXY_BYPASS="$default_bypass"
@@ -1663,11 +1619,7 @@ if [ "$CHUTES_TRAFFIC_MODE" = "e2ee-proxy" ]; then
     else
         echo "    TEE-only by default; set ALLOW_NON_CONFIDENTIAL=true to allow non-TEE text models"
     fi
-    if [ "$CHUTES_SSO_PROXY_BYPASS" = "true" ]; then
-        echo "    SSO text execution temporarily stays direct until the backend /e2e auth fix is deployed"
-    else
-        echo "    SSO and API-key text execution both use the proxy path"
-    fi
+    echo "    SSO and API-key text execution both use the proxy path"
 else
     echo "    direct - native Chutes endpoints are used so Chutes routing/failover behavior stays intact"
     if [ "$INSTALL_MODE" = "local" ]; then

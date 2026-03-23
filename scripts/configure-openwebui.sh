@@ -91,6 +91,8 @@ assert_openwebui_env() {
         test "${ENABLE_OAUTH_EMAIL_FALLBACK:-}" = "true" &&
         test "${ENABLE_LOGIN_FORM:-}" = "false" &&
         test "${ENABLE_PASSWORD_AUTH:-}" = "false" &&
+        test "${ENABLE_OLLAMA_API:-}" = "false" &&
+        test "${ENABLE_EVALUATION_ARENA_MODELS:-}" = "false" &&
         test "${MODELS_CACHE_TTL:-}" = "300"
     '
 }
@@ -161,9 +163,14 @@ validate_openwebui_model_backend() {
     fi
 
     local validation_output=""
+    local strict_tee_proxy_mode="false"
+
+    if [ "${CHUTES_TRAFFIC_MODE:-direct}" = "e2ee-proxy" ] && [ "${ALLOW_NON_CONFIDENTIAL:-false}" != "true" ]; then
+        strict_tee_proxy_mode="true"
+    fi
 
     if ! validation_output="$(
-        compose exec -T openwebui python - <<'PY' 2>&1
+        compose exec -T -e DROPZONE_STRICT_TEE_PROXY_MODE="$strict_tee_proxy_mode" openwebui python - <<'PY' 2>&1
 import json
 import os
 import sys
@@ -187,6 +194,7 @@ for index, url in enumerate(urls):
 
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
+            response_headers = response.headers
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace").strip()
@@ -204,6 +212,20 @@ for index, url in enumerate(urls):
     if not isinstance(data, list) or len(data) == 0:
         print(f"{url}/models returned no models")
         raise SystemExit(1)
+
+    strict_tee_proxy_mode = os.environ.get("DROPZONE_STRICT_TEE_PROXY_MODE", "false") == "true"
+    if strict_tee_proxy_mode:
+        proxy_header = response_headers.get("X-Dropzone-Proxy", "")
+        tee_header = response_headers.get("X-Dropzone-Model-Catalog", "")
+        if proxy_header != "e2ee-proxy":
+            print(f"{url}/models did not return the expected proxy header")
+            raise SystemExit(1)
+        if tee_header != "tee-only":
+            print(f"{url}/models did not advertise tee-only filtering")
+            raise SystemExit(1)
+        if any(model.get("confidential_compute") is not True for model in data):
+            print(f"{url}/models returned a non-TEE model while strict tee-only proxy mode is enabled")
+            raise SystemExit(1)
 
     print(f"{url}/models returned {len(data)} models")
 PY

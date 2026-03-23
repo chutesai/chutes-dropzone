@@ -7,7 +7,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-E2E_TRAFFIC_MODE="direct"
+E2E_TRAFFIC_MODE="${E2E_TRAFFIC_MODE:-direct}"
 COMPOSE_FILES="$PROJECT_DIR/docker-compose.yml:$PROJECT_DIR/docker-compose.local.yml:$PROJECT_DIR/docker-compose.test.yml"
 COOKIE_DIR="$(mktemp -d)"
 BACKUP_DIR="$(mktemp -d)"
@@ -383,6 +383,8 @@ compose down -v --remove-orphans >/dev/null 2>&1 || true
 export INSTALL_MODE="local"
 export CHUTES_COMPOSE_FILES="$COMPOSE_FILES"
 export CHUTES_TRAFFIC_MODE="$E2E_TRAFFIC_MODE"
+export ALLOW_NON_CONFIDENTIAL="${ALLOW_NON_CONFIDENTIAL:-false}"
+export CHUTES_SSO_PROXY_BYPASS="${CHUTES_SSO_PROXY_BYPASS:-false}"
 export DROPZONE_HOST="e2ee-local-proxy.chutes.dev"
 export N8N_HOST="$DROPZONE_HOST"
 export CHUTES_OAUTH_CLIENT_ID="test-chutes-client"

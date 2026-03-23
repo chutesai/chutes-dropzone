@@ -145,7 +145,10 @@ Local installs intentionally stay on a single exact-cert host instead of subdoma
 ### Traffic Mode
 
 - `direct`: OpenWebUI and n8n use native Chutes endpoints
-- `e2ee-proxy`: OpenAI-compatible LLM traffic uses the shared `/v1/*` proxy path
+- `e2ee-proxy`: OpenWebUI and n8n send OpenAI-compatible LLM traffic to the shared
+  `e2ee-proxy` sidecar, while the public `/v1/*` edge path simply forwards into that
+  same sidecar. n8n SSO text traffic stays on-proxy, and strict TEE-only model catalogs
+  are enabled by default
 
 ## Key Env Vars
 
@@ -184,6 +187,8 @@ OpenWebUI is kept env-authoritative:
 At startup, Dropzone also seeds OpenWebUI runtime config so model backends use the signed-in Chutes OAuth token (`system_oauth`) for completions, while the global model picker is ordered TEE-first, grouped by provider/lab, and then sorted newest-first within each lab using model version and dated release hints from the Chutes model IDs.
 
 Dropzone keeps that ordering fresh in the background with a server-side sync worker. By default, OpenWebUI refreshes its upstream model cache every 5 minutes and the worker reseeds `MODEL_ORDER_LIST` on the same cadence, so newly published Chutes models settle into the intended order without a redeploy.
+
+When `CHUTES_TRAFFIC_MODE=e2ee-proxy` and `ALLOW_NON_CONFIDENTIAL=false`, both OpenWebUI and n8n talk to the shared `e2ee-proxy` sidecar and see only TEE-backed text models from its `/v1/models` catalog.
 
 Chutes currently does not advertise an `email` scope or `email` claim in the live OIDC discovery document, so OpenWebUI uses its synthetic-email fallback for user creation.
 
@@ -281,3 +286,4 @@ The smoke and e2e coverage now validate:
 - native n8n SSO flow
 - the fake Chutes IdP OIDC surface used by OpenWebUI
 - local proxy `/v1/*` behavior in proxy mode
+- GitHub Actions runs the destructive local E2E suite in both `direct` and `e2ee-proxy` traffic modes

@@ -570,7 +570,33 @@ else
 fi
 
 if [ "${CHUTES_TRAFFIC_MODE:-direct}" = "e2ee-proxy" ]; then
-    proxy_models_status="$(curl_edge -sk -o /tmp/chutes-n8n-local.proxy-models.out -w '%{http_code}' \
+    # shellcheck disable=SC2016
+    if compose exec -T n8n sh -lc '
+        test "${CHUTES_SSO_PROXY_BYPASS:-false}" = "false" &&
+        test "${CHUTES_PROXY_BASE_URL:-}" = "http://e2ee-proxy:80"
+    ' >/dev/null 2>&1; then
+        pass "n8n SSO text traffic is pinned to the proxy path in e2ee-proxy mode"
+    else
+        fail "n8n still allows SSO text traffic to bypass the proxy path"
+    fi
+
+    if compose exec -T n8n sh -lc "NODE_PATH=/usr/local/lib/node_modules/n8n/node_modules node -e 'const Module=require(\"module\"); Module._initPaths(); const transport=require(\"/opt/custom-nodes/n8n-nodes-chutes/dist/nodes/Chutes/transport/apiRequest.js\"); const ok=!transport.isSsoProxyBypassEnabled() && transport.shouldUseTextProxyForCredential({authType:\"sso\",sessionToken:\"session-token\"}); process.exit(ok ? 0 : 1);'" >/dev/null 2>&1; then
+        pass "n8n runtime logic routes SSO-backed text requests through the proxy"
+    else
+        fail "n8n runtime logic still bypasses the proxy for SSO-backed text requests"
+    fi
+
+    # shellcheck disable=SC2016
+    if compose exec -T openwebui sh -lc '
+        test "${OPENAI_API_BASE_URLS:-}" = "http://e2ee-proxy:80/v1"
+    ' >/dev/null 2>&1; then
+        pass "OpenWebUI is pinned to the proxy-backed /v1 model endpoint in e2ee-proxy mode"
+    else
+        fail "OpenWebUI is still pointing directly at native Chutes model endpoints"
+    fi
+
+    proxy_models_headers="/tmp/chutes-n8n-local.proxy-models.headers"
+    proxy_models_status="$(curl_edge -sk -D "$proxy_models_headers" -o /tmp/chutes-n8n-local.proxy-models.out -w '%{http_code}' \
         "https://${DROPZONE_HOST}/v1/models" 2>/dev/null || echo 000)"
     if [ "$proxy_models_status" = "200" ]; then
         pass "e2ee-proxy exposes /v1/models on the local edge"
@@ -578,7 +604,77 @@ if [ "${CHUTES_TRAFFIC_MODE:-direct}" = "e2ee-proxy" ]; then
         fail "e2ee-proxy /v1/models route returned status $proxy_models_status"
     fi
 
-    proxy_chat_status="$(curl_edge -sk -o /tmp/chutes-n8n-local.proxy-chat.out -w '%{http_code}' \
+    if grep -qi '^X-Dropzone-Proxy: e2ee-proxy' "$proxy_models_headers"; then
+        pass "proxy model catalog responses identify the e2ee-proxy path"
+    else
+        fail "proxy model catalog responses are missing the e2ee-proxy marker header"
+    fi
+
+    if [ "${ALLOW_NON_CONFIDENTIAL:-false}" != "true" ]; then
+        if grep -qi '^X-Dropzone-Model-Catalog: tee-only' "$proxy_models_headers" && \
+           python3 - /tmp/chutes-n8n-local.proxy-models.out <<'PY' >/dev/null 2>&1
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], "r", encoding="utf-8"))
+models = payload.get("data", []) if isinstance(payload, dict) else []
+if not models:
+    raise SystemExit(1)
+if any(model.get("confidential_compute") is not True for model in models):
+    raise SystemExit(1)
+PY
+        then
+            pass "strict e2ee-proxy mode filters the shared /v1/models catalog down to TEE models"
+        else
+            fail "strict e2ee-proxy mode did not filter the shared /v1/models catalog to TEE models"
+        fi
+
+        if compose exec -T openwebui python - <<'PY' >/dev/null 2>&1
+import json
+import os
+import urllib.request
+from datetime import timedelta
+
+from open_webui.internal.db import get_db
+from open_webui.models.users import Users
+from open_webui.utils.auth import create_token
+
+admin_email = (
+    os.environ.get("ADMIN_EMAIL")
+    or os.environ.get("WEBUI_ADMIN_EMAIL")
+    or os.environ.get("OPENWEBUI_ADMIN_EMAIL")
+    or "admin@chutes.local"
+)
+
+with get_db() as db:
+    admin_user = Users.get_user_by_email(admin_email, db)
+
+if not admin_user:
+    raise SystemExit(1)
+
+token = create_token({"id": admin_user.id}, expires_delta=timedelta(minutes=5))
+request = urllib.request.Request(
+    "http://127.0.0.1:8080/api/models?refresh=true",
+    headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+)
+with urllib.request.urlopen(request, timeout=20) as response:
+    payload = json.loads(response.read().decode("utf-8"))
+
+models = payload.get("data", []) if isinstance(payload, dict) else []
+if not models:
+    raise SystemExit(1)
+if any(model.get("confidential_compute") is not True for model in models):
+    raise SystemExit(1)
+PY
+        then
+            pass "OpenWebUI only exposes TEE text models when strict e2ee-proxy mode is enabled"
+        else
+            fail "OpenWebUI still exposes non-TEE models in strict e2ee-proxy mode"
+        fi
+    fi
+
+    proxy_chat_headers="/tmp/chutes-n8n-local.proxy-chat.headers"
+    proxy_chat_status="$(curl_edge -sk -D "$proxy_chat_headers" -o /tmp/chutes-n8n-local.proxy-chat.out -w '%{http_code}' \
         -H 'Content-Type: application/json' \
         -d '{"model":"Qwen/Qwen3-32B","messages":[{"role":"user","content":"hello"}],"stream":false}' \
         "https://${DROPZONE_HOST}/v1/chat/completions" 2>/dev/null || echo 000)"
@@ -590,6 +686,12 @@ if [ "${CHUTES_TRAFFIC_MODE:-direct}" = "e2ee-proxy" ]; then
             fail "e2ee-proxy /v1/chat/completions route returned status $proxy_chat_status"
             ;;
     esac
+
+    if grep -qi '^X-Dropzone-Proxy: e2ee-proxy' "$proxy_chat_headers"; then
+        pass "proxy chat-completion responses identify the e2ee-proxy path"
+    else
+        fail "proxy chat-completion responses are missing the e2ee-proxy marker header"
+    fi
 fi
 
 credentials_response="$(curl_edge -sk -b /tmp/chutes-n8n-local.cookies \
