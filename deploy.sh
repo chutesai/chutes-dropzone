@@ -398,9 +398,11 @@ nginx_chutes_v1_block() {
                 return 204;
             }
 
-            proxy_pass http://e2ee-proxy:80;
+            set $chutes_v1_host e2ee-proxy;
+            set $chutes_v1_upstream http://$chutes_v1_host:80;
+            proxy_pass $chutes_v1_upstream;
             proxy_http_version 1.1;
-            proxy_set_header Host e2ee-proxy;
+            proxy_set_header Host $chutes_v1_host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Host $host;

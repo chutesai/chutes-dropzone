@@ -1,6 +1,7 @@
 (function () {
   var CHAT_NAME = "Chutes Chat";
   var CHUTES_LOGO_URL = "/static/chutes-logo.svg";
+  var CHUTES_APP_ICON_URL = "/static/chutes-chat-icon-180.png";
   var N8N_URL = "/n8n/";
   var MENU_MARKERS = ["New Chat", "Search", "Notes", "Folders", "Chats"];
   var scheduled = false;
@@ -31,8 +32,81 @@
     }
   }
 
+  function ensureFavicon() {
+    var selectors = ['link[rel="icon"]', 'link[rel="shortcut icon"]'];
+    var links = [];
+
+    selectors.forEach(function (selector) {
+      Array.prototype.forEach.call(document.querySelectorAll(selector), function (node) {
+        if (links.indexOf(node) === -1) {
+          links.push(node);
+        }
+      });
+    });
+
+    if (!links.length) {
+      var icon = document.createElement("link");
+      icon.setAttribute("rel", "icon");
+      document.head.appendChild(icon);
+      links.push(icon);
+    }
+
+    links.forEach(function (link) {
+      if (!link.getAttribute("rel")) {
+        link.setAttribute("rel", "icon");
+      }
+      link.setAttribute("href", CHUTES_LOGO_URL);
+      link.setAttribute("type", "image/svg+xml");
+    });
+  }
+
+  function upsertHeadNode(selector, tagName, attributes) {
+    var node = document.head.querySelector(selector);
+    if (!node) {
+      node = document.createElement(tagName);
+      document.head.appendChild(node);
+    }
+
+    Object.keys(attributes).forEach(function (name) {
+      node.setAttribute(name, attributes[name]);
+    });
+
+    return node;
+  }
+
+  function ensureInstallMetadata() {
+    upsertHeadNode('link[rel="apple-touch-icon"]', "link", {
+      rel: "apple-touch-icon",
+      href: CHUTES_APP_ICON_URL,
+      sizes: "180x180",
+      type: "image/png",
+    });
+
+    upsertHeadNode('meta[name="application-name"]', "meta", {
+      name: "application-name",
+      content: CHAT_NAME,
+    });
+
+    upsertHeadNode('meta[name="apple-mobile-web-app-title"]', "meta", {
+      name: "apple-mobile-web-app-title",
+      content: CHAT_NAME,
+    });
+
+    upsertHeadNode('meta[name="apple-mobile-web-app-capable"]', "meta", {
+      name: "apple-mobile-web-app-capable",
+      content: "yes",
+    });
+
+    upsertHeadNode('meta[name="theme-color"]', "meta", {
+      name: "theme-color",
+      content: "#171717",
+    });
+  }
+
   function patchBranding() {
     setDocumentTitle();
+    ensureFavicon();
+    ensureInstallMetadata();
 
     var scopes = document.querySelectorAll("aside, nav, header");
     if (!scopes.length) {

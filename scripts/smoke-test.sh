@@ -148,6 +148,12 @@ if command -v node >/dev/null 2>&1; then
     else
         fail "node --check landing/app.js"
     fi
+
+    if node --check "$PROJECT_DIR/branding/openwebui/loader.js" >/dev/null 2>&1; then
+        pass "node --check branding/openwebui/loader.js"
+    else
+        fail "node --check branding/openwebui/loader.js"
+    fi
 fi
 
 if command -v python3 >/dev/null 2>&1; then
@@ -155,6 +161,12 @@ if command -v python3 >/dev/null 2>&1; then
         pass "python3 -m py_compile openwebui-model-order-sync.py"
     else
         fail "python3 -m py_compile openwebui-model-order-sync.py"
+    fi
+
+    if python3 -m py_compile "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" >/dev/null 2>&1; then
+        pass "python3 -m py_compile patch-openwebui-runtime.py"
+    else
+        fail "python3 -m py_compile patch-openwebui-runtime.py"
     fi
 else
     skip "python3 not installed - cannot validate OpenWebUI model-order sync helper"
@@ -211,6 +223,33 @@ for placeholder in __SERVER_NAME__ __RESOLVERS__ __CHUTES_V1_BLOCK__; do
         fail "local proxy template missing $placeholder"
     fi
 done
+
+# shellcheck disable=SC2016,SC2154
+if grep -q 'set \$chutes_v1_host e2ee-proxy;' "$PROJECT_DIR/deploy.sh" && \
+   grep -q 'proxy_pass \$chutes_v1_upstream;' "$PROJECT_DIR/conf/local-proxy.nginx.conf"; then
+    pass "local proxy defers e2ee-proxy DNS lookup until request time"
+else
+    fail "local proxy still resolves e2ee-proxy too early at startup"
+fi
+
+if python3 - "$PROJECT_DIR/branding/openwebui/site.webmanifest" <<'PY' >/dev/null 2>&1
+import json
+import sys
+from pathlib import Path
+
+manifest = json.loads(Path(sys.argv[1]).read_text())
+assert manifest["name"] == "Chutes Chat"
+assert manifest["short_name"] == "Chutes Chat"
+assert manifest["start_url"] == "/chat/"
+assert manifest["scope"] == "/chat/"
+assert manifest["icons"][0]["src"] == "/chat/static/chutes-chat-icon-192.png"
+assert manifest["icons"][1]["src"] == "/chat/static/chutes-chat-icon-512.png"
+PY
+then
+    pass "OpenWebUI manifest is branded for Chutes Chat"
+else
+    fail "OpenWebUI manifest branding is incomplete"
+fi
 
 for placeholder in __INSTALL_MODE__ __CHUTES_TRAFFIC_MODE__ __DROPZONE_HOST__; do
     if grep -q "$placeholder" "$PROJECT_DIR/landing/index.template.html"; then

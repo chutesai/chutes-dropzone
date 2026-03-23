@@ -138,13 +138,29 @@ COPY branding/openwebui/custom.css /app/build/static/custom.css
 COPY branding/openwebui/loader.js /app/build/static/loader.js
 COPY branding/openwebui/chutes-logo.svg /app/build/static/chutes-logo.svg
 COPY branding/openwebui/n8n-logo.svg /app/build/static/n8n-logo.svg
+COPY branding/openwebui/site.webmanifest /app/build/static/site.webmanifest
+COPY branding/openwebui/chutes-chat-icon-180.png /app/build/static/chutes-chat-icon-180.png
+COPY branding/openwebui/chutes-chat-icon-192.png /app/build/static/chutes-chat-icon-192.png
+COPY branding/openwebui/chutes-chat-icon-512.png /app/build/static/chutes-chat-icon-512.png
+COPY branding/openwebui/chutes-chat-icon-180.png /app/build/static/apple-touch-icon.png
+COPY branding/openwebui/chutes-chat-icon-192.png /app/build/static/web-app-manifest-192x192.png
+COPY branding/openwebui/chutes-chat-icon-512.png /app/build/static/web-app-manifest-512x512.png
 COPY branding/openwebui/custom.css /app/backend/open_webui/static/custom.css
 COPY branding/openwebui/loader.js /app/backend/open_webui/static/loader.js
 COPY branding/openwebui/chutes-logo.svg /app/backend/open_webui/static/chutes-logo.svg
 COPY branding/openwebui/n8n-logo.svg /app/backend/open_webui/static/n8n-logo.svg
+COPY branding/openwebui/site.webmanifest /app/backend/open_webui/static/site.webmanifest
+COPY branding/openwebui/chutes-chat-icon-180.png /app/backend/open_webui/static/chutes-chat-icon-180.png
+COPY branding/openwebui/chutes-chat-icon-192.png /app/backend/open_webui/static/chutes-chat-icon-192.png
+COPY branding/openwebui/chutes-chat-icon-512.png /app/backend/open_webui/static/chutes-chat-icon-512.png
+COPY branding/openwebui/chutes-chat-icon-180.png /app/backend/open_webui/static/apple-touch-icon.png
+COPY branding/openwebui/chutes-chat-icon-192.png /app/backend/open_webui/static/web-app-manifest-192x192.png
+COPY branding/openwebui/chutes-chat-icon-512.png /app/backend/open_webui/static/web-app-manifest-512x512.png
+COPY scripts/patch-openwebui-runtime.py /opt/dropzone/patch-openwebui-runtime.py
 COPY scripts/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync.py
 COPY scripts/openwebui-model-order-sync-loop.sh /opt/dropzone/openwebui-model-order-sync-loop.sh
-RUN chmod +x /opt/dropzone/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync-loop.sh
+RUN python3 /opt/dropzone/patch-openwebui-runtime.py /app && \
+    chmod +x /opt/dropzone/patch-openwebui-runtime.py /opt/dropzone/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync-loop.sh
 
 # ---------------------------------------------------------------------------
 # Stage 6c: repo-pinned n8n runtime for compose/local use
@@ -273,13 +289,29 @@ COPY branding/openwebui/custom.css /app/build/static/custom.css
 COPY branding/openwebui/loader.js /app/build/static/loader.js
 COPY branding/openwebui/chutes-logo.svg /app/build/static/chutes-logo.svg
 COPY branding/openwebui/n8n-logo.svg /app/build/static/n8n-logo.svg
+COPY branding/openwebui/site.webmanifest /app/build/static/site.webmanifest
+COPY branding/openwebui/chutes-chat-icon-180.png /app/build/static/chutes-chat-icon-180.png
+COPY branding/openwebui/chutes-chat-icon-192.png /app/build/static/chutes-chat-icon-192.png
+COPY branding/openwebui/chutes-chat-icon-512.png /app/build/static/chutes-chat-icon-512.png
+COPY branding/openwebui/chutes-chat-icon-180.png /app/build/static/apple-touch-icon.png
+COPY branding/openwebui/chutes-chat-icon-192.png /app/build/static/web-app-manifest-192x192.png
+COPY branding/openwebui/chutes-chat-icon-512.png /app/build/static/web-app-manifest-512x512.png
 COPY branding/openwebui/custom.css /app/backend/open_webui/static/custom.css
 COPY branding/openwebui/loader.js /app/backend/open_webui/static/loader.js
 COPY branding/openwebui/chutes-logo.svg /app/backend/open_webui/static/chutes-logo.svg
 COPY branding/openwebui/n8n-logo.svg /app/backend/open_webui/static/n8n-logo.svg
+COPY branding/openwebui/site.webmanifest /app/backend/open_webui/static/site.webmanifest
+COPY branding/openwebui/chutes-chat-icon-180.png /app/backend/open_webui/static/chutes-chat-icon-180.png
+COPY branding/openwebui/chutes-chat-icon-192.png /app/backend/open_webui/static/chutes-chat-icon-192.png
+COPY branding/openwebui/chutes-chat-icon-512.png /app/backend/open_webui/static/chutes-chat-icon-512.png
+COPY branding/openwebui/chutes-chat-icon-180.png /app/backend/open_webui/static/apple-touch-icon.png
+COPY branding/openwebui/chutes-chat-icon-192.png /app/backend/open_webui/static/web-app-manifest-192x192.png
+COPY branding/openwebui/chutes-chat-icon-512.png /app/backend/open_webui/static/web-app-manifest-512x512.png
+COPY scripts/patch-openwebui-runtime.py /opt/dropzone/patch-openwebui-runtime.py
 COPY scripts/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync.py
 COPY scripts/openwebui-model-order-sync-loop.sh /opt/dropzone/openwebui-model-order-sync-loop.sh
-RUN chmod +x /opt/dropzone/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync-loop.sh
+RUN python3 /opt/dropzone/patch-openwebui-runtime.py /app && \
+    chmod +x /opt/dropzone/patch-openwebui-runtime.py /opt/dropzone/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync-loop.sh
 
 # Custom Chutes nodes
 RUN mkdir -p /opt/custom-nodes/n8n-nodes-chutes
