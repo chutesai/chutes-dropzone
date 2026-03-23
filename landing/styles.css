@@ -82,6 +82,48 @@ code {
   padding: 0;
 }
 
+.dropzone-header,
+.launch-stage,
+.footer {
+  position: relative;
+  z-index: 1;
+}
+
+.dropzone-header {
+  display: flex;
+  justify-content: center;
+  padding-top: clamp(1rem, 2vw, 1.8rem);
+}
+
+.dropzone-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.35rem 0;
+}
+
+.dropzone-logo {
+  width: 3.5rem;
+  height: 2.3rem;
+  object-fit: contain;
+  filter: drop-shadow(0 0 20px rgba(139, 255, 198, 0.14));
+}
+
+.dropzone-brand-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dropzone-brand-copy h1 {
+  margin: 0;
+  color: var(--ink-100);
+  font-family: var(--font-display);
+  font-size: clamp(2.1rem, 4vw, 3.5rem);
+  line-height: 0.95;
+  letter-spacing: -0.055em;
+}
+
 .grid-veil,
 .noise-veil,
 .ambient {
@@ -513,8 +555,8 @@ body[data-traffic-mode="direct"] .traffic-pill {
 
 .cards-only {
   align-items: stretch;
-  min-height: calc(100vh - 3rem);
-  margin-top: 0;
+  min-height: calc(100vh - 11.5rem);
+  margin-top: 1.6rem;
 }
 
 .launch-card {
@@ -775,6 +817,24 @@ body[data-traffic-mode="direct"] .traffic-pill {
 
   .hero-copy h1 {
     font-size: clamp(2.8rem, 16vw, 4.7rem);
+  }
+
+  .dropzone-header {
+    justify-content: flex-start;
+  }
+
+  .dropzone-brand {
+    width: 100%;
+    padding: 0.2rem 0;
+  }
+
+  .dropzone-logo {
+    width: 3rem;
+    height: 2rem;
+  }
+
+  .dropzone-brand-copy h1 {
+    font-size: clamp(1.75rem, 9vw, 2.4rem);
   }
 
   .launch-card {
