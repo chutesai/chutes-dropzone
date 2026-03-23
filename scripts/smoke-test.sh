@@ -190,6 +190,12 @@ else
     fail "docker compose config (domain proxy stack)"
 fi
 
+if docker compose -f "$PROJECT_DIR/docker-compose.yml" -f "$PROJECT_DIR/docker-compose.local.yml" -f "$PROJECT_DIR/docker-compose.test.yml" -f "$PROJECT_DIR/docker-compose.traffic-proxy.yml" config -q >/dev/null 2>&1; then
+    pass "docker compose config (local test proxy stack)"
+else
+    fail "docker compose config (local test proxy stack)"
+fi
+
 for placeholder in __SERVER_NAME__ __TLS_DIRECTIVE__ __CHUTES_V1_BLOCK__; do
     if grep -q "$placeholder" "$PROJECT_DIR/conf/Caddyfile.template"; then
         pass "Caddy template has $placeholder"

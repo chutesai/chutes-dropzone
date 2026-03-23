@@ -9,6 +9,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 E2E_TRAFFIC_MODE="${E2E_TRAFFIC_MODE:-direct}"
 COMPOSE_FILES="$PROJECT_DIR/docker-compose.yml:$PROJECT_DIR/docker-compose.local.yml:$PROJECT_DIR/docker-compose.test.yml"
+if [ "$E2E_TRAFFIC_MODE" = "e2ee-proxy" ]; then
+    COMPOSE_FILES="${COMPOSE_FILES}:$PROJECT_DIR/docker-compose.traffic-proxy.yml"
+fi
 COOKIE_DIR="$(mktemp -d)"
 BACKUP_DIR="$(mktemp -d)"
 ENV_BACKUP="$BACKUP_DIR/.env.backup"
