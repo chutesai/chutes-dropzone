@@ -1,6 +1,7 @@
 ARG NODE_VERSION=24.13.1
 ARG N8N_VERSION=2.12.1
 ARG OPENWEBUI_VERSION=v0.8.10
+ARG OPENWEBUI_IMAGE=ghcr.io/open-webui/open-webui:v0.8.10@sha256:7eb132b5f14905ef4b07872428681151b6a98e024132cdc9e8124119780e2261
 ARG N8N_SOURCE_REPO=https://github.com/n8n-io/n8n.git
 ARG N8N_SOURCE_REF=n8n@2.12.1
 ARG N8N_SOURCE_SHA=42c7f71b6863581044006af0309ac38aab8d7c9f
@@ -112,7 +113,7 @@ FROM --platform=$IMAGE_PLATFORM ${CADDY_IMAGE} AS caddy-binary
 # ---------------------------------------------------------------------------
 # Stage 6: OpenWebUI runtime base
 # ---------------------------------------------------------------------------
-FROM --platform=$IMAGE_PLATFORM ghcr.io/open-webui/open-webui:${OPENWEBUI_VERSION} AS openwebui-src
+FROM --platform=$IMAGE_PLATFORM ${OPENWEBUI_IMAGE} AS openwebui-src
 
 # ---------------------------------------------------------------------------
 # Stage 6b: repo-pinned OpenWebUI image for compose/local use

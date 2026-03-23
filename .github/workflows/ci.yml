@@ -38,6 +38,9 @@ jobs:
       - name: Run syntax smoke checks
         run: ./scripts/smoke-test.sh --syntax
 
+      - name: Validate release helper
+        run: ./release.sh --dry-run
+
   local-e2e:
     name: Local E2E (Test IdP)
     runs-on: ubuntu-latest

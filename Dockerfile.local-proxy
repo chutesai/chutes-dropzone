@@ -1,4 +1,4 @@
-ARG E2EE_PROXY_IMAGE=parachutes/e2ee-proxy:latest
+ARG E2EE_PROXY_IMAGE=parachutes/e2ee-proxy:latest@sha256:0af4965c84e3eace05063fe2a013e818c30dd3687e9690a3bea83ae1df3b9a56
 
 FROM ${E2EE_PROXY_IMAGE}
 

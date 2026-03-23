@@ -1,6 +1,6 @@
 services:
   caddy:
-    image: caddy:2.11.2-alpine
+    image: ${CADDY_IMAGE:-caddy:2.11.2-alpine@sha256:a1b7e624f860619cea121bdbc5dec2e112401666298c6507c6793b0a3ee6fc8e}
     ports:
       - "80:80"
       - "443:443"

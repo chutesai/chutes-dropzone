@@ -214,6 +214,36 @@ for placeholder in __INSTALL_MODE__ __CHUTES_TRAFFIC_MODE__ __DROPZONE_HOST__; d
     fi
 done
 
+openwebui_version_pin="$(sed -n 's/^ARG OPENWEBUI_VERSION=//p' "$PROJECT_DIR/Dockerfile.local-repo" | head -n 1)"
+openwebui_image_pin="$(sed -n 's/^ARG OPENWEBUI_IMAGE=//p' "$PROJECT_DIR/Dockerfile.local-repo" | head -n 1)"
+case "$openwebui_image_pin" in
+    *":${openwebui_version_pin}@sha256:"*)
+        pass "Dockerfile pins OpenWebUI by version and digest"
+        ;;
+    *)
+        fail "Dockerfile OpenWebUI pin is missing a matching versioned digest"
+        ;;
+esac
+
+if grep -q '^OPENWEBUI_IMAGE=' "$PROJECT_DIR/.env.example"; then
+    pass ".env.example exposes the pinned OpenWebUI image"
+else
+    fail ".env.example is missing OPENWEBUI_IMAGE"
+fi
+
+if grep -q '@sha256:' "$PROJECT_DIR/docker-compose.domain.yml"; then
+    pass "domain compose pins the Caddy runtime image by digest"
+else
+    fail "domain compose is missing a digest-pinned Caddy image"
+fi
+
+if grep -q '@sha256:' "$PROJECT_DIR/Dockerfile.local-proxy" && \
+   grep -q '@sha256:' "$PROJECT_DIR/Dockerfile.e2ee-proxy"; then
+    pass "proxy Dockerfiles pin e2ee-proxy by digest"
+else
+    fail "proxy Dockerfiles are missing digest-pinned e2ee-proxy images"
+fi
+
 if [ "$SYNTAX_ONLY" = true ]; then
     echo
     echo "=== Results: $PASS passed, $FAIL failed, $SKIP skipped ==="

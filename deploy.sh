@@ -117,11 +117,13 @@ PROJECT_N8N_VERSION="2.12.1"
 PROJECT_N8N_SOURCE_REPO="https://github.com/n8n-io/n8n.git"
 PROJECT_N8N_SOURCE_SHA="42c7f71b6863581044006af0309ac38aab8d7c9f"
 PROJECT_OPENWEBUI_VERSION="v0.8.10"
+PROJECT_OPENWEBUI_IMAGE="ghcr.io/open-webui/open-webui:v0.8.10@sha256:7eb132b5f14905ef4b07872428681151b6a98e024132cdc9e8124119780e2261"
 PROJECT_NODES_REPO="https://github.com/sirouk/n8n-nodes-chutes.git"
 DEFAULT_CHUTES_SSO_SCOPES="openid profile chutes:read chutes:invoke"
 LEGACY_CHUTES_SSO_SCOPES="openid email profile chutes:read chutes:invoke"
 PROJECT_NODES_REF="main"
 PROJECT_E2EE_PROXY_IMAGE="parachutes/e2ee-proxy:latest@sha256:0af4965c84e3eace05063fe2a013e818c30dd3687e9690a3bea83ae1df3b9a56"
+PROJECT_CADDY_IMAGE="caddy:2.11.2-alpine@sha256:a1b7e624f860619cea121bdbc5dec2e112401666298c6507c6793b0a3ee6fc8e"
 FORCE_ALL=false
 RESET_OWNER_PASSWORD=false
 DOWN=false
@@ -496,6 +498,7 @@ write_env_file() {
         env_line CHUTES_COMPOSE_FILES "$CHUTES_COMPOSE_FILES"
         env_line EDGE_SERVICE "$EDGE_SERVICE"
         env_line E2EE_PROXY_IMAGE "$E2EE_PROXY_IMAGE"
+        env_line CADDY_IMAGE "$CADDY_IMAGE"
         env_line ALLOW_NON_CONFIDENTIAL "$ALLOW_NON_CONFIDENTIAL"
         env_line CHUTES_SSO_PROXY_BYPASS "$CHUTES_SSO_PROXY_BYPASS"
         env_line CHUTES_PROXY_BASE_URL "$CHUTES_PROXY_BASE_URL"
@@ -506,6 +509,7 @@ write_env_file() {
         env_line N8N_SOURCE_REF "$N8N_SOURCE_REF"
         env_line N8N_SOURCE_SHA "$N8N_SOURCE_SHA"
         env_line OPENWEBUI_VERSION "$OPENWEBUI_VERSION"
+        env_line OPENWEBUI_IMAGE "$OPENWEBUI_IMAGE"
         env_line TZ "$TZ"
         echo
         env_line DROPZONE_HOST "$DROPZONE_HOST"
@@ -728,6 +732,37 @@ validate_domain_hostname() {
     fi
 }
 
+validate_digest_pin() {
+    local var_name="$1"
+    local value="$2"
+
+    case "$value" in
+        *@sha256:*)
+            ;;
+        *)
+            err "${var_name} must be pinned by digest"
+            exit 1
+            ;;
+    esac
+}
+
+validate_versioned_digest_pin() {
+    local var_name="$1"
+    local version="$2"
+    local image="$3"
+
+    validate_digest_pin "$var_name" "$image"
+
+    case "$image" in
+        *":${version}@sha256:"*)
+            ;;
+        *)
+            err "${var_name} must pin ${version} exactly (expected tag ${version} with a digest)"
+            exit 1
+            ;;
+    esac
+}
+
 adopt_project_n8n_pin() {
     local desired_version="$PROJECT_N8N_VERSION"
     local desired_repo="$PROJECT_N8N_SOURCE_REPO"
@@ -759,6 +794,22 @@ adopt_project_n8n_pin() {
         else
             N8N_SOURCE_SHA="${N8N_SOURCE_SHA:-}"
         fi
+    fi
+}
+
+adopt_project_openwebui_pin() {
+    local desired_version="$PROJECT_OPENWEBUI_VERSION"
+    local desired_image="$PROJECT_OPENWEBUI_IMAGE"
+
+    if [ "${BOOTSTRAP_OVERRIDE_SET_OPENWEBUI_VERSION:-false}" != "true" ]; then
+        if [ -n "${OPENWEBUI_VERSION:-}" ] && [ "$OPENWEBUI_VERSION" != "$desired_version" ]; then
+            info "Project OpenWebUI pin advanced from ${OPENWEBUI_VERSION} to ${desired_version}; updating the local install to match"
+        fi
+        OPENWEBUI_VERSION="$desired_version"
+    fi
+
+    if [ "${BOOTSTRAP_OVERRIDE_SET_OPENWEBUI_IMAGE:-false}" != "true" ]; then
+        OPENWEBUI_IMAGE="$desired_image"
     fi
 }
 
@@ -1127,6 +1178,7 @@ for overridable_var in \
     CHUTES_COMPOSE_FILES \
     EDGE_SERVICE \
     E2EE_PROXY_IMAGE \
+    CADDY_IMAGE \
     ALLOW_NON_CONFIDENTIAL \
     CHUTES_SSO_PROXY_BYPASS \
     CHUTES_PROXY_BASE_URL \
@@ -1136,6 +1188,7 @@ for overridable_var in \
     N8N_SOURCE_REF \
     N8N_SOURCE_SHA \
     OPENWEBUI_VERSION \
+    OPENWEBUI_IMAGE \
     TZ \
     DROPZONE_HOST \
     N8N_HOST \
@@ -1180,6 +1233,7 @@ for overridable_var in \
     CHUTES_COMPOSE_FILES \
     EDGE_SERVICE \
     E2EE_PROXY_IMAGE \
+    CADDY_IMAGE \
     ALLOW_NON_CONFIDENTIAL \
     CHUTES_SSO_PROXY_BYPASS \
     CHUTES_PROXY_BASE_URL \
@@ -1189,6 +1243,7 @@ for overridable_var in \
     N8N_SOURCE_REF \
     N8N_SOURCE_SHA \
     OPENWEBUI_VERSION \
+    OPENWEBUI_IMAGE \
     TZ \
     DROPZONE_HOST \
     N8N_HOST \
@@ -1228,6 +1283,7 @@ N8N_SOURCE_REPO="${N8N_SOURCE_REPO:-$PROJECT_N8N_SOURCE_REPO}"
 N8N_SOURCE_REF="${N8N_SOURCE_REF:-n8n@${N8N_VERSION}}"
 N8N_SOURCE_SHA="${N8N_SOURCE_SHA:-$PROJECT_N8N_SOURCE_SHA}"
 OPENWEBUI_VERSION="${OPENWEBUI_VERSION:-$PROJECT_OPENWEBUI_VERSION}"
+OPENWEBUI_IMAGE="${OPENWEBUI_IMAGE:-$PROJECT_OPENWEBUI_IMAGE}"
 TZ="${TZ:-UTC}"
 DROPZONE_HOST="${DROPZONE_HOST:-${N8N_HOST:-}}"
 N8N_HOST="${N8N_HOST:-$DROPZONE_HOST}"
@@ -1255,6 +1311,7 @@ CHUTES_ADMIN_USERNAMES="${CHUTES_ADMIN_USERNAMES:-}"
 CHUTES_API_KEY="${CHUTES_API_KEY:-}"
 CHUTES_TRAFFIC_MODE="${CHUTES_TRAFFIC_MODE:-direct}"
 E2EE_PROXY_IMAGE="${E2EE_PROXY_IMAGE:-$PROJECT_E2EE_PROXY_IMAGE}"
+CADDY_IMAGE="${CADDY_IMAGE:-$PROJECT_CADDY_IMAGE}"
 ALLOW_NON_CONFIDENTIAL="${ALLOW_NON_CONFIDENTIAL:-false}"
 CHUTES_SSO_PROXY_BYPASS="${CHUTES_SSO_PROXY_BYPASS:-false}"
 CHUTES_PROXY_BASE_URL="${CHUTES_PROXY_BASE_URL:-}"
@@ -1263,6 +1320,10 @@ INSTALL_MODE="${INSTALL_MODE:-}"
 ACME_EMAIL="${ACME_EMAIL:-}"
 
 adopt_project_n8n_pin
+adopt_project_openwebui_pin
+validate_versioned_digest_pin "OPENWEBUI_IMAGE" "$OPENWEBUI_VERSION" "$OPENWEBUI_IMAGE"
+validate_digest_pin "E2EE_PROXY_IMAGE" "$E2EE_PROXY_IMAGE"
+validate_digest_pin "CADDY_IMAGE" "$CADDY_IMAGE"
 
 if [ "$DOWN" = true ] && [ -z "$INSTALL_MODE" ]; then
     INSTALL_MODE="local"

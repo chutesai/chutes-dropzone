@@ -88,6 +88,7 @@ services:
       target: openwebui-runtime
       args:
         OPENWEBUI_VERSION: ${OPENWEBUI_VERSION:-v0.8.10}
+        OPENWEBUI_IMAGE: ${OPENWEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.8.10@sha256:7eb132b5f14905ef4b07872428681151b6a98e024132cdc9e8124119780e2261}
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-dropzone}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_OPENWEBUI_DB:-openwebui}
       - WEBUI_URL=https://${DROPZONE_HOST:-localhost}/chat
@@ -146,6 +147,7 @@ services:
       target: openwebui-runtime
       args:
         OPENWEBUI_VERSION: ${OPENWEBUI_VERSION:-v0.8.10}
+        OPENWEBUI_IMAGE: ${OPENWEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.8.10@sha256:7eb132b5f14905ef4b07872428681151b6a98e024132cdc9e8124119780e2261}
     command: ["/opt/dropzone/openwebui-model-order-sync-loop.sh"]
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-dropzone}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_OPENWEBUI_DB:-openwebui}

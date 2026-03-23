@@ -140,6 +140,7 @@ See [.env.example](./.env.example) for the full set. The main public/operator-fa
 - `POSTGRES_N8N_DB`
 - `POSTGRES_OPENWEBUI_DB`
 - `OPENWEBUI_VERSION`
+- `OPENWEBUI_IMAGE`
 - `OPENWEBUI_ADMIN_EMAIL`
 - `OPENWEBUI_ADMIN_PASSWORD`
 - `WEBUI_SECRET_KEY`
@@ -245,6 +246,7 @@ It:
 
 - proposes the next patch version from existing tags
 - prints the pinned refs and image inputs used by CI and release builds
+- verifies the checked-in n8n, OpenWebUI, caddy, and e2ee-proxy pins before publishing
 - requires a clean worktree before publishing
 - uses `gh` to create the GitHub release that triggers `.github/workflows/release.yml`
 

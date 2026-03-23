@@ -283,7 +283,8 @@ print_release_plan() {
     local node_image="${11}"
     local n8n_base_image="${12}"
     local openwebui_version="${13}"
-    local caddy_image="${14}"
+    local openwebui_image="${14}"
+    local caddy_image="${15}"
 
     cat <<EOF
 Release plan
@@ -304,6 +305,7 @@ Pinned refs and images
   node builder image:         $node_image
   n8nio/base image:           $n8n_base_image
   OpenWebUI version:          $openwebui_version
+  OpenWebUI image:            $openwebui_image
   caddy image:                $caddy_image
 
 Publish target
@@ -382,6 +384,7 @@ proxy_image="$(extract_arg "E2EE_PROXY_IMAGE")"
 node_image="$(extract_arg "NODE_BUILDER_IMAGE")"
 n8n_base_image="$(extract_arg "N8N_BASE_IMAGE")"
 openwebui_version="$(extract_arg "OPENWEBUI_VERSION")"
+openwebui_image="$(extract_arg "OPENWEBUI_IMAGE")"
 caddy_image="$(extract_arg "CADDY_IMAGE")"
 deploy_nodes_ref="$(extract_shell_value "$DEPLOY_SCRIPT_PATH" "PROJECT_NODES_REF")"
 deploy_nodes_repo="$(extract_shell_value "$DEPLOY_SCRIPT_PATH" "PROJECT_NODES_REPO")"
@@ -432,6 +435,19 @@ review_pin_value \
     "OpenWebUI version" \
     "$openwebui_version" \
     "Dockerfile.local-repo ARG OPENWEBUI_VERSION"
+review_pin_value \
+    "OpenWebUI image" \
+    "$openwebui_image" \
+    "Dockerfile.local-repo ARG OPENWEBUI_IMAGE"
+
+case "$openwebui_image" in
+    *":${openwebui_version}@sha256:"*)
+        ;;
+    *)
+        err "OpenWebUI image pin does not match OPENWEBUI_VERSION (${openwebui_version})"
+        exit 1
+        ;;
+esac
 
 print_release_plan \
     "$latest_tag" \
@@ -447,6 +463,7 @@ print_release_plan \
     "$node_image" \
     "$n8n_base_image" \
     "$openwebui_version" \
+    "$openwebui_image" \
     "$caddy_image"
 
 cat <<EOF

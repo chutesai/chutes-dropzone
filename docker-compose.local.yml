@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile.local-proxy
       args:
-        E2EE_PROXY_IMAGE: ${E2EE_PROXY_IMAGE:-parachutes/e2ee-proxy:latest}
+        E2EE_PROXY_IMAGE: ${E2EE_PROXY_IMAGE:-parachutes/e2ee-proxy:latest@sha256:0af4965c84e3eace05063fe2a013e818c30dd3687e9690a3bea83ae1df3b9a56}
     environment:
       TLS_DOMAIN: ${DROPZONE_HOST:-e2ee-local-proxy.chutes.dev}
       ALLOW_NON_CONFIDENTIAL: ${ALLOW_NON_CONFIDENTIAL:-false}
