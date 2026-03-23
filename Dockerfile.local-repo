@@ -72,9 +72,23 @@ RUN mkdir /compiled
 RUN NODE_ENV=production DOCKER_BUILD=true pnpm --filter=n8n --prod --no-optional deploy --legacy /compiled
 
 # ---------------------------------------------------------------------------
-# Stage 3: rebuild native addons on Ubuntu (glibc, matching runtime base)
+# Stage 3a: rebuild native addons for the compose/local n8n runtime (musl)
 # ---------------------------------------------------------------------------
-FROM --platform=$IMAGE_PLATFORM ${UBUNTU_BASE_IMAGE} AS native-addon-builder
+FROM --platform=$IMAGE_PLATFORM ${NODE_BUILDER_IMAGE} AS native-addon-builder-alpine
+
+COPY --from=n8n-builder /compiled /usr/local/lib/node_modules/n8n
+RUN apk add --no-cache python3 make g++ && \
+    cd /usr/local/lib/node_modules/n8n && \
+    npm rebuild sqlite3 && \
+    ISOLATED_VM_DIR="$(node -p 'require("path").dirname(require.resolve("isolated-vm/package.json"))' | tr -d '\r\n')" && \
+    cd "$ISOLATED_VM_DIR" && \
+    node /usr/local/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js rebuild --release -j 1 && \
+    node /usr/local/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js clean
+
+# ---------------------------------------------------------------------------
+# Stage 3b: rebuild native addons on Ubuntu (glibc, matching standalone base)
+# ---------------------------------------------------------------------------
+FROM --platform=$IMAGE_PLATFORM ${UBUNTU_BASE_IMAGE} AS native-addon-builder-ubuntu
 
 ARG NODE_VERSION
 
@@ -143,7 +157,7 @@ ENV NODE_ENV=production \
 
 WORKDIR /home/node
 
-COPY --from=native-addon-builder /usr/local/lib/node_modules/n8n /usr/local/lib/node_modules/n8n
+COPY --from=native-addon-builder-alpine /usr/local/lib/node_modules/n8n /usr/local/lib/node_modules/n8n
 COPY --from=n8n-builder /src/docker/images/n8n/docker-entrypoint.sh /docker-entrypoint.sh
 
 USER root
@@ -235,7 +249,7 @@ RUN groupadd -r node && useradd -r -g node -m -d /home/node node
 WORKDIR /home/node
 
 # n8n (native addons built on Ubuntu in stage 3)
-COPY --from=native-addon-builder /usr/local/lib/node_modules/n8n /usr/local/lib/node_modules/n8n
+COPY --from=native-addon-builder-ubuntu /usr/local/lib/node_modules/n8n /usr/local/lib/node_modules/n8n
 COPY --from=n8n-builder /src/docker/images/n8n/docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh && \
     ln -s /usr/local/lib/node_modules/n8n/bin/n8n /usr/local/bin/n8n
