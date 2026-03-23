@@ -1503,7 +1503,7 @@ elif [ "$SKIP_APP_BUILDS" = true ]; then
         local) build_services+=(local-proxy) ;;
         domain) ;;
     esac
-    if [ "$CHUTES_TRAFFIC_MODE" = "e2ee-proxy" ] && [ "$INSTALL_MODE" = "domain" ]; then
+    if [ "$CHUTES_TRAFFIC_MODE" = "e2ee-proxy" ]; then
         build_services+=(e2ee-proxy)
     fi
     if [ "${#build_services[@]}" -gt 0 ]; then
