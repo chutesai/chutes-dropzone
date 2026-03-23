@@ -44,7 +44,7 @@ The deploy script:
 - clones or refreshes `chutesai/chutes-dropzone`
 - runs `deploy.sh`
 - auto-clones `sirouk/n8n-nodes-chutes` beside it if missing
-- fast-forwards `n8n-nodes-chutes` on clean reruns so the embedded nodes do not drift stale
+- resets `n8n-nodes-chutes` to the checked-in pinned commit on clean reruns so local builds match CI and release images
 
 When launched from a terminal, the deploy script prompts for install mode and the required Chutes OAuth settings even when invoked via `curl ... | bash`.
 
@@ -76,6 +76,12 @@ You can override that source if needed with:
 
 ```bash
 CHUTES_N8N_NODES_GIT_URL=git@github.com:sirouk/n8n-nodes-chutes.git ./deploy.sh
+```
+
+You can also temporarily test a different branch or commit without changing the checked-in pin:
+
+```bash
+CHUTES_N8N_NODES_GIT_REF=<branch-or-commit> ./deploy.sh
 ```
 
 Interactive deploy asks for:

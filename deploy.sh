@@ -121,7 +121,7 @@ PROJECT_OPENWEBUI_IMAGE="ghcr.io/open-webui/open-webui:v0.8.10@sha256:7eb132b5f1
 PROJECT_NODES_REPO="https://github.com/sirouk/n8n-nodes-chutes.git"
 DEFAULT_CHUTES_SSO_SCOPES="openid profile chutes:read chutes:invoke"
 LEGACY_CHUTES_SSO_SCOPES="openid email profile chutes:read chutes:invoke"
-PROJECT_NODES_REF="main"
+PROJECT_NODES_REF="d98eb1c02e966a99eb0c8ce66434feaa2c9049c3"
 PROJECT_E2EE_PROXY_IMAGE="parachutes/e2ee-proxy:latest@sha256:0af4965c84e3eace05063fe2a013e818c30dd3687e9690a3bea83ae1df3b9a56"
 PROJECT_CADDY_IMAGE="caddy:2.11.2-alpine@sha256:a1b7e624f860619cea121bdbc5dec2e112401666298c6507c6793b0a3ee6fc8e"
 FORCE_ALL=false
@@ -850,7 +850,7 @@ prompt_install_action() {
 
 refresh_local_dependency_checkout() {
     local repo_dir="$1"
-    local repo_name target_ref target_head current_head
+    local repo_name requested_ref target_ref target_head current_head
 
     repo_name="$(basename "$repo_dir")"
 
@@ -864,7 +864,7 @@ refresh_local_dependency_checkout() {
         return
     fi
 
-    target_ref="origin/${PROJECT_NODES_REF:-main}"
+    requested_ref="${PROJECT_NODES_REF:-main}"
 
     info "Fetching latest ${repo_name} from origin ..."
     if ! git -C "$repo_dir" fetch --quiet origin; then
@@ -872,7 +872,13 @@ refresh_local_dependency_checkout() {
         return
     fi
 
-    target_head="$(git -C "$repo_dir" rev-parse "$target_ref" 2>/dev/null || true)"
+    if [[ "$requested_ref" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
+        target_ref="$requested_ref"
+    else
+        target_ref="origin/$requested_ref"
+    fi
+
+    target_head="$(git -C "$repo_dir" rev-parse "${target_ref}^{commit}" 2>/dev/null || true)"
     if [ -z "$target_head" ]; then
         warn "Could not resolve ${target_ref} for ${repo_name}; using the current checkout"
         return

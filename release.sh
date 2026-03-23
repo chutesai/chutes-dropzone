@@ -277,14 +277,15 @@ print_release_plan() {
     local ci_nodes_repo="$5"
     local ci_nodes_ref="$6"
     local release_nodes_ref="$7"
-    local n8n_source_ref="$8"
-    local n8n_source_sha="$9"
-    local proxy_image="${10}"
-    local node_image="${11}"
-    local n8n_base_image="${12}"
-    local openwebui_version="${13}"
-    local openwebui_image="${14}"
-    local caddy_image="${15}"
+    local deploy_nodes_ref="$8"
+    local n8n_source_ref="$9"
+    local n8n_source_sha="${10}"
+    local proxy_image="${11}"
+    local node_image="${12}"
+    local n8n_base_image="${13}"
+    local openwebui_version="${14}"
+    local openwebui_image="${15}"
+    local caddy_image="${16}"
 
     cat <<EOF
 Release plan
@@ -299,6 +300,7 @@ Pinned refs and images
   n8n-nodes-chutes repo:      $ci_nodes_repo
   n8n-nodes-chutes (ci):      $ci_nodes_ref
   n8n-nodes-chutes (release): $release_nodes_ref
+  n8n-nodes-chutes (deploy):  $deploy_nodes_ref
   n8n source ref:             $n8n_source_ref
   n8n source sha:             $n8n_source_sha
   e2ee-proxy image:           $proxy_image
@@ -399,6 +401,16 @@ if [ "$ci_nodes_ref" != "$release_nodes_ref" ]; then
     exit 1
 fi
 
+if [ -z "$deploy_nodes_ref" ]; then
+    err "could not determine PROJECT_NODES_REF from deploy.sh"
+    exit 1
+fi
+
+if [ "$deploy_nodes_ref" != "$ci_nodes_ref" ]; then
+    err "deploy.sh PROJECT_NODES_REF does not match the CI/release n8n-nodes-chutes pin"
+    exit 1
+fi
+
 review_pin_value \
     "n8n-nodes-chutes repo" \
     "$ci_nodes_repo" \
@@ -407,6 +419,10 @@ review_pin_value \
     "n8n-nodes-chutes ref" \
     "$ci_nodes_ref" \
     ".github/workflows/ci.yml + .github/workflows/release.yml"
+review_pin_value \
+    "deploy default n8n-nodes-chutes ref" \
+    "$deploy_nodes_ref" \
+    "deploy.sh PROJECT_NODES_REF"
 review_pin_value \
     "n8n source ref" \
     "$n8n_source_ref" \
@@ -457,6 +473,7 @@ print_release_plan \
     "$ci_nodes_repo" \
     "$ci_nodes_ref" \
     "$release_nodes_ref" \
+    "$deploy_nodes_ref" \
     "$n8n_source_ref" \
     "$n8n_source_sha" \
     "$proxy_image" \
@@ -471,7 +488,7 @@ cat <<EOF
 Reminder
   - The n8n-nodes-chutes commit above is pinned in CI/release for supply-chain safety.
   - If you bump upstream versions, update the matching pins before publishing.
-  - repo-based deploys currently default n8n-nodes-chutes to: ${deploy_nodes_repo:-<unknown>} @ ${deploy_nodes_ref:-<unknown>}
+  - repo-based deploys default n8n-nodes-chutes to the same checked-in pin: ${deploy_nodes_repo:-<unknown>} @ ${deploy_nodes_ref:-<unknown>}
   - Shipping happens when this script publishes a GitHub release.
 EOF
 

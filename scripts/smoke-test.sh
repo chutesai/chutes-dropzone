@@ -244,6 +244,16 @@ else
     fail "proxy Dockerfiles are missing digest-pinned e2ee-proxy images"
 fi
 
+ci_nodes_ref="$(sed -n 's/^[[:space:]]*N8N_NODES_CHUTES_REF:[[:space:]]*//p' "$PROJECT_DIR/.github/workflows/ci.yml" | head -n 1)"
+release_nodes_ref="$(sed -n 's/^[[:space:]]*N8N_NODES_CHUTES_REF:[[:space:]]*//p' "$PROJECT_DIR/.github/workflows/release.yml" | head -n 1)"
+deploy_nodes_ref="$(awk -F'\"' '/^PROJECT_NODES_REF=/{print $2; exit}' "$PROJECT_DIR/deploy.sh")"
+
+if [ -n "$ci_nodes_ref" ] && [ "$ci_nodes_ref" = "$release_nodes_ref" ] && [ "$ci_nodes_ref" = "$deploy_nodes_ref" ]; then
+    pass "n8n-nodes-chutes pin matches across ci, release, and deploy"
+else
+    fail "n8n-nodes-chutes pin drifted across ci, release, or deploy"
+fi
+
 if [ "$SYNTAX_ONLY" = true ]; then
     echo
     echo "=== Results: $PASS passed, $FAIL failed, $SKIP skipped ==="
