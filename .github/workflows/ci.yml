@@ -69,6 +69,17 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Prepare n8n-nodes-chutes build context
+        run: |
+          mkdir -p chutes-dropzone/build/n8n-nodes-chutes
+          rsync -a --delete \
+            --exclude node_modules \
+            --exclude .git \
+            --exclude tests \
+            --exclude coverage \
+            n8n-nodes-chutes/ chutes-dropzone/build/n8n-nodes-chutes/
+          node chutes-dropzone/scripts/patch-n8n-nodes-chutes.mjs chutes-dropzone/build/n8n-nodes-chutes
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
