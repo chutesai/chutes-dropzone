@@ -1,0 +1,33 @@
+services:
+  local-proxy:
+    image: chutes-dropzone-local-proxy:latest
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.local-proxy
+      args:
+        E2EE_PROXY_IMAGE: ${E2EE_PROXY_IMAGE:-parachutes/e2ee-proxy:latest}
+    environment:
+      TLS_DOMAIN: ${DROPZONE_HOST:-e2ee-local-proxy.chutes.dev}
+      ALLOW_NON_CONFIDENTIAL: ${ALLOW_NON_CONFIDENTIAL:-false}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./landing:/opt/landing:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- --no-check-certificate https://127.0.0.1/health >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      n8n:
+        condition: service_healthy
+      openwebui:
+        condition: service_healthy
+    networks:
+      dropzone-net:
+        aliases:
+          - ${DROPZONE_HOST:-e2ee-local-proxy.chutes.dev}
+    restart: unless-stopped

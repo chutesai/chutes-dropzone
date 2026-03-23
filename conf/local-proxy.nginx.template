@@ -1,0 +1,219 @@
+worker_processes 1;
+error_log /dev/stderr info;
+pid /tmp/nginx.pid;
+
+env ALLOW_NON_CONFIDENTIAL;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /usr/local/openresty/nginx/conf/mime.types;
+    default_type application/octet-stream;
+
+    resolver __RESOLVERS__ valid=60s ipv6=off;
+    resolver_timeout 5s;
+
+    lua_package_path "/usr/local/openresty/lua/?.lua;;";
+    lua_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+    lua_ssl_verify_depth 5;
+
+    init_worker_by_lua_block {
+        local crypto = require("e2ee_crypto")
+        local ok, err = crypto.init()
+        if not ok then
+            ngx.log(ngx.ERR, "FATAL: e2ee_init failed: ", err)
+        else
+            ngx.log(ngx.INFO, "e2ee proxy library initialized for n8n local TLS")
+        end
+    }
+
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        '' close;
+    }
+
+    server {
+        listen 443 ssl;
+        server_name __SERVER_NAME__;
+
+        ssl_certificate /tmp/dummy.crt;
+        ssl_certificate_key /tmp/dummy.key;
+
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers HIGH:!aNULL:!MD5;
+        ssl_prefer_server_ciphers on;
+
+        ssl_certificate_by_lua_block {
+            local ssl = require("ngx.ssl")
+
+            local ok, err = ssl.clear_certs()
+            if not ok then
+                ngx.log(ngx.ERR, "failed to clear certs: ", err)
+                return ngx.exit(ngx.ERROR)
+            end
+
+            local file = io.open("/tmp/ssl.crt", "r")
+            if file then
+                local cert_pem = file:read("*a")
+                file:close()
+
+                local cert_der, cert_err = ssl.cert_pem_to_der(cert_pem)
+                if not cert_der then
+                    ngx.log(ngx.ERR, "failed to convert cert PEM to DER: ", cert_err)
+                    return ngx.exit(ngx.ERROR)
+                end
+
+                ok, err = ssl.set_der_cert(cert_der)
+                if not ok then
+                    ngx.log(ngx.ERR, "failed to set file-based cert: ", err)
+                    return ngx.exit(ngx.ERROR)
+                end
+
+                local key_file = io.open("/tmp/ssl.key", "r")
+                if not key_file then
+                    ngx.log(ngx.ERR, "failed to open /tmp/ssl.key")
+                    return ngx.exit(ngx.ERROR)
+                end
+
+                local key_pem = key_file:read("*a")
+                key_file:close()
+
+                local key_der, key_err = ssl.priv_key_pem_to_der(key_pem)
+                if not key_der then
+                    ngx.log(ngx.ERR, "failed to convert key PEM to DER: ", key_err)
+                    return ngx.exit(ngx.ERROR)
+                end
+
+                ok, err = ssl.set_der_priv_key(key_der)
+                if not ok then
+                    ngx.log(ngx.ERR, "failed to set file-based key: ", err)
+                    return ngx.exit(ngx.ERROR)
+                end
+            else
+                local crypto = require("e2ee_crypto")
+
+                local chain_der, chain_err = crypto.get_cert_chain_der()
+                if not chain_der then
+                    ngx.log(ngx.ERR, "failed to get embedded cert chain: ", chain_err)
+                    return ngx.exit(ngx.ERROR)
+                end
+
+                ok, err = ssl.set_der_cert(chain_der)
+                if not ok then
+                    ngx.log(ngx.ERR, "failed to set embedded cert: ", err)
+                    return ngx.exit(ngx.ERROR)
+                end
+
+                local key_der, key_err = crypto.get_privkey_der()
+                if not key_der then
+                    ngx.log(ngx.ERR, "failed to get embedded private key: ", key_err)
+                    return ngx.exit(ngx.ERROR)
+                end
+
+                ok, err = ssl.set_der_priv_key(key_der)
+                if not ok then
+                    ngx.log(ngx.ERR, "failed to set embedded private key: ", err)
+                    return ngx.exit(ngx.ERROR)
+                end
+            end
+        }
+
+        location = /health {
+            default_type text/plain;
+            return 200 "ok\n";
+        }
+
+        more_set_headers 'Access-Control-Allow-Origin: *';
+        more_set_headers 'Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS';
+        more_set_headers 'Access-Control-Allow-Headers: *';
+        more_set_headers 'Access-Control-Expose-Headers: *';
+
+        __CHUTES_V1_BLOCK__
+
+        location = /chat {
+            return 308 /chat/;
+        }
+
+        location = /chat/ {
+            return 302 /home;
+        }
+
+        location = /n8n {
+            return 308 /n8n/;
+        }
+
+        location /chat/ {
+            rewrite ^/chat/(.*)$ /$1 permanent;
+        }
+
+        location /n8n/ {
+            rewrite ^/n8n/(.*)$ /$1 break;
+            proxy_pass http://n8n:5678;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_buffering off;
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
+            client_max_body_size 50m;
+        }
+
+        location /rest/sso/chutes/ {
+            proxy_pass http://n8n:5678;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_buffering off;
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
+            client_max_body_size 50m;
+        }
+
+        location /_dropzone/ {
+            add_header Cache-Control "public, max-age=31536000, immutable" always;
+            rewrite ^/_dropzone/(.*)$ /$1 break;
+            root /opt/landing;
+            try_files $uri =404;
+        }
+
+        location = / {
+            add_header Cache-Control "no-store" always;
+            root /opt/landing;
+            try_files /index.html =404;
+        }
+
+        location / {
+            proxy_pass http://openwebui:8080;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_buffering off;
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
+            client_max_body_size 50m;
+        }
+    }
+
+    server {
+        listen 80;
+        server_name __SERVER_NAME__;
+        return 301 https://$host$request_uri;
+    }
+}
