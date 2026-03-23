@@ -1,7 +1,7 @@
 name: Release
 
 concurrency:
-  group: chutes-dropzone-${{ github.workflow }}-${{ github.ref }}
+  group: chutes-dropzone-release-${{ github.ref }}
   cancel-in-progress: true
 
 on:
