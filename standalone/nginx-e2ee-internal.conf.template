@@ -1,0 +1,116 @@
+worker_processes 1;
+error_log /dev/stderr info;
+pid /tmp/nginx.pid;
+
+env ALLOW_NON_CONFIDENTIAL;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    resolver __RESOLVERS__ valid=60s ipv6=off;
+    resolver_timeout 5s;
+
+    lua_package_path "/usr/local/openresty/lua/?.lua;;";
+    lua_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+    lua_ssl_verify_depth 5;
+
+    init_worker_by_lua_block {
+        local crypto = require("e2ee_crypto")
+        local ok, err = crypto.init()
+        if not ok then
+            ngx.log(ngx.ERR, "FATAL: e2ee_init failed: ", err)
+        else
+            ngx.log(ngx.INFO, "e2ee proxy library initialized (internal handler)")
+        end
+    }
+
+    server {
+        listen 8443 ssl;
+        server_name __SERVER_NAME__;
+
+        ssl_certificate /tmp/e2ee-self-signed.crt;
+        ssl_certificate_key /tmp/e2ee-self-signed.key;
+
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers HIGH:!aNULL:!MD5;
+        ssl_prefer_server_ciphers on;
+
+        location = /health {
+            default_type text/plain;
+            return 200 "ok\n";
+        }
+
+        more_set_headers 'Access-Control-Allow-Origin: *';
+        more_set_headers 'Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS';
+        more_set_headers 'Access-Control-Allow-Headers: *';
+        more_set_headers 'Access-Control-Expose-Headers: *';
+
+        location = /v1/models {
+            if ($request_method = 'OPTIONS') {
+                more_set_headers 'Access-Control-Allow-Origin: *';
+                more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
+                more_set_headers 'Access-Control-Allow-Headers: *';
+                more_set_headers 'Access-Control-Max-Age: 86400';
+                more_set_headers 'Content-Length: 0';
+                return 204;
+            }
+
+            proxy_pass https://llm.chutes.ai/v1/models;
+            proxy_ssl_server_name on;
+            proxy_set_header Host llm.chutes.ai;
+            proxy_set_header Authorization "";
+            proxy_set_header X-API-Key "";
+            proxy_pass_request_headers off;
+        }
+
+        location = /v1/messages {
+            if ($request_method = 'OPTIONS') {
+                more_set_headers 'Access-Control-Allow-Origin: *';
+                more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
+                more_set_headers 'Access-Control-Allow-Headers: *';
+                more_set_headers 'Access-Control-Max-Age: 86400';
+                more_set_headers 'Content-Length: 0';
+                return 204;
+            }
+
+            content_by_lua_block {
+                local handler = require("claude_handler")
+                handler.handle()
+            }
+        }
+
+        location = /v1/responses {
+            if ($request_method = 'OPTIONS') {
+                more_set_headers 'Access-Control-Allow-Origin: *';
+                more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
+                more_set_headers 'Access-Control-Allow-Headers: *';
+                more_set_headers 'Access-Control-Max-Age: 86400';
+                more_set_headers 'Content-Length: 0';
+                return 204;
+            }
+
+            content_by_lua_block {
+                local handler = require("responses_handler")
+                handler.handle()
+            }
+        }
+
+        location /v1/ {
+            if ($request_method = 'OPTIONS') {
+                more_set_headers 'Access-Control-Allow-Origin: *';
+                more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
+                more_set_headers 'Access-Control-Allow-Headers: *';
+                more_set_headers 'Access-Control-Max-Age: 86400';
+                more_set_headers 'Content-Length: 0';
+                return 204;
+            }
+
+            content_by_lua_block {
+                local handler = require("e2ee_handler")
+                handler.handle()
+            }
+        }
+    }
+}

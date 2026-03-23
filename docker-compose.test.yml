@@ -1,0 +1,46 @@
+services:
+  test-chutes-idp:
+    image: python:3.14-alpine3.23
+    working_dir: /app
+    command: ["python", "/app/server.py"]
+    environment:
+      TEST_CHUTES_CLIENT_ID: ${CHUTES_OAUTH_CLIENT_ID}
+      TEST_CHUTES_CLIENT_SECRET: ${CHUTES_OAUTH_CLIENT_SECRET}
+      TEST_CHUTES_REDIRECT_URIS: https://${DROPZONE_HOST:-e2ee-local-proxy.chutes.dev}/rest/sso/chutes/callback,https://${DROPZONE_HOST:-e2ee-local-proxy.chutes.dev}/oauth/oidc/callback,https://${DROPZONE_HOST:-e2ee-local-proxy.chutes.dev}/chat/oauth/oidc/callback
+    volumes:
+      - ./tests/test-chutes-idp:/app:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [dropzone-net]
+    restart: unless-stopped
+
+  n8n:
+    depends_on:
+      postgres:
+        condition: service_healthy
+      test-chutes-idp:
+        condition: service_healthy
+    environment:
+      - CHUTES_IDP_BASE_URL=http://test-chutes-idp:8080
+      - CHUTES_CREDENTIAL_TEST_BASE_URL=${CHUTES_CREDENTIAL_TEST_BASE_URL:-http://test-chutes-idp:8080}
+      - CHUTES_ADMIN_USERNAMES=${CHUTES_ADMIN_USERNAMES:-admin-user}
+
+  openwebui:
+    depends_on:
+      postgres:
+        condition: service_healthy
+      test-chutes-idp:
+        condition: service_healthy
+    environment:
+      - DEFAULT_USER_ROLE=user
+      - OPENID_PROVIDER_URL=http://test-chutes-idp:8080/.well-known/openid-configuration
+      - OAUTH_SCOPES=${CHUTES_SSO_SCOPES:-openid profile chutes:read chutes:invoke}

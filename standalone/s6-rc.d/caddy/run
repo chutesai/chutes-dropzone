@@ -1,0 +1,28 @@
+#!/bin/sh
+#
+# s6 longrun: caddy
+#
+# Starts when: INSTALL_MODE=domain
+# Idles when:  INSTALL_MODE=local
+#
+set -eu
+
+MODE="${STANDALONE_INSTALL_MODE:-local}"
+DATA_DIR="${STANDALONE_DATA_DIR:-/data}"
+
+if [ "$MODE" != "domain" ]; then
+    exec sleep infinity
+fi
+
+CONF="/tmp/Caddyfile"
+if [ ! -f "$CONF" ]; then
+    echo "caddy: Caddyfile not found" >&2
+    exit 1
+fi
+
+export XDG_DATA_HOME="$DATA_DIR/caddy"
+export XDG_CONFIG_HOME="$DATA_DIR/caddy/config"
+mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
+
+echo "caddy: starting (domain mode)"
+exec /usr/bin/caddy run --config "$CONF" --adapter caddyfile

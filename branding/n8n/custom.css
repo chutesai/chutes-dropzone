@@ -1,0 +1,82 @@
+#side-menu [data-chutes-nav-slot="chat"] {
+  margin-top: auto;
+  padding: 0.7rem 0.75rem 0.55rem;
+  flex: 0 0 auto;
+}
+
+#side-menu [data-chutes-nav-slot="chat"] .chutes-crosslink {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.72rem;
+  border-radius: 14px;
+  border: 1px solid rgba(238, 110, 95, 0.24);
+  background:
+    radial-gradient(circle at top left, rgba(243, 190, 92, 0.18), transparent 52%),
+    linear-gradient(135deg, rgba(37, 40, 53, 0.94), rgba(24, 26, 34, 0.98));
+  box-shadow: 0 10px 24px rgba(9, 10, 14, 0.2);
+  color: #f7f7f6;
+  padding: 0.72rem 0.8rem;
+  text-decoration: none;
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+#side-menu [data-chutes-nav-slot="chat"] .chutes-crosslink:hover,
+#side-menu [data-chutes-nav-slot="chat"] .chutes-crosslink:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(243, 190, 92, 0.4);
+  box-shadow: 0 14px 28px rgba(9, 10, 14, 0.24);
+}
+
+#side-menu [data-chutes-nav-slot="chat"] .chutes-crosslink-mark {
+  display: inline-flex;
+  min-width: 2.2rem;
+  height: 2.2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgba(248, 248, 247, 0.08);
+  color: #f7f7f6;
+  font-size: 0.69rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+#side-menu [data-chutes-nav-slot="chat"] .chutes-crosslink-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.08rem;
+}
+
+#side-menu [data-chutes-nav-slot="chat"] .chutes-crosslink-meta {
+  color: rgba(247, 247, 246, 0.58);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+#side-menu [data-chutes-nav-slot="chat"] .chutes-crosslink-label {
+  color: #f7f7f6;
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#side-menu [data-chutes-nav-slot="chat"] .chutes-crosslink.is-compact {
+  justify-content: center;
+  padding: 0.64rem;
+}
+
+#side-menu [data-chutes-nav-slot="chat"] .chutes-crosslink.is-compact .chutes-crosslink-copy {
+  display: none;
+}

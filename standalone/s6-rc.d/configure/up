@@ -1,0 +1,9 @@
+#!/bin/sh
+#
+# s6 oneshot: post-startup configuration
+#
+# Runs after n8n is healthy. Provisions the break-glass owner account,
+# imports Chutes API credential (if key provided), and imports starter
+# workflows.
+#
+exec /opt/standalone/configure-standalone.sh

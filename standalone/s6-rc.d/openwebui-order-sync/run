@@ -1,0 +1,8 @@
+#!/bin/sh
+#
+# s6 longrun: OpenWebUI model-order sync
+#
+set -eu
+
+echo "openwebui-order-sync: starting"
+exec /opt/dropzone/openwebui-model-order-sync-loop.sh

@@ -1,0 +1,174 @@
+services:
+  postgres:
+    image: postgres:15.17-alpine3.23
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dropzone}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_N8N_DB:-${POSTGRES_DB:-n8n}}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dropzone}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [dropzone-net]
+    restart: unless-stopped
+
+  n8n:
+    build:
+      context: .
+      dockerfile: Dockerfile.local-repo
+      args:
+        NODE_VERSION: 24.13.1
+        N8N_VERSION: ${N8N_VERSION:-2.12.1}
+        N8N_SOURCE_REPO: ${N8N_SOURCE_REPO:-https://github.com/n8n-io/n8n.git}
+        N8N_SOURCE_REF: ${N8N_SOURCE_REF:-n8n@2.12.1}
+        N8N_SOURCE_SHA: ${N8N_SOURCE_SHA:-42c7f71b6863581044006af0309ac38aab8d7c9f}
+        E2EE_PROXY_IMAGE: ${E2EE_PROXY_IMAGE:-parachutes/e2ee-proxy:latest@sha256:0af4965c84e3eace05063fe2a013e818c30dd3687e9690a3bea83ae1df3b9a56}
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_N8N_DB:-${POSTGRES_DB:-n8n}}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER:-dropzone}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_JWT_SECRET}
+      - N8N_HOST=${DROPZONE_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_LISTEN_ADDRESS=0.0.0.0
+      - N8N_PROTOCOL=https
+      - N8N_EDITOR_BASE_URL=https://${DROPZONE_HOST:-localhost}/n8n/
+      - N8N_PATH=/n8n/
+      - N8N_PROXY_HOPS=1
+      - N8N_SECURE_COOKIE=true
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - WEBHOOK_URL=https://${DROPZONE_HOST:-localhost}/n8n/
+      - N8N_CUSTOM_EXTENSIONS=/opt/custom-nodes
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_VERSION_NOTIFICATIONS_ENABLED=false
+      - N8N_RUNNERS_ENABLED=true
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - GENERIC_TIMEZONE=${TZ:-UTC}
+      - CHUTES_OAUTH_CLIENT_ID=${CHUTES_OAUTH_CLIENT_ID}
+      - CHUTES_OAUTH_CLIENT_SECRET=${CHUTES_OAUTH_CLIENT_SECRET}
+      - CHUTES_IDP_BASE_URL=${CHUTES_IDP_BASE_URL:-https://api.chutes.ai}
+      - CHUTES_SSO_LOGIN_LABEL=${CHUTES_SSO_LOGIN_LABEL:-Login with Chutes}
+      - CHUTES_SSO_SCOPES=${CHUTES_SSO_SCOPES:-openid profile chutes:read chutes:invoke}
+      - CHUTES_SSO_CALLBACK_URL=https://${DROPZONE_HOST:-localhost}/rest/sso/chutes/callback
+      - CHUTES_ADMIN_USERNAMES=${CHUTES_ADMIN_USERNAMES:-}
+      - CHUTES_TRAFFIC_MODE=${CHUTES_TRAFFIC_MODE:-direct}
+      - CHUTES_PROXY_BASE_URL=${CHUTES_PROXY_BASE_URL:-}
+      - CHUTES_CREDENTIAL_TEST_BASE_URL=${CHUTES_CREDENTIAL_TEST_BASE_URL:-}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O- http://127.0.0.1:5678/rest/settings >/dev/null 2>&1",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks: [dropzone-net]
+    restart: unless-stopped
+
+  openwebui:
+    build:
+      context: .
+      dockerfile: Dockerfile.local-repo
+      target: openwebui-runtime
+      args:
+        OPENWEBUI_VERSION: ${OPENWEBUI_VERSION:-v0.8.10}
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-dropzone}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_OPENWEBUI_DB:-openwebui}
+      - WEBUI_URL=https://${DROPZONE_HOST:-localhost}/chat
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+      - WEBUI_NAME=${OPENWEBUI_NAME:-Chutes Chat}
+      - ADMIN_EMAIL=${OPENWEBUI_ADMIN_EMAIL}
+      - WEBUI_ADMIN_EMAIL=${OPENWEBUI_ADMIN_EMAIL}
+      - WEBUI_ADMIN_PASSWORD=${OPENWEBUI_ADMIN_PASSWORD}
+      - WEBUI_ADMIN_NAME=${OPENWEBUI_ADMIN_NAME:-Chutes Chat Admin}
+      - ENABLE_PERSISTENT_CONFIG=false
+      - ENABLE_OAUTH_PERSISTENT_CONFIG=false
+      - ENABLE_OAUTH_SIGNUP=true
+      - ENABLE_LOGIN_FORM=false
+      - ENABLE_PASSWORD_AUTH=false
+      - DEFAULT_USER_ROLE=user
+      - BYPASS_MODEL_ACCESS_CONTROL=true
+      - ENABLE_OAUTH_EMAIL_FALLBACK=true
+      - OAUTH_PROVIDER_NAME=Chutes
+      - OAUTH_CLIENT_ID=${CHUTES_OAUTH_CLIENT_ID}
+      - OAUTH_CLIENT_SECRET=${CHUTES_OAUTH_CLIENT_SECRET}
+      - OAUTH_SCOPES=${CHUTES_SSO_SCOPES:-openid profile chutes:read chutes:invoke}
+      - OAUTH_SUB_CLAIM=sub
+      - OAUTH_USERNAME_CLAIM=username
+      - OAUTH_EMAIL_CLAIM=email
+      - OAUTH_PICTURE_CLAIM=
+      - OPENID_PROVIDER_URL=${CHUTES_IDP_BASE_URL:-https://api.chutes.ai}/.well-known/openid-configuration
+      - OPENID_REDIRECT_URI=https://${DROPZONE_HOST:-localhost}/oauth/oidc/callback
+      - OPENAI_API_BASE_URLS=${OPENWEBUI_API_BASE_URL:-https://llm.chutes.ai/v1}
+      - OPENAI_API_KEYS=${OPENWEBUI_API_KEY:-}
+      - MODELS_CACHE_TTL=${OPENWEBUI_MODELS_CACHE_TTL:-300}
+      - PORT=8080
+    volumes:
+      - openwebui_data:/app/backend/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=5).read()",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks: [dropzone-net]
+    restart: unless-stopped
+
+  openwebui-order-sync:
+    build:
+      context: .
+      dockerfile: Dockerfile.local-repo
+      target: openwebui-runtime
+      args:
+        OPENWEBUI_VERSION: ${OPENWEBUI_VERSION:-v0.8.10}
+    command: ["/opt/dropzone/openwebui-model-order-sync-loop.sh"]
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-dropzone}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_OPENWEBUI_DB:-openwebui}
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+      - ADMIN_EMAIL=${OPENWEBUI_ADMIN_EMAIL}
+      - WEBUI_ADMIN_EMAIL=${OPENWEBUI_ADMIN_EMAIL}
+      - PYTHONPATH=/app/backend
+      - OPENWEBUI_SYNC_BASE_URL=http://openwebui:8080
+      - OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL=${OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL:-300}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      openwebui:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    networks: [dropzone-net]
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  n8n_data:
+  openwebui_data:
+
+networks:
+  dropzone-net:

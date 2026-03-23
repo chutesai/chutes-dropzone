@@ -1,0 +1,52 @@
+__SERVER_NAME__ {
+    __TLS_DIRECTIVE__
+
+    encode zstd gzip
+
+    __CHUTES_V1_BLOCK__
+
+    redir /chat /chat/ 308
+    redir /chat/ /home 302
+    redir /n8n /n8n/ 308
+
+    @chatAlias path_regexp chatAlias ^/chat/(.+)$
+    redir @chatAlias /{re.chatAlias.1} 308
+
+    handle_path /n8n/* {
+        reverse_proxy 127.0.0.1:5678 {
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    handle /rest/sso/chutes/* {
+        reverse_proxy 127.0.0.1:5678 {
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    handle /_dropzone/* {
+        header Cache-Control "public, max-age=31536000, immutable"
+        uri strip_prefix /_dropzone
+        root * /opt/landing
+        file_server
+    }
+
+    handle / {
+        header Cache-Control "no-store"
+        root * /opt/landing
+        rewrite * /index.html
+        file_server
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:8080 {
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+}

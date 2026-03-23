@@ -1,0 +1,10 @@
+#!/bin/sh
+#
+# s6 longrun: n8n
+#
+# Always starts. DB_TYPE is set by entrypoint.sh (sqlite or postgresdb).
+#
+set -eu
+
+echo "n8n: starting (DB_TYPE=${DB_TYPE:-sqlite})"
+exec /docker-entrypoint.sh

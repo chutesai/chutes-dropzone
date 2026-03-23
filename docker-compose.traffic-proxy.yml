@@ -1,0 +1,32 @@
+services:
+  e2ee-proxy:
+    image: chutes-dropzone-e2ee-proxy:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.e2ee-proxy
+      args:
+        E2EE_PROXY_IMAGE: ${E2EE_PROXY_IMAGE:-parachutes/e2ee-proxy:latest}
+    environment:
+      TLS_SELF_SIGNED: "true"
+      TLS_DOMAIN: ${DROPZONE_HOST:-e2ee-local-proxy.chutes.dev}
+      ALLOW_NON_CONFIDENTIAL: ${ALLOW_NON_CONFIDENTIAL:-false}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- --no-check-certificate https://127.0.0.1/health >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [dropzone-net]
+    restart: unless-stopped
+
+  n8n:
+    depends_on:
+      e2ee-proxy:
+        condition: service_healthy
+
+  openwebui:
+    environment:
+      - OPENAI_API_BASE_URLS=https://e2ee-proxy:443/v1
+    depends_on:
+      e2ee-proxy:
+        condition: service_healthy

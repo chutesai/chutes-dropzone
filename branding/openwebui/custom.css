@@ -1,0 +1,89 @@
+:root {
+  --chutes-crosslink-bg: linear-gradient(135deg, rgba(238, 110, 95, 0.2), rgba(243, 190, 92, 0.18));
+  --chutes-crosslink-border: rgba(238, 110, 95, 0.28);
+  --chutes-crosslink-text: rgba(248, 248, 247, 0.98);
+  --chutes-crosslink-meta: rgba(248, 248, 247, 0.62);
+}
+
+[data-chutes-nav-slot="n8n"] {
+  margin-top: auto;
+  padding: 0.7rem 0.9rem 0.55rem;
+  flex: 0 0 auto;
+}
+
+[data-chutes-nav-slot="n8n"] .chutes-crosslink {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 0.95rem;
+  border: 1px solid var(--chutes-crosslink-border);
+  background: var(--chutes-crosslink-bg);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
+  color: var(--chutes-crosslink-text);
+  padding: 0.75rem 0.85rem;
+  text-decoration: none;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background 140ms ease;
+}
+
+[data-chutes-nav-slot="n8n"] .chutes-crosslink:hover,
+[data-chutes-nav-slot="n8n"] .chutes-crosslink:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(243, 190, 92, 0.42);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
+}
+
+[data-chutes-nav-slot="n8n"] .chutes-crosslink-mark {
+  display: inline-flex;
+  min-width: 2.25rem;
+  height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  background: rgba(248, 248, 247, 0.1);
+  color: rgba(248, 248, 247, 0.96);
+  font-size: 0.73rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+[data-chutes-nav-slot="n8n"] .chutes-crosslink-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.08rem;
+}
+
+[data-chutes-nav-slot="n8n"] .chutes-crosslink-meta {
+  color: var(--chutes-crosslink-meta);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+[data-chutes-nav-slot="n8n"] .chutes-crosslink-label {
+  color: var(--chutes-crosslink-text);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-chutes-nav-slot="n8n"] .chutes-crosslink.is-compact {
+  justify-content: center;
+  padding: 0.68rem;
+}
+
+[data-chutes-nav-slot="n8n"] .chutes-crosslink.is-compact .chutes-crosslink-copy {
+  display: none;
+}

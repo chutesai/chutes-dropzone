@@ -1,0 +1,34 @@
+#!/bin/sh
+#
+# s6 longrun: openresty
+#
+# Starts when:
+#   INSTALL_MODE=local (edge proxy + e2ee Lua handlers)
+#   INSTALL_MODE=domain AND CHUTES_TRAFFIC_MODE=e2ee-proxy (internal e2ee on 8443)
+# Idles when:
+#   INSTALL_MODE=domain AND CHUTES_TRAFFIC_MODE=direct
+#
+set -eu
+
+MODE="${STANDALONE_INSTALL_MODE:-local}"
+TRAFFIC="${STANDALONE_TRAFFIC_MODE:-direct}"
+
+if [ "$MODE" = "domain" ] && [ "$TRAFFIC" != "e2ee-proxy" ]; then
+    exec sleep infinity
+fi
+
+if [ "$MODE" = "local" ]; then
+    CONF="/tmp/nginx-standalone.conf"
+else
+    CONF="/tmp/nginx-e2ee-internal.conf"
+fi
+
+if [ ! -f "$CONF" ]; then
+    echo "openresty: config not found at $CONF" >&2
+    exit 1
+fi
+
+cp "$CONF" /usr/local/openresty/nginx/conf/nginx.conf
+
+echo "openresty: starting (${MODE} + ${TRAFFIC})"
+exec /usr/local/openresty/bin/openresty -g 'daemon off;'

@@ -1,0 +1,260 @@
+ARG NODE_VERSION=24.13.1
+ARG N8N_VERSION=2.12.1
+ARG OPENWEBUI_VERSION=v0.8.10
+ARG N8N_SOURCE_REPO=https://github.com/n8n-io/n8n.git
+ARG N8N_SOURCE_REF=n8n@2.12.1
+ARG N8N_SOURCE_SHA=42c7f71b6863581044006af0309ac38aab8d7c9f
+ARG N8N_BUILD_CONCURRENCY=4
+ARG NODE_BUILDER_IMAGE=node:24.13.1-alpine@sha256:d88d203cab4ee6fa4897d8286f3caea2e9cf48db77176042fca2f4ac4a4414ce
+ARG N8N_BASE_IMAGE=n8nio/base:24.13.1@sha256:9317591730fb0bade89bd0b3ea2e1e8691b9467c8827e760c55b205262ab418f
+ARG UBUNTU_BASE_IMAGE=ubuntu:22.04@sha256:c9672795a48854502d9dc0f1b719ac36dd99259a2f8ce425904a5cb4ae0d60d2
+ARG E2EE_PROXY_IMAGE=parachutes/e2ee-proxy:latest@sha256:0af4965c84e3eace05063fe2a013e818c30dd3687e9690a3bea83ae1df3b9a56
+ARG S6_OVERLAY_VERSION=3.2.0.2
+ARG CADDY_IMAGE=caddy:2.11.2-alpine@sha256:a1b7e624f860619cea121bdbc5dec2e112401666298c6507c6793b0a3ee6fc8e
+ARG IMAGE_PLATFORM=linux/amd64
+
+# ---------------------------------------------------------------------------
+# This image intentionally targets linux/amd64 everywhere so local builds and
+# published releases use the same amd64 target on every host.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Stage 1: build custom Chutes nodes (reused from Dockerfile.n8n)
+# ---------------------------------------------------------------------------
+FROM --platform=$IMAGE_PLATFORM ${NODE_BUILDER_IMAGE} AS chutes-nodes-builder
+
+WORKDIR /build
+COPY build/n8n-nodes-chutes/ ./
+RUN npm ci --ignore-scripts && npm run build && rm -rf node_modules && npm ci --ignore-scripts --omit=dev
+
+# ---------------------------------------------------------------------------
+# Stage 2: build n8n with overlays (reused from Dockerfile.n8n)
+# ---------------------------------------------------------------------------
+FROM --platform=$IMAGE_PLATFORM ${N8N_BASE_IMAGE} AS n8n-builder
+
+ARG N8N_SOURCE_REPO
+ARG N8N_SOURCE_REF
+ARG N8N_SOURCE_SHA
+ARG N8N_BUILD_CONCURRENCY
+
+WORKDIR /src
+
+RUN git clone --depth 1 --branch "${N8N_SOURCE_REF}" "${N8N_SOURCE_REPO}" /src && \
+    test "$(git -C /src rev-parse HEAD)" = "${N8N_SOURCE_SHA}"
+
+COPY n8n-overlays /overlay/n8n-overlays
+COPY scripts/apply-n8n-overlay.mjs /overlay/scripts/apply-n8n-overlay.mjs
+
+RUN node /overlay/scripts/apply-n8n-overlay.mjs /src /overlay
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    --mount=type=cache,id=pnpm-metadata,target=/root/.cache/pnpm/metadata \
+    DOCKER_BUILD=true pnpm install --frozen-lockfile
+RUN attempts=0; \
+    until [ "$attempts" -ge 6 ]; do \
+        attempts=$((attempts + 1)); \
+        echo "Running pnpm build (attempt ${attempts}/6, turbo concurrency=${N8N_BUILD_CONCURRENCY})"; \
+        if pnpm exec turbo run build --concurrency="${N8N_BUILD_CONCURRENCY}"; then \
+            break; \
+        fi; \
+        if [ "$attempts" -ge 6 ]; then \
+            exit 1; \
+        fi; \
+        echo "pnpm build failed, retrying after transient Turborepo error..."; \
+        sleep 2; \
+    done
+
+RUN node -e 'const fs = require("fs"); const file = "package.json"; const data = JSON.parse(fs.readFileSync(file, "utf8")); if (data.pnpm) delete data.pnpm.patchedDependencies; fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n");'
+RUN node .github/scripts/trim-fe-packageJson.js
+RUN find . -type f '(' -name '*.ts' -o -name '*.js.map' -o -name '*.vue' -o -name 'tsconfig.json' -o -name '*.tsbuildinfo' ')' -delete
+
+RUN mkdir /compiled
+RUN NODE_ENV=production DOCKER_BUILD=true pnpm --filter=n8n --prod --no-optional deploy --legacy /compiled
+
+# ---------------------------------------------------------------------------
+# Stage 3: rebuild native addons on Ubuntu (glibc, matching runtime base)
+# ---------------------------------------------------------------------------
+FROM --platform=$IMAGE_PLATFORM ${UBUNTU_BASE_IMAGE} AS native-addon-builder
+
+ARG NODE_VERSION
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl xz-utils python3 make g++ && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN NODE_ARCH="$(case "$(dpkg --print-architecture)" in \
+        amd64) echo "x64";; \
+        arm64) echo "arm64";; \
+        armhf) echo "armv7l";; \
+        ppc64el) echo "ppc64le";; \
+        *) echo "$(dpkg --print-architecture)";; \
+    esac)" && \
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
+        | tar -xJ -C /usr/local --strip-components=1
+
+COPY --from=n8n-builder /compiled /usr/local/lib/node_modules/n8n
+RUN cd /usr/local/lib/node_modules/n8n && \
+    npm rebuild sqlite3 && \
+    ISOLATED_VM_DIR="$(node -p 'require("path").dirname(require.resolve("isolated-vm/package.json"))' | tr -d '\r\n')" && \
+    cd "$ISOLATED_VM_DIR" && \
+    node /usr/local/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js rebuild --release -j 1 && \
+    node /usr/local/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js clean
+
+# ---------------------------------------------------------------------------
+# Stage 4: extract openresty + Lua + native .so from e2ee-proxy
+# ---------------------------------------------------------------------------
+FROM --platform=$IMAGE_PLATFORM ${E2EE_PROXY_IMAGE} AS openresty-layer
+
+# ---------------------------------------------------------------------------
+# Stage 5: Caddy binary
+# ---------------------------------------------------------------------------
+FROM --platform=$IMAGE_PLATFORM ${CADDY_IMAGE} AS caddy-binary
+
+# ---------------------------------------------------------------------------
+# Stage 6: OpenWebUI runtime base
+# ---------------------------------------------------------------------------
+FROM --platform=$IMAGE_PLATFORM ghcr.io/open-webui/open-webui:${OPENWEBUI_VERSION} AS openwebui-src
+
+# ---------------------------------------------------------------------------
+# Stage 6b: repo-pinned OpenWebUI image for compose/local use
+# ---------------------------------------------------------------------------
+FROM --platform=$IMAGE_PLATFORM openwebui-src AS openwebui-runtime
+
+COPY branding/openwebui/custom.css /app/build/static/custom.css
+COPY branding/openwebui/loader.js /app/build/static/loader.js
+COPY branding/openwebui/custom.css /app/backend/open_webui/static/custom.css
+COPY branding/openwebui/loader.js /app/backend/open_webui/static/loader.js
+COPY scripts/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync.py
+COPY scripts/openwebui-model-order-sync-loop.sh /opt/dropzone/openwebui-model-order-sync-loop.sh
+RUN chmod +x /opt/dropzone/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync-loop.sh
+
+# ---------------------------------------------------------------------------
+# Stage 7: runtime — OpenWebUI + n8n + openresty + Caddy + s6-overlay
+# ---------------------------------------------------------------------------
+FROM --platform=$IMAGE_PLATFORM openwebui-src
+
+ARG NODE_VERSION
+ARG N8N_VERSION
+ARG OPENWEBUI_VERSION
+ARG S6_OVERLAY_VERSION
+
+ENV NODE_ENV=production \
+    SHELL=/bin/sh \
+    N8N_CUSTOM_EXTENSIONS=/opt/custom-nodes \
+    S6_KEEP_ENV=1 \
+    S6_BEHAVIOUR_IF_STAGE2_FAILS=2 \
+    S6_CMD_WAIT_FOR_SERVICES_MAXTIME=120000
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        git \
+        graphicsmagick \
+        libatomic1 \
+        openssl \
+        sqlite3 \
+        tini \
+        wget \
+        xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Node.js (same version used to build n8n)
+RUN NODE_ARCH="$(case "$(dpkg --print-architecture)" in \
+        amd64) echo "x64";; \
+        arm64) echo "arm64";; \
+        armhf) echo "armv7l";; \
+        ppc64el) echo "ppc64le";; \
+        *) echo "$(dpkg --print-architecture)";; \
+    esac)" && \
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
+        | tar -xJ -C /usr/local --strip-components=1 && \
+    node --version
+
+# s6-overlay v3
+RUN ARCH_S6=$(case "$(dpkg --print-architecture)" in \
+        amd64) echo "x86_64";; \
+        arm64) echo "aarch64";; \
+        *) echo "$(dpkg --print-architecture)";; \
+    esac) && \
+    curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz" \
+        | tar -xJp -C / && \
+    curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${ARCH_S6}.tar.xz" \
+        | tar -xJp -C /
+
+RUN groupadd -r node && useradd -r -g node -m -d /home/node node
+
+WORKDIR /home/node
+
+# n8n (native addons built on Ubuntu in stage 3)
+COPY --from=native-addon-builder /usr/local/lib/node_modules/n8n /usr/local/lib/node_modules/n8n
+COPY --from=n8n-builder /src/docker/images/n8n/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh && \
+    ln -s /usr/local/lib/node_modules/n8n/bin/n8n /usr/local/bin/n8n
+
+COPY branding/n8n/custom.css /opt/branding/n8n/custom.css
+COPY branding/n8n/custom.js /opt/branding/n8n/custom.js
+COPY scripts/patch-n8n-build.mjs /opt/build-tools/patch-n8n-build.mjs
+RUN N8N_UI_DIST="/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-editor-ui@file+packages+frontend+editor-ui/node_modules/n8n-editor-ui/dist" && \
+    install -m 0644 /opt/branding/n8n/custom.css "$N8N_UI_DIST/static/chutes-custom.css" && \
+    install -m 0644 /opt/branding/n8n/custom.js "$N8N_UI_DIST/static/chutes-custom.js" && \
+    node /opt/build-tools/patch-n8n-build.mjs \
+        "$N8N_UI_DIST/index.html" \
+        "/{{BASE_PATH}}/static/chutes-custom.css" \
+        "/{{BASE_PATH}}/static/chutes-custom.js"
+
+COPY branding/openwebui/custom.css /app/build/static/custom.css
+COPY branding/openwebui/loader.js /app/build/static/loader.js
+COPY branding/openwebui/custom.css /app/backend/open_webui/static/custom.css
+COPY branding/openwebui/loader.js /app/backend/open_webui/static/loader.js
+COPY scripts/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync.py
+COPY scripts/openwebui-model-order-sync-loop.sh /opt/dropzone/openwebui-model-order-sync-loop.sh
+RUN chmod +x /opt/dropzone/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync-loop.sh
+
+# Custom Chutes nodes
+RUN mkdir -p /opt/custom-nodes/n8n-nodes-chutes
+COPY --from=chutes-nodes-builder /build/dist/ /opt/custom-nodes/n8n-nodes-chutes/dist/
+COPY --from=chutes-nodes-builder /build/package.json /opt/custom-nodes/n8n-nodes-chutes/
+COPY --from=chutes-nodes-builder /build/node_modules/ /opt/custom-nodes/n8n-nodes-chutes/node_modules/
+
+# openresty (only the installation dir, not system libs)
+COPY --from=openresty-layer /usr/local/openresty /usr/local/openresty
+COPY n8n-overlays/e2ee-proxy/lua/e2ee_discovery.lua /usr/local/openresty/lua/e2ee_discovery.lua
+
+# Caddy
+COPY --from=caddy-binary /usr/bin/caddy /usr/bin/caddy
+
+# Standalone scripts and configs
+COPY standalone/entrypoint.sh /opt/standalone/entrypoint.sh
+COPY standalone/configure-standalone.sh /opt/standalone/configure-standalone.sh
+COPY standalone/nginx-standalone.conf.template /opt/standalone/nginx-standalone.conf.template
+COPY standalone/nginx-e2ee-internal.conf.template /opt/standalone/nginx-e2ee-internal.conf.template
+COPY standalone/Caddyfile.template /opt/standalone/Caddyfile.template
+COPY landing/ /opt/landing/
+RUN chmod +x /opt/standalone/entrypoint.sh /opt/standalone/configure-standalone.sh
+
+# Starter workflows
+COPY workflows/ /opt/workflows/
+
+# s6 service definitions
+COPY standalone/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
+RUN mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d && \
+    touch /etc/s6-overlay/s6-rc.d/user/contents.d/openresty \
+          /etc/s6-overlay/s6-rc.d/user/contents.d/caddy \
+          /etc/s6-overlay/s6-rc.d/user/contents.d/openwebui \
+          /etc/s6-overlay/s6-rc.d/user/contents.d/openwebui-order-sync \
+          /etc/s6-overlay/s6-rc.d/user/contents.d/n8n \
+          /etc/s6-overlay/s6-rc.d/user/contents.d/configure
+
+# Dummy self-signed cert for openresty startup (replaced at runtime)
+RUN openssl req -x509 -newkey rsa:2048 -keyout /tmp/dummy.key -out /tmp/dummy.crt \
+        -days 3650 -nodes -subj "/CN=localhost" 2>/dev/null && \
+    cp /tmp/dummy.crt /tmp/e2ee-self-signed.crt && \
+    cp /tmp/dummy.key /tmp/e2ee-self-signed.key
+
+# Permissions
+RUN mkdir -p /data/.n8n /data/caddy /data/openwebui && \
+    chown -R node:node /home/node /opt/custom-nodes /data /tmp/dummy.* /tmp/e2ee-self-signed.*
+
+VOLUME /data
+EXPOSE 80 443 5678
+
+ENTRYPOINT ["/opt/standalone/entrypoint.sh"]
