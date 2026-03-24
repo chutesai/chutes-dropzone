@@ -555,12 +555,13 @@ import json
 import os
 
 raw = os.environ["MEMBER_N8N_SUMMARY"]
-summary = json.loads(raw)
+payload = json.loads(raw)
+summary = payload.get("data", payload)
 if "username" not in summary:
     raise SystemExit(f"n8n account summary missing 'username': {raw[:500]}")
 assert summary["username"] == "member-user"
-assert summary["tier"] == "pro"
-assert summary["tierLabel"] == "Pro"
+assert summary["tier"] == "enterprise"
+assert summary["tierLabel"] == "Enterprise"
 assert abs(summary["quota"]["used"] - 1284.9) < 0.01
 assert abs(summary["quota"]["limit"] - 5001) < 0.01
 assert summary["links"]["chatUrl"] == "/chat/"
@@ -587,8 +588,8 @@ summary = json.loads(raw)
 if "username" not in summary:
     raise SystemExit(f"account summary missing 'username': {raw[:500]}")
 assert summary["username"] == "member-user", f"expected member-user, got {summary['username']}"
-assert summary["tier"] == "pro"
-assert summary["tierLabel"] == "Pro"
+assert summary["tier"] == "enterprise"
+assert summary["tierLabel"] == "Enterprise"
 assert abs(summary["quota"]["used"] - 1284.9) < 0.01
 assert abs(summary["quota"]["limit"] - 5001) < 0.01
 assert summary["links"]["accountUrl"] == "https://chutes.ai/app/api/billing-balance#daily-quota-usage"
