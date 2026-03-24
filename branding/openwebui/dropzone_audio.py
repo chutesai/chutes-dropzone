@@ -81,18 +81,14 @@ def _get_any_oauth_token() -> str:
         from open_webui.internal.db import get_db
 
         with get_db() as db:
-            # Try admin users first, then any user with a session
             from open_webui.models.users import Users
-            for user in Users.get_users(db=db):
-                if user.role != "admin":
-                    continue
+            result = Users.get_users(db=db)
+            user_list = result.get("users", []) if isinstance(result, dict) else result
+
+            # Try admin users first, then any user with a session
+            for user in sorted(user_list, key=lambda u: 0 if u.role == "admin" else 1):
                 session = OAuthSessions.get_session_by_provider_and_user_id("oidc", user.id, db=db)
-                if session and session.token and session.token.get("access_token"):
-                    return session.token["access_token"]
-            # Fallback: any user with a session
-            for user in Users.get_users(db=db):
-                session = OAuthSessions.get_session_by_provider_and_user_id("oidc", user.id, db=db)
-                if session and session.token and session.token.get("access_token"):
+                if session and isinstance(session.token, dict) and session.token.get("access_token"):
                     return session.token["access_token"]
     except Exception:
         pass
@@ -188,7 +184,7 @@ def _get_oauth_token(user, db) -> str:
         if not session:
             sessions = OAuthSessions.get_sessions_by_user_id(user.id, db=db)
             session = sessions[0] if sessions else None
-        if session and session.token:
+        if session and isinstance(session.token, dict):
             return session.token.get("access_token", "")
     except Exception:
         pass
