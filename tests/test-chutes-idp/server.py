@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import base64
 import json
 import os
 import urllib.parse
@@ -104,6 +105,9 @@ def parse_refresh_token(token):
     return code, generation
 
 
+ISSUER = "http://test-chutes-idp:8080"
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "FakeChutesIdP/1.0"
 
@@ -137,16 +141,15 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(200, {"status": "ok"})
 
         if parsed.path == "/.well-known/openid-configuration":
-            issuer = "http://test-chutes-idp:8080"
             return self.json_response(
                 200,
                 {
-                    "issuer": issuer,
-                    "authorization_endpoint": f"{issuer}/idp/authorize",
-                    "token_endpoint": f"{issuer}/idp/token",
-                    "userinfo_endpoint": f"{issuer}/idp/userinfo",
-                    "revocation_endpoint": f"{issuer}/idp/token/revoke",
-                    "introspection_endpoint": f"{issuer}/idp/token/introspect",
+                    "issuer": ISSUER,
+                    "authorization_endpoint": f"{ISSUER}/idp/authorize",
+                    "token_endpoint": f"{ISSUER}/idp/token",
+                    "userinfo_endpoint": f"{ISSUER}/idp/userinfo",
+                    "revocation_endpoint": f"{ISSUER}/idp/token/revoke",
+                    "introspection_endpoint": f"{ISSUER}/idp/token/introspect",
                     "scopes_supported": sorted(SUPPORTED_SCOPES),
                     "response_types_supported": ["code"],
                     "response_modes_supported": ["query"],
@@ -321,6 +324,17 @@ class Handler(BaseHTTPRequestHandler):
         refresh_token = form.get("refresh_token", [""])[0]
         grant_type = form.get("grant_type", [""])[0]
         redirect_uri = form.get("redirect_uri", [""])[0]
+
+        if not client_id or not client_secret:
+            authorization = self.headers.get("Authorization", "")
+            if authorization.startswith("Basic "):
+                try:
+                    decoded = base64.b64decode(authorization[6:]).decode("utf-8")
+                    basic_id, basic_secret = decoded.split(":", 1)
+                    client_id = client_id or urllib.parse.unquote(basic_id)
+                    client_secret = client_secret or urllib.parse.unquote(basic_secret)
+                except Exception:
+                    pass
 
         if client_id != CLIENT_ID or client_secret != CLIENT_SECRET:
             return self.json_response(401, {"error": "invalid_client"})
