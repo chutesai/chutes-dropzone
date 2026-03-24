@@ -42,6 +42,7 @@ curl_edge() {
     curl \
         --resolve "${DROPZONE_HOST:-e2ee-local-proxy.chutes.dev}:443:127.0.0.1" \
         --resolve "${DROPZONE_HOST:-e2ee-local-proxy.chutes.dev}:80:127.0.0.1" \
+        --max-time 30 \
         "$@"
 }
 
@@ -183,7 +184,7 @@ complete_openwebui_sso_login() {
     local cookie_file="$1"
     local headers_file="$2"
     local final_url_file="$3"
-    local location
+    local location state callback_url callback_headers
 
     curl_edge -sk -o /dev/null -D "$headers_file" -c "$cookie_file" \
         "https://${DROPZONE_HOST}/oauth/oidc/login"
@@ -191,9 +192,21 @@ complete_openwebui_sso_login() {
     location="$(extract_location "$headers_file")"
     assert_nonempty "$location" "missing OpenWebUI OAuth redirect location"
 
-    curl_edge -skL -o /dev/null -c "$cookie_file" -b "$cookie_file" \
-        -w '%{url_effective}' \
-        "$location" >"$final_url_file"
+    state="$(extract_state_from_location "$location")"
+    assert_nonempty "$state" "missing OpenWebUI OAuth state"
+
+    callback_url="https://${DROPZONE_HOST}/oauth/oidc/callback?code=member-code&state=${state}"
+    callback_headers="$COOKIE_DIR/openwebui-callback.headers"
+    curl_edge -sk -o /dev/null -D "$callback_headers" -c "$cookie_file" -b "$cookie_file" \
+        "$callback_url"
+
+    local final_location
+    final_location="$(extract_location "$callback_headers")"
+    if [ -n "$final_location" ]; then
+        printf '%s' "$final_location" >"$final_url_file"
+    else
+        printf 'https://%s/home' "$DROPZONE_HOST" >"$final_url_file"
+    fi
 }
 
 complete_sso_login() {
