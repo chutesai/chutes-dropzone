@@ -40,6 +40,48 @@ type ChutesUserInfo = {
 	created_at?: string;
 };
 
+type ChutesQuotaItem = {
+	chute_id?: string;
+	quota?: number;
+	is_default?: boolean;
+};
+
+type ChutesLiveQuota = {
+	used?: number;
+	quota?: number;
+};
+
+type ChutesAccount = {
+	username?: string;
+	logo?: string;
+	permissions_bitmask?: number;
+	balance?: number;
+};
+
+type ChutesManagedCredentialData = {
+	authType?: string;
+	apiKey?: string;
+	environment?: string;
+	customUrl?: string;
+	sessionToken?: string;
+	refreshToken?: string;
+	tokenExpiresAt?: string;
+	grantedScopes?: string;
+	chutesSubject?: string;
+	chutesUsername?: string;
+};
+
+type ManagedCredentialLookup = {
+	credential: NonNullable<
+		NonNullable<
+			Awaited<ReturnType<SharedCredentialsRepository['findOne']>>
+		>['credentials']
+	>;
+	data: ChutesManagedCredentialData;
+};
+
+class ChutesAccountUnauthorizedError extends Error {}
+
 @Service()
 export class ChutesSsoService {
 	constructor(
@@ -127,6 +169,38 @@ export class ChutesSsoService {
 		};
 	}
 
+	async getAccountSummaryForUser(user: Pick<User, 'id' | 'email' | 'firstName'>) {
+		let managedCredential: ManagedCredentialLookup;
+
+		try {
+			managedCredential = await this.getManagedCredentialForUser(user.id);
+		} catch (error) {
+			const fallbackCredential = await this.getAdminFallbackManagedCredential(user.id);
+			if (!fallbackCredential) {
+				throw error;
+			}
+			managedCredential = fallbackCredential;
+		}
+
+		try {
+			const { account, quotas, liveQuota } = await this.fetchAccountBundle(
+				managedCredential.data.sessionToken,
+			);
+			return this.buildAccountSummary(user, account, quotas, liveQuota);
+		} catch (error) {
+			if (!(error instanceof ChutesAccountUnauthorizedError)) {
+				throw new AuthError('Failed to fetch the Chutes account summary');
+			}
+		}
+
+		managedCredential = await this.refreshManagedCredential(managedCredential);
+		const { account, quotas, liveQuota } = await this.fetchAccountBundle(
+			managedCredential.data.sessionToken,
+		);
+
+		return this.buildAccountSummary(user, account, quotas, liveQuota);
+	}
+
 	private async exchangeCode(code: string, verifier: string) {
 		const response = await axios.post<ChutesTokenResponse>(
 			`${this.idpBaseUrl}/idp/token`,
@@ -148,6 +222,30 @@ export class ChutesSsoService {
 
 		if (response.status !== 200 || !response.data.access_token) {
 			throw new AuthError('Failed to exchange Chutes authorization code');
+		}
+
+		return response.data;
+	}
+
+	private async refreshAccessToken(refreshToken: string) {
+		const response = await axios.post<ChutesTokenResponse>(
+			`${this.idpBaseUrl}/idp/token`,
+			new URLSearchParams({
+				grant_type: 'refresh_token',
+				client_id: this.clientId,
+				client_secret: this.clientSecret,
+				refresh_token: refreshToken,
+			}).toString(),
+			{
+				headers: {
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+				validateStatus: () => true,
+			},
+		);
+
+		if (response.status !== 200 || !response.data.access_token) {
+			throw new AuthError('Failed to refresh the Chutes OAuth session');
 		}
 
 		return response.data;
@@ -319,6 +417,117 @@ export class ChutesSsoService {
 		await this.credentialsService.createManagedCredential(credentialPayload, user);
 	}
 
+	private async getManagedCredentialForUser(userId: string): Promise<ManagedCredentialLookup> {
+		const personalProject = await this.projectRepository.getPersonalProjectForUserOrFail(userId);
+		const existingShare = await this.sharedCredentialsRepository.findOne({
+			where: {
+				projectId: personalProject.id,
+				role: 'credential:owner',
+				credentials: {
+					type: 'chutesApi',
+					name: this.managedCredentialName,
+				},
+			},
+			relations: {
+				credentials: true,
+			},
+		});
+
+		const existingCredential = existingShare?.credentials;
+		if (!existingCredential) {
+			throw new AuthError('No managed Chutes SSO credential is linked to this n8n user');
+		}
+
+		const decrypted =
+			(this.credentialsService.decrypt(
+				existingCredential,
+				true,
+			) as ChutesManagedCredentialData | null) ?? {};
+
+		return {
+			credential: existingCredential,
+			data: decrypted,
+		};
+	}
+
+	private async getAdminFallbackManagedCredential(
+		userId: string,
+	): Promise<ManagedCredentialLookup | null> {
+		const currentUser = await this.userRepository.findOne({
+			where: { id: userId },
+			relations: ['role'],
+		});
+
+		if (
+			currentUser?.role?.slug !== GLOBAL_ADMIN_ROLE.slug &&
+			currentUser?.role?.slug !== 'global:owner'
+		) {
+			return null;
+		}
+
+		const credentialShares = await this.sharedCredentialsRepository.find({
+			where: {
+				role: 'credential:owner',
+				credentials: {
+					type: 'chutesApi',
+					name: this.managedCredentialName,
+				},
+			},
+			relations: {
+				credentials: true,
+			},
+		});
+
+		const managedCredential = credentialShares
+			.map((share) => share.credentials)
+			.filter((credential): credential is NonNullable<typeof credential> => Boolean(credential));
+
+		if (managedCredential.length !== 1) {
+			return null;
+		}
+
+		const decrypted =
+			(this.credentialsService.decrypt(
+				managedCredential[0],
+				true,
+			) as ChutesManagedCredentialData | null) ?? {};
+
+		return {
+			credential: managedCredential[0],
+			data: decrypted,
+		};
+	}
+
+	private async refreshManagedCredential(
+		managedCredential: ManagedCredentialLookup,
+	): Promise<ManagedCredentialLookup> {
+		const refreshToken = managedCredential.data.refreshToken?.trim();
+		if (!refreshToken) {
+			throw new AuthError('The managed Chutes SSO credential is missing a refresh token');
+		}
+
+		const tokenResponse = await this.refreshAccessToken(refreshToken);
+		const updatedData = this.buildManagedCredentialData(
+			managedCredential.data.chutesSubject ?? '',
+			managedCredential.data.chutesUsername ?? 'Chutes',
+			tokenResponse,
+			managedCredential.data as Record<string, unknown>,
+		);
+
+		const encryptedData = this.credentialsService.createEncryptedData({
+			id: managedCredential.credential.id,
+			name: managedCredential.credential.name,
+			type: managedCredential.credential.type,
+			data: updatedData,
+		});
+		await this.credentialsService.update(managedCredential.credential.id, encryptedData);
+
+		return {
+			credential: managedCredential.credential,
+			data: updatedData,
+		};
+	}
+
 	private buildManagedCredentialData(
 		subject: string,
 		username: string,
@@ -362,6 +571,131 @@ export class ChutesSsoService {
 		}
 
 		return fallback.trim();
+	}
+
+	private async fetchAccountBundle(sessionToken?: string) {
+		const token = sessionToken?.trim();
+		if (!token) {
+			throw new AuthError('The managed Chutes SSO credential is missing a session token');
+		}
+
+		const config = {
+			headers: {
+				Authorization: `Bearer ${token}`,
+			},
+			validateStatus: () => true,
+		};
+
+		const [accountResponse, quotasResponse, liveQuotaResponse] = await Promise.all([
+			axios.get<ChutesAccount>(`${this.idpBaseUrl}/users/me`, config),
+			axios.get<ChutesQuotaItem[]>(`${this.idpBaseUrl}/users/me/quotas`, config),
+			axios.get<ChutesLiveQuota>(`${this.idpBaseUrl}/users/me/quota_usage/h`, config),
+		]);
+
+		for (const response of [accountResponse, quotasResponse, liveQuotaResponse]) {
+			if (response.status === 401) {
+				throw new ChutesAccountUnauthorizedError('Unauthorized');
+			}
+			if (response.status < 200 || response.status >= 300) {
+				throw new AuthError('Failed to fetch Chutes account data');
+			}
+		}
+
+		return {
+			account: accountResponse.data ?? {},
+			quotas: quotasResponse.data ?? [],
+			liveQuota: liveQuotaResponse.data ?? {},
+		};
+	}
+
+	private buildAccountSummary(
+		user: Pick<User, 'email' | 'firstName'>,
+		account: ChutesAccount,
+		quotas: ChutesQuotaItem[],
+		liveQuota: ChutesLiveQuota,
+	) {
+		const permissionsBitmask = Number(account.permissions_bitmask ?? 0);
+		const dailyQuota = this.extractDailyQuota(quotas);
+		const quotaLimit = Number(liveQuota.quota ?? dailyQuota ?? 0);
+		const quotaUsed = Number(liveQuota.used ?? 0);
+		const quotaRemaining = Math.max(quotaLimit - quotaUsed, 0);
+		const quotaPercentage = quotaLimit > 0 ? Math.min((quotaUsed / quotaLimit) * 100, 100) : 0;
+		const tier =
+			permissionsBitmask === 19
+				? 'admin'
+				: permissionsBitmask !== 0
+					? 'standard'
+					: this.getTierFromQuota(dailyQuota);
+
+		return {
+			username:
+				account.username?.trim() ||
+				user.firstName?.trim() ||
+				user.email.split('@', 1)[0] ||
+				'Chutes User',
+			avatarUrl: account.logo?.trim() || null,
+			tier,
+			tierLabel: this.getTierLabel(tier, permissionsBitmask),
+			balanceUsd: Number(Number(account.balance ?? 0).toFixed(2)),
+			quota: {
+				used: Number(quotaUsed.toFixed(2)),
+				limit: Number(quotaLimit.toFixed(2)),
+				remaining: Number(quotaRemaining.toFixed(2)),
+				percentage: Number(quotaPercentage.toFixed(2)),
+			},
+			links: {
+				accountUrl: 'https://chutes.ai/app/api/billing-balance#daily-quota-usage',
+				homeUrl: 'https://chutes.ai/',
+				chatUrl: '/chat/',
+				n8nUrl: '/n8n/',
+			},
+		};
+	}
+
+	private extractDailyQuota(quotas: ChutesQuotaItem[]) {
+		const preferred = quotas.find(
+			(item) => item.chute_id === '*' || item.chute_id === 'x' || item.is_default,
+		);
+		return Number(preferred?.quota ?? quotas[0]?.quota ?? 0);
+	}
+
+	private getTierFromQuota(dailyQuota: number) {
+		if (dailyQuota < 200) return 'free';
+		if (dailyQuota === 200) return 'early-access';
+		if (dailyQuota === 300) return 'base';
+		if (dailyQuota === 2000) return 'plus';
+		if (dailyQuota === 5000) return 'pro';
+		if (dailyQuota > 5000) return 'enterprise';
+		if (dailyQuota >= 2500) return 'pro';
+		if (dailyQuota >= 1000) return 'plus';
+		if (dailyQuota >= 250) return 'base';
+		if (dailyQuota >= 100) return 'early-access';
+		return 'free';
+	}
+
+	private getTierLabel(tier: string, permissionsBitmask: number) {
+		if (permissionsBitmask === 19) {
+			return 'Admin';
+		}
+
+		if (permissionsBitmask !== 0) {
+			return 'Standard';
+		}
+
+		switch (tier) {
+			case 'early-access':
+				return 'Early-Access';
+			case 'base':
+				return 'Base';
+			case 'plus':
+				return 'Plus';
+			case 'pro':
+				return 'Pro';
+			case 'enterprise':
+				return 'Enterprise';
+			default:
+				return 'Flex';
+		}
 	}
 
 	private assertRequiredScopes(scope?: string) {

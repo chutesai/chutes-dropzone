@@ -1,7 +1,8 @@
+import type { User } from '@n8n/db';
 import { GlobalConfig } from '@n8n/config';
 import { Time } from '@n8n/constants';
 import { Get, RestController } from '@n8n/decorators';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 
 import { AuthService } from '@/auth/auth.service';
 import { EventService } from '@/events/event.service';
@@ -18,6 +19,10 @@ type ChutesLoginQuery = {
 type ChutesCallbackQuery = {
 	code?: string;
 	state?: string;
+};
+
+type AuthenticatedUserRequest = Request & {
+	user: User;
 };
 
 @RestController('/sso/chutes')
@@ -80,5 +85,13 @@ export class ChutesSsoController {
 			});
 			return res.redirect(this.urlService.getInstanceBaseUrl() + '/signin?chutesError=1');
 		}
+	}
+
+	@Get('/account-summary')
+	async accountSummary(req: AuthenticatedUserRequest, res: Response) {
+		res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+		res.setHeader('Pragma', 'no-cache');
+		res.setHeader('Expires', '0');
+		return await this.chutesSsoService.getAccountSummaryForUser(req.user);
 	}
 }
