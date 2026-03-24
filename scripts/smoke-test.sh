@@ -769,8 +769,6 @@ if [ "${CHUTES_TRAFFIC_MODE:-direct}" = "e2ee-proxy" ]; then
         "https://${DROPZONE_HOST}/v1/models" 2>/dev/null || echo 000)"
     if [ "$proxy_models_status" = "200" ]; then
         pass "e2ee-proxy exposes /v1/models on the local edge"
-    elif [ "$proxy_models_status" = "502" ]; then
-        skip "e2ee-proxy /v1/models returned 502 (upstream unreachable in this environment)"
     else
         fail "e2ee-proxy /v1/models route returned status $proxy_models_status"
     fi
@@ -878,20 +876,15 @@ PY
         200|400|401|403)
             pass "e2ee-proxy handles /v1/chat/completions on the local edge"
             ;;
-        502)
-            skip "e2ee-proxy /v1/chat/completions returned 502 (upstream unreachable in this environment)"
-            ;;
         *)
             fail "e2ee-proxy /v1/chat/completions route returned status $proxy_chat_status"
             ;;
     esac
 
-    if [ "$proxy_chat_status" != "502" ]; then
-        if grep -qi '^X-Dropzone-Proxy: e2ee-proxy' "$proxy_chat_headers"; then
-            pass "proxy chat-completion responses identify the e2ee-proxy path"
-        else
-            fail "proxy chat-completion responses are missing the e2ee-proxy marker header"
-        fi
+    if grep -qi '^X-Dropzone-Proxy: e2ee-proxy' "$proxy_chat_headers"; then
+        pass "proxy chat-completion responses identify the e2ee-proxy path"
+    else
+        fail "proxy chat-completion responses are missing the e2ee-proxy marker header"
     fi
 else
     direct_v1_status="$(curl_edge -sk -o /dev/null -w '%{http_code}' \

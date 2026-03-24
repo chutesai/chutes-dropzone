@@ -120,4 +120,5 @@ jobs:
           DROPZONE_N8N_IMAGE: chutes-dropzone-ci-n8n:latest
           DROPZONE_OPENWEBUI_IMAGE: chutes-dropzone-ci-openwebui:latest
           SKIP_APP_BUILDS: "true"
+          CHUTES_API_KEY: ${{ secrets.CHUTES_API_KEY }}
         run: ./scripts/e2e-test.sh
