@@ -164,10 +164,22 @@ authenticated_node_types() {
 
 openwebui_account_summary() {
     local cookie_file="$1"
+    local token=""
 
-    curl_edge -sk -b "$cookie_file" \
-        -H 'Accept: application/json' \
-        "https://${DROPZONE_HOST}/api/v1/dropzone/account-summary"
+    if [ -f "$cookie_file" ]; then
+        token="$(awk '/\ttoken\t/{print $NF}' "$cookie_file" | tail -1)"
+    fi
+
+    if [ -n "$token" ]; then
+        curl_edge -sk \
+            -H "Authorization: Bearer ${token}" \
+            -H 'Accept: application/json' \
+            "https://${DROPZONE_HOST}/api/v1/dropzone/account-summary"
+    else
+        curl_edge -sk -b "$cookie_file" \
+            -H 'Accept: application/json' \
+            "https://${DROPZONE_HOST}/api/v1/dropzone/account-summary"
+    fi
 }
 
 n8n_account_summary() {
