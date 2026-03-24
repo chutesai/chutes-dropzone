@@ -59,7 +59,6 @@ TTS_CORD = "/speak"
 STT_CORD = "/transcribe"
 
 CHUTES_API_BASE = os.environ.get("CHUTES_IDP_BASE_URL", "https://api.chutes.ai").rstrip("/")
-CHUTES_API_KEY = os.environ.get("CHUTES_API_KEY", "")
 
 CACHE_TTL = 300  # 5 minutes
 
@@ -75,14 +74,41 @@ def _fetch_json(url: str, timeout: int = 15):
         return None
 
 
+def _get_any_oauth_token() -> str:
+    """Get any valid OAuth token from stored SSO sessions for service-level calls."""
+    try:
+        from open_webui.models.oauth_sessions import OAuthSessions
+        from open_webui.internal.db import get_db
+
+        with get_db() as db:
+            # Try admin users first, then any user with a session
+            from open_webui.models.users import Users
+            for user in Users.get_users(db=db):
+                if user.role != "admin":
+                    continue
+                session = OAuthSessions.get_session_by_provider_and_user_id("oidc", user.id, db=db)
+                if session and session.token and session.token.get("access_token"):
+                    return session.token["access_token"]
+            # Fallback: any user with a session
+            for user in Users.get_users(db=db):
+                session = OAuthSessions.get_session_by_provider_and_user_id("oidc", user.id, db=db)
+                if session and session.token and session.token.get("access_token"):
+                    return session.token["access_token"]
+    except Exception:
+        pass
+    return ""
+
+
 def _warmup_chute(name: str) -> None:
     """Call the Chutes warmup endpoint to spin up cold instances."""
-    if not CHUTES_API_KEY:
+    token = _get_any_oauth_token()
+    if not token:
+        log.debug("warmup skipped for %s: no OAuth session available", name)
         return
     url = f"{CHUTES_API_BASE}/chutes/warmup/{urllib.parse.quote(name, safe='')}"
     req = urllib.request.Request(
         url,
-        headers={"Authorization": f"Bearer {CHUTES_API_KEY}", "Accept": "application/json"},
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
