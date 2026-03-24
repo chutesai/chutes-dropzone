@@ -13,6 +13,7 @@ import logging
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
@@ -57,6 +58,9 @@ STT_TEMPLATES = {"whisper-large-v3", "whisper-small-v3", "whisper-tiny-v3", "whi
 TTS_CORD = "/speak"
 STT_CORD = "/transcribe"
 
+CHUTES_API_BASE = os.environ.get("CHUTES_IDP_BASE_URL", "https://api.chutes.ai").rstrip("/")
+CHUTES_API_KEY = os.environ.get("CHUTES_API_KEY", "")
+
 CACHE_TTL = 300  # 5 minutes
 
 _cache: dict = {}
@@ -69,6 +73,23 @@ def _fetch_json(url: str, timeout: int = 15):
             return json.loads(resp.read().decode("utf-8"))
     except Exception:
         return None
+
+
+def _warmup_chute(name: str) -> None:
+    """Call the Chutes warmup endpoint to spin up cold instances."""
+    if not CHUTES_API_KEY:
+        return
+    url = f"{CHUTES_API_BASE}/chutes/warmup/{urllib.parse.quote(name, safe='')}"
+    req = urllib.request.Request(
+        url,
+        headers={"Authorization": f"Bearer {CHUTES_API_KEY}", "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            resp.read()
+        log.info("warmup requested for %s", name)
+    except Exception as e:
+        log.debug("warmup failed for %s: %s", name, e)
 
 
 def _discover_chutes() -> dict:
@@ -116,6 +137,11 @@ def _discover_chutes() -> dict:
             if score > stt_score and slug:
                 stt_best = {"name": name, "slug": slug, "score": score}
                 stt_score = score
+
+    # Warm up cold chutes
+    for chute in (tts_best, stt_best):
+        if chute and chute["score"] < 0.01:
+            _warmup_chute(chute["name"])
 
     result = {"tts": tts_best, "stt": stt_best, "ts": now}
     _cache.update(result)
