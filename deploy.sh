@@ -167,7 +167,7 @@ read_interactive_value() {
     local var_name="$1"
     local prompt="$2"
     local secret="${3:-false}"
-    local value=""
+    local _riv_value=""
     local tty_fd_opened=false
 
     if [ "$INTERACTIVE" != true ]; then
@@ -180,10 +180,10 @@ read_interactive_value() {
             tty_fd_opened=true
             printf '%s' "$prompt" >&3
             if [ "$secret" = true ]; then
-                IFS= read -r -s -u 3 value || true
+                IFS= read -r -s -u 3 _riv_value || true
                 printf '\n' >&3
             else
-                IFS= read -r -u 3 value || true
+                IFS= read -r -u 3 _riv_value || true
             fi
             exec 3>&-
             exec 3<&-
@@ -194,15 +194,15 @@ read_interactive_value() {
 
     if [ "$tty_fd_opened" != true ]; then
         if [ "$secret" = true ]; then
-            read -rsp "$prompt" value || true
+            read -rsp "$prompt" _riv_value || true
             echo
         else
-            read -rp "$prompt" value || true
+            read -rp "$prompt" _riv_value || true
         fi
     fi
 
-    value="${value%$'\r'}"
-    printf -v "$var_name" '%s' "$value"
+    _riv_value="${_riv_value%$'\r'}"
+    printf -v "$var_name" '%s' "$_riv_value"
 }
 
 compose_files_default() {
