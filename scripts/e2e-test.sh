@@ -5,6 +5,8 @@
 #
 set -euo pipefail
 
+trap 'echo "e2e-test.sh FAILED at line $LINENO (exit $?)" >&2' ERR
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 E2E_TRAFFIC_MODE="${E2E_TRAFFIC_MODE:-direct}"
