@@ -159,6 +159,41 @@ authenticated_node_types() {
         "https://${DROPZONE_HOST}/n8n/rest/node-types"
 }
 
+openwebui_account_summary() {
+    local cookie_file="$1"
+
+    curl_edge -sk -b "$cookie_file" \
+        -H 'Accept: application/json' \
+        "https://${DROPZONE_HOST}/api/v1/dropzone/account-summary"
+}
+
+n8n_account_summary() {
+    local cookie_file="$1"
+    local browser_id="$2"
+
+    curl_edge -sk -b "$cookie_file" \
+        -H "browser-id: ${browser_id}" \
+        -H 'Accept: application/json' \
+        "https://${DROPZONE_HOST}/n8n/rest/sso/chutes/account-summary"
+}
+
+complete_openwebui_sso_login() {
+    local cookie_file="$1"
+    local headers_file="$2"
+    local final_url_file="$3"
+    local location
+
+    curl_edge -sk -o /dev/null -D "$headers_file" -c "$cookie_file" \
+        "https://${DROPZONE_HOST}/oauth/oidc/login"
+
+    location="$(extract_location "$headers_file")"
+    assert_nonempty "$location" "missing OpenWebUI OAuth redirect location"
+
+    curl_edge -skL -o /dev/null -c "$cookie_file" -b "$cookie_file" \
+        -w '%{url_effective}' \
+        "$location" >"$final_url_file"
+}
+
 complete_sso_login() {
     local code="$1"
     local cookie_file="$2"
@@ -513,6 +548,46 @@ member_refresh_after="$(managed_credential_field_for_subject "sub-member" "refre
 member_session_after="$(managed_credential_field_for_subject "sub-member" "sessionToken")"
 assert_eq "$member_refresh_after" "refresh:member-code:1" "credential test should persist the rotated refresh token"
 assert_eq "$member_session_after" "token:member-code:refresh:1" "credential test should persist the rotated session token"
+
+member_n8n_summary="$(n8n_account_summary "$member_cookie" "e2e-member-browser")"
+MEMBER_N8N_SUMMARY="$member_n8n_summary" python3 - <<'PY'
+import json
+import os
+
+summary = json.loads(os.environ["MEMBER_N8N_SUMMARY"])
+assert summary["username"] == "member-user"
+assert summary["tier"] == "pro"
+assert summary["tierLabel"] == "Pro"
+assert abs(summary["quota"]["used"] - 1284.9) < 0.01
+assert abs(summary["quota"]["limit"] - 5001) < 0.01
+assert summary["links"]["chatUrl"] == "/chat/"
+assert summary["links"]["n8nUrl"] == "/n8n/"
+PY
+
+member_openwebui_cookie="$COOKIE_DIR/member-openwebui.cookies"
+member_openwebui_headers="$COOKIE_DIR/member-openwebui.headers"
+member_openwebui_final_url="$COOKIE_DIR/member-openwebui.final-url"
+complete_openwebui_sso_login "$member_openwebui_cookie" "$member_openwebui_headers" "$member_openwebui_final_url"
+if ! grep -Eq '/(home|auth)' "$member_openwebui_final_url"; then
+    echo "FAIL: OpenWebUI SSO did not finish on an app route" >&2
+    cat "$member_openwebui_final_url" >&2
+    exit 1
+fi
+
+member_openwebui_summary="$(openwebui_account_summary "$member_openwebui_cookie")"
+MEMBER_OPENWEBUI_SUMMARY="$member_openwebui_summary" python3 - <<'PY'
+import json
+import os
+
+summary = json.loads(os.environ["MEMBER_OPENWEBUI_SUMMARY"])
+assert summary["username"] == "member-user"
+assert summary["tier"] == "pro"
+assert summary["tierLabel"] == "Pro"
+assert abs(summary["quota"]["used"] - 1284.9) < 0.01
+assert abs(summary["quota"]["limit"] - 5001) < 0.01
+assert summary["links"]["accountUrl"] == "https://chutes.ai/app/settings"
+assert summary["links"]["homeUrl"] == "https://chutes.ai/"
+PY
 
 member_cookie_2="$COOKIE_DIR/member-repeat.cookies"
 member_headers_2="$COOKIE_DIR/member-repeat.headers"

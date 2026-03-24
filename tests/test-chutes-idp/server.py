@@ -35,13 +35,25 @@ USERS = {
     "member-code": {
         "sub": "sub-member",
         "username": "member-user",
+        "logo": "https://cdn.rayonlabs.ai/chutes/default-avatar.webp",
+        "permissions_bitmask": 0,
         "created_at": "2026-01-01T00:00:00Z",
     },
     "admin-code": {
         "sub": "sub-admin",
         "username": "admin-user",
+        "logo": "https://cdn.rayonlabs.ai/chutes/default-avatar.webp",
+        "permissions_bitmask": 19,
         "created_at": "2026-01-02T00:00:00Z",
     },
+}
+USER_QUOTAS = {
+    "member-code": [{"chute_id": "*", "quota": 5001, "is_default": True}],
+    "admin-code": [{"chute_id": "*", "quota": 50000, "is_default": True}],
+}
+USER_LIVE_QUOTAS = {
+    "member-code": {"used": 1284.9, "quota": 5001},
+    "admin-code": {"used": 190.25, "quota": 50000},
 }
 CHUTES = [
     {
@@ -188,6 +200,31 @@ class Handler(BaseHTTPRequestHandler):
             if not user:
                 return self.json_response(401, {"error": "invalid_token"})
             return self.json_response(200, user)
+
+        if parsed.path == "/users/me":
+            authorization = self.headers.get("Authorization", "")
+            token = authorization.removeprefix("Bearer ").strip()
+            code = extract_code_from_access_token(token)
+            user = USERS.get(code)
+            if not user:
+                return self.json_response(401, {"error": "invalid_token"})
+            return self.json_response(200, user)
+
+        if parsed.path == "/users/me/quotas":
+            authorization = self.headers.get("Authorization", "")
+            token = authorization.removeprefix("Bearer ").strip()
+            code = extract_code_from_access_token(token)
+            if code not in USERS:
+                return self.json_response(401, {"error": "invalid_token"})
+            return self.json_response(200, USER_QUOTAS.get(code, []))
+
+        if parsed.path == "/users/me/quota_usage/h":
+            authorization = self.headers.get("Authorization", "")
+            token = authorization.removeprefix("Bearer ").strip()
+            code = extract_code_from_access_token(token)
+            if code not in USERS:
+                return self.json_response(401, {"error": "invalid_token"})
+            return self.json_response(200, USER_LIVE_QUOTAS.get(code, {"used": 0, "quota": 0}))
 
         if parsed.path == "/v1/models":
             authorization = self.headers.get("Authorization", "")

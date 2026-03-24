@@ -7,6 +7,7 @@ import functools
 import json
 import os
 import re
+import urllib.error
 import urllib.request
 from datetime import timedelta
 
@@ -190,6 +191,42 @@ def request_json(method: str, path: str, token: str, payload=None):
         return json.loads(response.read().decode("utf-8"))
 
 
+def public_models_url() -> str:
+    return os.environ.get("CHUTES_PUBLIC_MODELS_URL", "https://llm.chutes.ai/v1/models").rstrip("/")
+
+
+def fetch_public_models() -> tuple[list[dict], bool]:
+    request = urllib.request.Request(
+        public_models_url(),
+        headers={
+            "Accept": "application/json",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError):
+        return [], False
+
+    models = payload.get("data", []) if isinstance(payload, dict) else payload
+    if not isinstance(models, list) or not models:
+        return [], False
+
+    collected_models = []
+    seen_ids = set()
+    for model in models:
+        if not isinstance(model, dict):
+            continue
+        model_id = model.get("id") or model.get("name")
+        if not model_id or model_id in seen_ids:
+            continue
+        seen_ids.add(model_id)
+        collected_models.append(model)
+
+    return collected_models, bool(collected_models)
+
+
 def admin_token() -> str:
     with get_db() as db:
         admin_user = Users.get_user_by_email(admin_email(), db)
@@ -200,7 +237,7 @@ def admin_token() -> str:
     return create_token({"id": admin_user.id}, expires_delta=timedelta(minutes=10))
 
 
-def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int]:
+def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool]:
     token = admin_token()
     updates = []
 
@@ -217,8 +254,13 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int]:
 
     models_payload = request_json("GET", "/api/models?refresh=true", token)
     models = models_payload.get("data", []) if isinstance(models_payload, dict) else []
+    used_backend_fallback = False
     if not isinstance(models, list) or not models:
-        raise SystemExit("OpenWebUI /api/models returned no models after runtime configuration")
+        models, used_backend_fallback = fetch_public_models()
+    if not isinstance(models, list) or not models:
+        raise SystemExit(
+            "OpenWebUI model discovery returned no models after runtime configuration"
+        )
 
     ordered_ids = []
     seen_ids = set()
@@ -234,7 +276,7 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int]:
         request_json("POST", "/api/v1/configs/models", token, models_config)
         updates.append("MODEL_ORDER_LIST")
 
-    return len(api_urls), updates, len(ordered_ids)
+    return len(api_urls), updates, len(ordered_ids), used_backend_fallback
 
 
 def parse_args() -> argparse.Namespace:
@@ -254,12 +296,18 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    backend_count, updates, model_count = sync_runtime(args.configure_openai_auth)
+    backend_count, updates, model_count, used_backend_fallback = sync_runtime(
+        args.configure_openai_auth
+    )
 
     if updates or not args.quiet_no_change:
         if args.configure_openai_auth:
             print(
                 f"configured OpenWebUI upstream auth for {backend_count} backend(s) via system_oauth"
+            )
+        if used_backend_fallback:
+            print(
+                "seeded OpenWebUI model order from the public llm.chutes.ai catalog because no OAuth-backed user session exists yet"
             )
         print(f"computed TEE-first newest-first provider ordering for {model_count} model(s)")
         if updates:
