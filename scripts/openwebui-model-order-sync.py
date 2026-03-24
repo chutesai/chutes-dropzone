@@ -313,16 +313,15 @@ def fetch_utilization() -> list[dict]:
     return payload if isinstance(payload, list) else []
 
 
-def pick_default_model(available_model_ids: set[str], top_n: int = 5) -> str:
-    """Pick the best default model by available capacity from utilization data.
+def rank_models_by_capacity(available_model_ids: set[str]) -> list[str]:
+    """Rank models by available capacity from utilization data.
 
     Score = active_instance_count * (1 - utilization_5m)
     Highest score means most headroom to serve requests.
-    Returns a comma-separated list of the top N model IDs.
     """
     utilization = fetch_utilization()
     if not utilization:
-        return ""
+        return []
 
     scored = []
     for entry in utilization:
@@ -337,7 +336,7 @@ def pick_default_model(available_model_ids: set[str], top_n: int = 5) -> str:
         scored.append((score, name))
 
     scored.sort(reverse=True)
-    return ",".join(name for _, name in scored[:top_n])
+    return [name for _, name in scored]
 
 
 def fetch_public_models() -> tuple[list[dict], bool]:
@@ -425,11 +424,12 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
     if logo_count:
         updates.append(f"MODEL_LOGOS({logo_count})")
 
-    default_model = pick_default_model(set(ordered_ids))
+    ranked = rank_models_by_capacity(set(ordered_ids))
+    default_model = ranked[0] if ranked else ""
     if default_model and models_config.get("DEFAULT_MODELS") != default_model:
         models_config["DEFAULT_MODELS"] = default_model
         request_json("POST", "/api/v1/configs/models", token, models_config)
-        updates.append(f"DEFAULT_MODELS({default_model.split(',')[0]}...)")
+        updates.append(f"DEFAULT_MODELS({default_model})")
 
     return len(api_urls), updates, len(ordered_ids), used_backend_fallback
 
