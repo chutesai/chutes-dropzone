@@ -26,7 +26,7 @@ from open_webui.utils.auth import get_verified_user
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/dropzone/audio", tags=["dropzone-audio"])
+router = APIRouter(prefix="/api/v1/dropzone", tags=["dropzone-audio"])
 
 UTILIZATION_URL = os.environ.get(
     "CHUTES_UTILIZATION_URL", "https://api.chutes.ai/chutes/utilization"
@@ -151,7 +151,7 @@ class TTSRequest(BaseModel):
     response_format: Optional[str] = "wav"
 
 
-@router.post("/speech")
+@router.post("/audio/speech")
 async def text_to_speech(request: Request, body: TTSRequest, user=Depends(get_verified_user), db: Session = Depends(get_session)):
     discovery = _discover_chutes()
     tts = discovery.get("tts")
@@ -194,7 +194,7 @@ async def text_to_speech(request: Request, body: TTSRequest, user=Depends(get_ve
     return Response(content=raw, media_type=content_type)
 
 
-@router.post("/transcriptions")
+@router.post("/audio/transcriptions")
 async def speech_to_text(
     request: Request,
     file: UploadFile = File(...),
