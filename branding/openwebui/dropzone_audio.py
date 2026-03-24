@@ -160,11 +160,6 @@ def _discover_chutes() -> dict:
                 stt_best = {"name": name, "slug": slug, "score": score}
                 stt_score = score
 
-    # Warm up cold chutes
-    for chute in (tts_best, stt_best):
-        if chute and chute["score"] < 0.01:
-            _warmup_chute(chute["name"])
-
     result = {"tts": tts_best, "stt": stt_best, "ts": now}
     _cache.update(result)
     log.info(

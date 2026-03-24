@@ -442,7 +442,57 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
             request_json("POST", "/api/v1/configs/models", token, models_config)
             updates.append("DEFAULT_MODELS(chutes-auto)")
 
+    warmup_count = warmup_audio_chutes(token)
+    if warmup_count:
+        updates.append(f"AUDIO_WARMUP({warmup_count})")
+
     return len(api_urls), updates, len(ordered_ids), used_backend_fallback
+
+
+AUDIO_CHUTE_NAMES = [
+    "kokoro",
+    "whisper-large-v3",
+]
+
+
+def _get_chutes_oauth_token() -> str:
+    """Get any user's Chutes OAuth token from stored SSO sessions."""
+    try:
+        from open_webui.models.oauth_sessions import OAuthSessions
+
+        with get_db() as db:
+            result = Users.get_users(db=db)
+            user_list = result.get("users", []) if isinstance(result, dict) else result
+            for user in sorted(user_list, key=lambda u: 0 if u.role == "admin" else 1):
+                session = OAuthSessions.get_session_by_provider_and_user_id(
+                    "oidc", user.id, db=db
+                )
+                if session and isinstance(session.token, dict) and session.token.get("access_token"):
+                    return session.token["access_token"]
+    except Exception:
+        pass
+    return ""
+
+
+def warmup_audio_chutes(token: str) -> int:
+    """Warm up TTS/STT chutes every sync cycle so they're ready for users."""
+    chutes_token = _get_chutes_oauth_token()
+    if not chutes_token:
+        return 0
+    api = os.environ.get("CHUTES_IDP_BASE_URL", "https://api.chutes.ai").rstrip("/")
+    warmed = 0
+    for name in AUDIO_CHUTE_NAMES:
+        req = urllib.request.Request(
+            f"{api}/chutes/warmup/{name}",
+            headers={"Authorization": f"Bearer {chutes_token}", "Accept": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                resp.read()
+            warmed += 1
+        except Exception:
+            pass
+    return warmed
 
 
 def generate_composite_logo(model_ids: list[str]) -> str:
