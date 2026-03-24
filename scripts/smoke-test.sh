@@ -770,6 +770,8 @@ if [ "${CHUTES_TRAFFIC_MODE:-direct}" = "e2ee-proxy" ]; then
     if [ "$proxy_models_status" = "200" ]; then
         pass "e2ee-proxy exposes /v1/models on the local edge"
     else
+        echo "    e2ee-proxy /v1/models body: $(cat /tmp/chutes-n8n-local.proxy-models.out 2>/dev/null | head -c 500)" >&2
+        compose logs e2ee-proxy --tail 20 2>/dev/null | sed 's/^/    /' >&2 || true
         fail "e2ee-proxy /v1/models route returned status $proxy_models_status"
     fi
 
