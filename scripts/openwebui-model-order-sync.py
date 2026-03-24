@@ -440,12 +440,13 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
 
 
 def generate_composite_logo(model_ids: list[str]) -> str:
-    """Generate a circular composite logo with provider icons overlapping diagonally.
+    """Generate a circular composite logo with provider icons in a ring.
 
     Returns a data:image/png;base64,... string, or empty string on failure.
     """
     import base64
     import io
+    import math
 
     try:
         from PIL import Image, ImageDraw
@@ -453,22 +454,24 @@ def generate_composite_logo(model_ids: list[str]) -> str:
         return ""
 
     size = 256
-    icon_size = 96
+    icon_size = 80
     count = min(len(model_ids), 5)
     if count == 0:
         return ""
 
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    center = size / 2
+    radius = (size - icon_size) / 2 * 0.62
 
-    # Diagonal positions from top-left to bottom-right
-    step = (size - icon_size) / max(count - 1, 1) if count > 1 else 0
+    # Place icons in a ring, starting at top (-90°), clockwise
     positions = []
     for i in range(count):
-        x = int(i * step)
-        y = int(i * step)
+        angle = -math.pi / 2 + (2 * math.pi * i / count)
+        x = int(center + radius * math.cos(angle) - icon_size / 2)
+        y = int(center + radius * math.sin(angle) - icon_size / 2)
         positions.append((x, y))
 
-    # Load and place icons back-to-front so first icon is on top
+    # Load and place icons back-to-front so first icon (top) is on top
     for i in reversed(range(count)):
         model_id = model_ids[i]
         logo = logo_url_for_model(model_id)
@@ -482,18 +485,19 @@ def generate_composite_logo(model_ids: list[str]) -> str:
             icon = Image.open(io.BytesIO(img_data)).convert("RGBA")
             icon = icon.resize((icon_size, icon_size), Image.LANCZOS)
 
-            # Circular mask with dark ring border for separation
+            # Circular mask
             mask = Image.new("L", (icon_size, icon_size), 0)
             ImageDraw.Draw(mask).ellipse((0, 0, icon_size, icon_size), fill=255)
             icon.putalpha(mask)
 
-            ring = Image.new("RGBA", (icon_size, icon_size), (0, 0, 0, 0))
-            ImageDraw.Draw(ring).ellipse((0, 0, icon_size, icon_size), fill=(20, 20, 24, 255))
-            inset = 3
-            ImageDraw.Draw(ring).ellipse(
-                (inset, inset, icon_size - inset, icon_size - inset), fill=(0, 0, 0, 0)
-            )
-            canvas.paste(ring, positions[i], ring)
+            # Dark ring border for separation
+            border = 3
+            ring_size = icon_size + border * 2
+            ring = Image.new("RGBA", (ring_size, ring_size), (0, 0, 0, 0))
+            ImageDraw.Draw(ring).ellipse((0, 0, ring_size, ring_size), fill=(20, 20, 24, 240))
+            rx = positions[i][0] - border
+            ry = positions[i][1] - border
+            canvas.paste(ring, (rx, ry), ring)
             canvas.paste(icon, positions[i], icon)
         except Exception:
             continue
