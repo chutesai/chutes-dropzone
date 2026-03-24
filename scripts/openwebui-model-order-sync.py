@@ -23,7 +23,6 @@ PROVIDER_LOGOS: dict[str, str] = {
     "mistral": "https://cdn.rayonlabs.ai/chutes/logos/mistral.webp",
     "openai": "https://cdn.rayonlabs.ai/chutes/logos/openailogo.webp",
     "qwen": "https://cdn.rayonlabs.ai/chutes/logos/qwen.webp",
-    # minimax: no logo available yet on CDN, falls back to Chutes logo
     "gemma": "https://cdn.rayonlabs.ai/chutes/logos/gemma.webp",
     "meta": "https://cdn.rayonlabs.ai/chutes/logos/metaai.webp",
     "zai": "https://cdn.rayonlabs.ai/chutes/logos/zai.webp",
