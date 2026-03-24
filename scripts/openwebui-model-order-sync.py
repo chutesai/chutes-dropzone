@@ -431,7 +431,106 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
         request_json("POST", "/api/v1/configs/models", token, models_config)
         updates.append(f"DEFAULT_MODELS({default_model})")
 
+    if default_model and ranked:
+        composite = generate_composite_logo(ranked[:5])
+        if composite:
+            sync_default_model_logo(token, default_model, composite)
+
     return len(api_urls), updates, len(ordered_ids), used_backend_fallback
+
+
+def generate_composite_logo(model_ids: list[str]) -> str:
+    """Generate a circular composite logo with provider icons overlapping diagonally.
+
+    Returns a data:image/png;base64,... string, or empty string on failure.
+    """
+    import base64
+    import io
+
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:
+        return ""
+
+    size = 256
+    icon_size = 96
+    count = min(len(model_ids), 5)
+    if count == 0:
+        return ""
+
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+
+    # Diagonal positions from top-left to bottom-right
+    step = (size - icon_size) / max(count - 1, 1) if count > 1 else 0
+    positions = []
+    for i in range(count):
+        x = int(i * step)
+        y = int(i * step)
+        positions.append((x, y))
+
+    # Load and place icons back-to-front so first icon is on top
+    for i in reversed(range(count)):
+        model_id = model_ids[i]
+        logo = logo_url_for_model(model_id)
+        if not logo or logo == CHUTES_LOGO_URL:
+            continue
+
+        try:
+            req = urllib.request.Request(logo, headers={"User-Agent": "chutes-dropzone/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                img_data = resp.read()
+            icon = Image.open(io.BytesIO(img_data)).convert("RGBA")
+            icon = icon.resize((icon_size, icon_size), Image.LANCZOS)
+
+            # Circular mask with dark ring border for separation
+            mask = Image.new("L", (icon_size, icon_size), 0)
+            ImageDraw.Draw(mask).ellipse((0, 0, icon_size, icon_size), fill=255)
+            icon.putalpha(mask)
+
+            ring = Image.new("RGBA", (icon_size, icon_size), (0, 0, 0, 0))
+            ImageDraw.Draw(ring).ellipse((0, 0, icon_size, icon_size), fill=(20, 20, 24, 255))
+            inset = 3
+            ImageDraw.Draw(ring).ellipse(
+                (inset, inset, icon_size - inset, icon_size - inset), fill=(0, 0, 0, 0)
+            )
+            canvas.paste(ring, positions[i], ring)
+            canvas.paste(icon, positions[i], icon)
+        except Exception:
+            continue
+
+    # Clip entire canvas to circle
+    final_mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(final_mask).ellipse((0, 0, size, size), fill=255)
+    canvas.putalpha(final_mask)
+
+    buf = io.BytesIO()
+    canvas.save(buf, format="PNG", optimize=True)
+    encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+def sync_default_model_logo(token: str, model_id: str, data_uri: str) -> None:
+    """Set the composite logo as the profile image for the default model."""
+    from open_webui.models.models import Models
+
+    with get_db() as db:
+        existing = Models.get_model_by_id(model_id, db)
+
+    if existing:
+        current_url = ""
+        if existing.meta and hasattr(existing.meta, "profile_image_url"):
+            current_url = existing.meta.profile_image_url or ""
+        if current_url == data_uri:
+            return
+        try:
+            request_json("POST", "/api/v1/models/model/update", token, {
+                "id": model_id,
+                "name": existing.name or model_id,
+                "meta": {"profile_image_url": data_uri},
+                "params": existing.params.model_dump() if existing.params else {},
+            })
+        except Exception:
+            pass
 
 
 def sync_model_logos(token: str, model_ids: list[str]) -> int:
