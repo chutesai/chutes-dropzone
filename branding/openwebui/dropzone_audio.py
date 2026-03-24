@@ -18,8 +18,10 @@ import urllib.request
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import Response
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from typing import Optional
 
+from open_webui.internal.db import get_session
 from open_webui.utils.auth import get_verified_user
 
 log = logging.getLogger(__name__)
@@ -108,14 +110,17 @@ def _discover_chutes() -> dict:
     return result
 
 
-def _get_oauth_token(user) -> str:
+def _get_oauth_token(user, db) -> str:
     """Get the user's OAuth access token for Chutes API calls."""
     try:
-        from open_webui.models.auths import OAuthSessions
+        from open_webui.models.oauth_sessions import OAuthSessions
 
-        session = OAuthSessions.get_session_by_user_id(user.id)
-        if session and session.access_token:
-            return session.access_token
+        session = OAuthSessions.get_session_by_provider_and_user_id("oidc", user.id, db=db)
+        if not session:
+            sessions = OAuthSessions.get_sessions_by_user_id(user.id, db=db)
+            session = sessions[0] if sessions else None
+        if session and session.token:
+            return session.token.get("access_token", "")
     except Exception:
         pass
     return ""
@@ -147,13 +152,13 @@ class TTSRequest(BaseModel):
 
 
 @router.post("/speech")
-async def text_to_speech(request: Request, body: TTSRequest, user=Depends(get_verified_user)):
+async def text_to_speech(request: Request, body: TTSRequest, user=Depends(get_verified_user), db: Session = Depends(get_session)):
     discovery = _discover_chutes()
     tts = discovery.get("tts")
     if not tts:
         raise HTTPException(status_code=503, detail="No TTS chute available")
 
-    token = _get_oauth_token(user)
+    token = _get_oauth_token(user, db)
     if not token:
         raise HTTPException(status_code=401, detail="No Chutes session — sign in with Chutes SSO")
 
@@ -195,13 +200,14 @@ async def speech_to_text(
     file: UploadFile = File(...),
     model: Optional[str] = Form("whisper-large-v3"),
     user=Depends(get_verified_user),
+    db: Session = Depends(get_session),
 ):
     discovery = _discover_chutes()
     stt = discovery.get("stt")
     if not stt:
         raise HTTPException(status_code=503, detail="No STT chute available")
 
-    token = _get_oauth_token(user)
+    token = _get_oauth_token(user, db)
     if not token:
         raise HTTPException(status_code=401, detail="No Chutes session — sign in with Chutes SSO")
 
