@@ -137,6 +137,7 @@ FROM --platform=$IMAGE_PLATFORM openwebui-src AS openwebui-runtime
 COPY branding/openwebui/custom.css /app/build/static/custom.css
 COPY branding/openwebui/loader.js /app/build/static/loader.js
 COPY branding/openwebui/chutes-logo.svg /app/build/static/chutes-logo.svg
+COPY branding/openwebui/chutes-chat-icon-192.png /app/build/static/favicon.png
 COPY branding/openwebui/n8n-logo.svg /app/build/static/n8n-logo.svg
 COPY branding/openwebui/chutas2.webp /app/build/static/chutas2.webp
 COPY branding/openwebui/site.webmanifest /app/build/static/site.webmanifest
@@ -149,6 +150,7 @@ COPY branding/openwebui/chutes-chat-icon-512.png /app/build/static/web-app-manif
 COPY branding/openwebui/custom.css /app/backend/open_webui/static/custom.css
 COPY branding/openwebui/loader.js /app/backend/open_webui/static/loader.js
 COPY branding/openwebui/chutes-logo.svg /app/backend/open_webui/static/chutes-logo.svg
+COPY branding/openwebui/chutes-chat-icon-192.png /app/backend/open_webui/static/favicon.png
 COPY branding/openwebui/n8n-logo.svg /app/backend/open_webui/static/n8n-logo.svg
 COPY branding/openwebui/chutas2.webp /app/backend/open_webui/static/chutas2.webp
 COPY branding/openwebui/dropzone_account.py /app/backend/open_webui/dropzone_account.py
@@ -296,6 +298,7 @@ RUN N8N_UI_DIST="/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-editor-u
 COPY branding/openwebui/custom.css /app/build/static/custom.css
 COPY branding/openwebui/loader.js /app/build/static/loader.js
 COPY branding/openwebui/chutes-logo.svg /app/build/static/chutes-logo.svg
+COPY branding/openwebui/chutes-chat-icon-192.png /app/build/static/favicon.png
 COPY branding/openwebui/n8n-logo.svg /app/build/static/n8n-logo.svg
 COPY branding/openwebui/chutas2.webp /app/build/static/chutas2.webp
 COPY branding/openwebui/site.webmanifest /app/build/static/site.webmanifest
@@ -308,6 +311,7 @@ COPY branding/openwebui/chutes-chat-icon-512.png /app/build/static/web-app-manif
 COPY branding/openwebui/custom.css /app/backend/open_webui/static/custom.css
 COPY branding/openwebui/loader.js /app/backend/open_webui/static/loader.js
 COPY branding/openwebui/chutes-logo.svg /app/backend/open_webui/static/chutes-logo.svg
+COPY branding/openwebui/chutes-chat-icon-192.png /app/backend/open_webui/static/favicon.png
 COPY branding/openwebui/n8n-logo.svg /app/backend/open_webui/static/n8n-logo.svg
 COPY branding/openwebui/chutas2.webp /app/backend/open_webui/static/chutas2.webp
 COPY branding/openwebui/dropzone_account.py /app/backend/open_webui/dropzone_account.py
