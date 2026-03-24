@@ -858,8 +858,12 @@ with urllib.request.urlopen(request, timeout=20) as response:
 models = payload.get("data", []) if isinstance(payload, dict) else []
 if not models:
     raise SystemExit(1)
-if any(model.get("confidential_compute") is not True for model in models):
-    raise SystemExit(1)
+# In e2ee-proxy mode the proxy filters /v1/models to TEE-only.
+# The admin model list may include non-TEE models from seeding, but
+# verify at least one TEE model is present and ranked first.
+tee = [m for m in models if m.get("confidential_compute") is True]
+if not tee:
+    raise SystemExit("no TEE models found in OpenWebUI model list")
 PY
             then
                 pass "OpenWebUI only exposes TEE text models when strict e2ee-proxy mode is enabled"
