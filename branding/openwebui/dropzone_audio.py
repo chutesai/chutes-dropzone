@@ -282,20 +282,27 @@ async def speech_to_text(
     try:
         raw = _invoke_chute(stt["slug"], STT_CORD, {
             "audio_b64": audio_b64,
+            "language": None,
         }, token)
     except urllib.error.HTTPError as e:
         raise HTTPException(status_code=e.code, detail=f"STT chute error: {e.reason}")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"STT invocation failed: {e}")
 
+    # Whisper chute returns a list of chunks: [{"start", "end", "text"}, ...]
     try:
         result = json.loads(raw)
-        text = result.get("text", "")
+        if isinstance(result, list):
+            text = " ".join(chunk.get("text", "").strip() for chunk in result if isinstance(chunk, dict))
+        elif isinstance(result, dict):
+            text = result.get("text", "")
+        else:
+            text = str(result)
     except (json.JSONDecodeError, ValueError):
         text = raw.decode("utf-8", errors="replace")
 
     # OpenAI-compatible response
-    return {"text": text}
+    return {"text": text.strip()}
 
 
 @router.get("/discovery")
