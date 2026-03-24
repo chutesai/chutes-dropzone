@@ -196,17 +196,9 @@ complete_openwebui_sso_login() {
     assert_nonempty "$state" "missing OpenWebUI OAuth state"
 
     callback_url="https://${DROPZONE_HOST}/oauth/oidc/callback?code=member-code&state=${state}"
-    callback_headers="$COOKIE_DIR/openwebui-callback.headers"
-    curl_edge -sk -o /dev/null -D "$callback_headers" -c "$cookie_file" -b "$cookie_file" \
-        "$callback_url"
-
-    local final_location
-    final_location="$(extract_location "$callback_headers")"
-    if [ -n "$final_location" ]; then
-        printf '%s' "$final_location" >"$final_url_file"
-    else
-        printf 'https://%s/home' "$DROPZONE_HOST" >"$final_url_file"
-    fi
+    curl_edge -skL -o /dev/null -c "$cookie_file" -b "$cookie_file" \
+        -w '%{url_effective}' \
+        "$callback_url" >"$final_url_file"
 }
 
 complete_sso_login() {
