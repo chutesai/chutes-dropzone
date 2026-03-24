@@ -168,6 +168,7 @@ read_interactive_value() {
     local prompt="$2"
     local secret="${3:-false}"
     local value=""
+    local tty_fd_opened=false
 
     if [ "$INTERACTIVE" != true ]; then
         err "$var_name must be set in non-interactive mode"
@@ -175,22 +176,32 @@ read_interactive_value() {
     fi
 
     if [ -n "$TTY_DEVICE" ]; then
-        printf '%s' "$prompt" > "$TTY_DEVICE"
-        if [ "$secret" = true ]; then
-            IFS= read -r -s value < "$TTY_DEVICE"
-            printf '\n' > "$TTY_DEVICE"
+        if exec 3<> "$TTY_DEVICE"; then
+            tty_fd_opened=true
+            printf '%s' "$prompt" >&3
+            if [ "$secret" = true ]; then
+                IFS= read -r -s -u 3 value || true
+                printf '\n' >&3
+            else
+                IFS= read -r -u 3 value || true
+            fi
+            exec 3>&-
+            exec 3<&-
         else
-            IFS= read -r value < "$TTY_DEVICE"
-        fi
-    else
-        if [ "$secret" = true ]; then
-            read -rsp "$prompt" value
-            echo
-        else
-            read -rp "$prompt" value
+            warn "Unable to open ${TTY_DEVICE}; falling back to standard input for ${var_name}"
         fi
     fi
 
+    if [ "$tty_fd_opened" != true ]; then
+        if [ "$secret" = true ]; then
+            read -rsp "$prompt" value || true
+            echo
+        else
+            read -rp "$prompt" value || true
+        fi
+    fi
+
+    value="${value%$'\r'}"
     printf -v "$var_name" '%s' "$value"
 }
 
@@ -342,6 +353,25 @@ env_line() {
     printf '%s=%s\n' "$1" "$(env_escape "$2")"
 }
 
+is_proxy_backed_openwebui_url() {
+    local value="${1%/}"
+
+    case "$value" in
+        https://llm.chutes.ai/v1)
+            return 1
+            ;;
+        http://e2ee-proxy:80/v1|https://127.0.0.1:8443/v1)
+            return 0
+            ;;
+        "https://${DROPZONE_HOST:-}/v1"|"https://${LOCAL_HOSTNAME}/v1")
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 render_template_file() {
     local template_path="$1"
     local output_path="$2"
@@ -356,6 +386,7 @@ replacements = {
     "__TLS_DIRECTIVE__": os.environ.get("TEMPLATE_TLS_DIRECTIVE", ""),
     "__RESOLVERS__": os.environ.get("TEMPLATE_RESOLVERS", ""),
     "__CHUTES_V1_BLOCK__": os.environ.get("TEMPLATE_CHUTES_V1_BLOCK", ""),
+    "__ROOT_ENTRY_BLOCK__": os.environ.get("TEMPLATE_ROOT_ENTRY_BLOCK", ""),
     "__INSTALL_MODE__": os.environ.get("TEMPLATE_INSTALL_MODE", ""),
     "__CHUTES_TRAFFIC_MODE__": os.environ.get("TEMPLATE_CHUTES_TRAFFIC_MODE", ""),
     "__DROPZONE_HOST__": os.environ.get("TEMPLATE_DROPZONE_HOST", ""),
@@ -370,6 +401,11 @@ PY
 
 caddy_chutes_v1_block() {
     if [ "$CHUTES_TRAFFIC_MODE" != "e2ee-proxy" ]; then
+        cat <<'EOF'
+    @chutes_v1 path /v1/*
+    respond @chutes_v1 404
+
+EOF
         return
     fi
 
@@ -384,6 +420,12 @@ EOF
 
 nginx_chutes_v1_block() {
     if [ "$CHUTES_TRAFFIC_MODE" != "e2ee-proxy" ]; then
+        cat <<'EOF'
+        location /v1/ {
+            return 404;
+        }
+
+EOF
         return
     fi
 
@@ -398,6 +440,10 @@ nginx_chutes_v1_block() {
                 return 204;
             }
 
+            more_set_headers 'Access-Control-Allow-Origin: *';
+            more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
+            more_set_headers 'Access-Control-Allow-Headers: *';
+            more_set_headers 'Access-Control-Expose-Headers: *';
             set $chutes_v1_host e2ee-proxy;
             set $chutes_v1_upstream http://$chutes_v1_host:80;
             proxy_pass $chutes_v1_upstream;
@@ -409,6 +455,7 @@ nginx_chutes_v1_block() {
             proxy_set_header X-Forwarded-Proto https;
             proxy_read_timeout 600s;
             proxy_send_timeout 600s;
+            client_max_body_size 10m;
         }
 
 EOF
@@ -451,6 +498,7 @@ write_env_file() {
         echo
         env_line INSTALL_MODE "$INSTALL_MODE"
         env_line CHUTES_TRAFFIC_MODE "$CHUTES_TRAFFIC_MODE"
+        env_line DROPZONE_ENABLE_PUBLIC_LANDING "$DROPZONE_ENABLE_PUBLIC_LANDING"
         env_line CHUTES_COMPOSE_FILES "$CHUTES_COMPOSE_FILES"
         env_line EDGE_SERVICE "$EDGE_SERVICE"
         env_line E2EE_PROXY_IMAGE "$E2EE_PROXY_IMAGE"
@@ -507,10 +555,54 @@ write_env_file() {
     chmod 600 "$ENV_FILE"
 }
 
+caddy_root_entry_block() {
+    if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "false" ]; then
+        cat <<'EOF'
+    handle / {
+        redir /chat/ 302
+    }
+
+EOF
+        return
+    fi
+
+    cat <<'EOF'
+    handle / {
+        header Cache-Control "no-store"
+        root * /srv/landing
+        rewrite * /index.html
+        file_server
+    }
+
+EOF
+}
+
+nginx_root_entry_block() {
+    if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "false" ]; then
+        cat <<'EOF'
+        location = / {
+            return 302 /chat/;
+        }
+
+EOF
+        return
+    fi
+
+    cat <<'EOF'
+        location = / {
+            add_header Cache-Control "no-store" always;
+            root /opt/landing;
+            try_files /index.html =404;
+        }
+
+EOF
+}
+
 render_caddyfile() {
     TEMPLATE_SERVER_NAME="$DROPZONE_HOST" \
     TEMPLATE_TLS_DIRECTIVE="tls ${ACME_EMAIL}" \
     TEMPLATE_CHUTES_V1_BLOCK="$(caddy_chutes_v1_block)" \
+    TEMPLATE_ROOT_ENTRY_BLOCK="$(caddy_root_entry_block)" \
     render_template_file "$SCRIPT_DIR/conf/Caddyfile.template" "$SCRIPT_DIR/conf/Caddyfile"
 }
 
@@ -518,6 +610,7 @@ render_local_proxy_config() {
     TEMPLATE_SERVER_NAME="$DROPZONE_HOST" \
     TEMPLATE_RESOLVERS="8.8.8.8 8.8.4.4" \
     TEMPLATE_CHUTES_V1_BLOCK="$(nginx_chutes_v1_block)" \
+    TEMPLATE_ROOT_ENTRY_BLOCK="$(nginx_root_entry_block)" \
     render_template_file \
         "$SCRIPT_DIR/conf/local-proxy.nginx.template" \
         "$SCRIPT_DIR/conf/local-proxy.nginx.conf"
@@ -961,6 +1054,53 @@ prompt_traffic_mode() {
     esac
 }
 
+prompt_public_landing() {
+    local answer
+    local default_answer="yes"
+
+    if [ "${BOOTSTRAP_OVERRIDE_SET_DROPZONE_ENABLE_PUBLIC_LANDING:-false}" = "true" ]; then
+        if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "false" ]; then
+            default_answer="no"
+        fi
+    elif [ "$EXISTING_INSTALL" = true ]; then
+        if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "false" ]; then
+            default_answer="no"
+        fi
+    fi
+
+    if [ "$INTERACTIVE" != true ]; then
+        if [ "$default_answer" = "yes" ]; then
+            DROPZONE_ENABLE_PUBLIC_LANDING="true"
+        else
+            DROPZONE_ENABLE_PUBLIC_LANDING="false"
+        fi
+        return
+    fi
+
+    echo
+    echo "  Root entry behavior:"
+    echo "    yes - keep the public launcher at /"
+    echo "    no  - redirect / straight to /chat/"
+    if [ "$default_answer" = "yes" ]; then
+        read_interactive_value answer "  Enable the public landing page? [Y/n]: "
+    else
+        read_interactive_value answer "  Enable the public landing page? [y/N]: "
+    fi
+
+    case "${answer:-$default_answer}" in
+        y|Y|yes|YES|Yes)
+            DROPZONE_ENABLE_PUBLIC_LANDING="true"
+            ;;
+        n|N|no|NO|No)
+            DROPZONE_ENABLE_PUBLIC_LANDING="false"
+            ;;
+        *)
+            err "Please answer yes or no"
+            exit 1
+            ;;
+    esac
+}
+
 prompt_e2ee_proxy_confidential_mode() {
     local answer
     local default_answer="yes"
@@ -1141,6 +1281,7 @@ ensure_real_chutes_oauth_credentials() {
 for overridable_var in \
     INSTALL_MODE \
     CHUTES_TRAFFIC_MODE \
+    DROPZONE_ENABLE_PUBLIC_LANDING \
     CHUTES_COMPOSE_FILES \
     EDGE_SERVICE \
     E2EE_PROXY_IMAGE \
@@ -1196,6 +1337,7 @@ fi
 for overridable_var in \
     INSTALL_MODE \
     CHUTES_TRAFFIC_MODE \
+    DROPZONE_ENABLE_PUBLIC_LANDING \
     CHUTES_COMPOSE_FILES \
     EDGE_SERVICE \
     E2EE_PROXY_IMAGE \
@@ -1276,6 +1418,7 @@ fi
 CHUTES_ADMIN_USERNAMES="${CHUTES_ADMIN_USERNAMES:-}"
 CHUTES_API_KEY="${CHUTES_API_KEY:-}"
 CHUTES_TRAFFIC_MODE="${CHUTES_TRAFFIC_MODE:-direct}"
+DROPZONE_ENABLE_PUBLIC_LANDING="${DROPZONE_ENABLE_PUBLIC_LANDING:-true}"
 E2EE_PROXY_IMAGE="${E2EE_PROXY_IMAGE:-$PROJECT_E2EE_PROXY_IMAGE}"
 CADDY_IMAGE="${CADDY_IMAGE:-$PROJECT_CADDY_IMAGE}"
 ALLOW_NON_CONFIDENTIAL="${ALLOW_NON_CONFIDENTIAL:-false}"
@@ -1303,6 +1446,7 @@ prompt_install_mode
 if existing_install_detected; then
     EXISTING_INSTALL=true
 fi
+prompt_public_landing
 prompt_install_action
 prompt_traffic_mode
 prompt_e2ee_proxy_confidential_mode
@@ -1332,7 +1476,10 @@ if [ "$INSTALL_MODE" = "local" ]; then
     else
         CHUTES_PROXY_BASE_URL=""
         CHUTES_CREDENTIAL_TEST_BASE_URL=""
-        OPENWEBUI_API_BASE_URL="${OPENWEBUI_API_BASE_URL:-https://llm.chutes.ai/v1}"
+        if [ "${BOOTSTRAP_OVERRIDE_SET_OPENWEBUI_API_BASE_URL:-false}" != "true" ] && \
+            { [ -z "${OPENWEBUI_API_BASE_URL:-}" ] || is_proxy_backed_openwebui_url "$OPENWEBUI_API_BASE_URL"; }; then
+            OPENWEBUI_API_BASE_URL="https://llm.chutes.ai/v1"
+        fi
     fi
 else
     if [ -z "${DROPZONE_HOST:-}" ] && [ "$INTERACTIVE" = true ]; then
@@ -1357,9 +1504,14 @@ else
     if [ "$CHUTES_TRAFFIC_MODE" = "e2ee-proxy" ]; then
         CHUTES_PROXY_BASE_URL="https://${DROPZONE_HOST}"
         CHUTES_CREDENTIAL_TEST_BASE_URL="https://${DROPZONE_HOST}"
+        OPENWEBUI_API_BASE_URL="https://${DROPZONE_HOST}/v1"
     else
         CHUTES_PROXY_BASE_URL=""
         CHUTES_CREDENTIAL_TEST_BASE_URL=""
+        if [ "${BOOTSTRAP_OVERRIDE_SET_OPENWEBUI_API_BASE_URL:-false}" != "true" ] && \
+            { [ -z "${OPENWEBUI_API_BASE_URL:-}" ] || is_proxy_backed_openwebui_url "$OPENWEBUI_API_BASE_URL"; }; then
+            OPENWEBUI_API_BASE_URL="https://llm.chutes.ai/v1"
+        fi
     fi
 fi
 
@@ -1599,7 +1751,11 @@ echo -e "${GREEN}${BOLD}  Chutes Dropzone is ready${NC}"
 echo -e "${GREEN}${BOLD}========================================${NC}"
 echo
 echo -e "  Mode: ${BOLD}${INSTALL_MODE}${NC}"
-echo -e "  Landing: ${BOLD}https://${DROPZONE_HOST}/${NC}"
+if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "true" ]; then
+    echo -e "  Landing: ${BOLD}https://${DROPZONE_HOST}/${NC}"
+else
+    echo -e "  Root:    ${BOLD}https://${DROPZONE_HOST}/${NC} ${CYAN}(redirects to /chat/)${NC}"
+fi
 echo -e "  Chat:    ${BOLD}https://${DROPZONE_HOST}/chat/${NC}"
 echo -e "  n8n:     ${BOLD}https://${DROPZONE_HOST}/n8n/${NC}"
 echo

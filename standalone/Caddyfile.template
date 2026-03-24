@@ -3,13 +3,24 @@ __SERVER_NAME__ {
 
     encode zstd gzip
 
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        Referrer-Policy strict-origin-when-cross-origin
+        Strict-Transport-Security "max-age=63072000; includeSubDomains"
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+    }
+
     __CHUTES_V1_BLOCK__
 
     redir /chat /chat/ 308
     redir /chat/ /home 302
     redir /n8n /n8n/ 308
 
-    @chatAlias path_regexp chatAlias ^/chat/(.+)$
+    @chatAliasBad path_regexp chatAliasBad ^/chat//+.*$
+    redir @chatAliasBad /home 302
+
+    @chatAlias path_regexp chatAlias ^/chat/([^/].*)$
     redir @chatAlias /{re.chatAlias.1} 308
 
     handle_path /n8n/* {
@@ -21,12 +32,19 @@ __SERVER_NAME__ {
     }
 
     handle /rest/sso/chutes/* {
+        header Cache-Control "no-store"
         reverse_proxy 127.0.0.1:5678 {
             header_up X-Forwarded-For {remote_host}
             header_up X-Forwarded-Host {host}
             header_up X-Forwarded-Proto {scheme}
         }
     }
+
+    @n8nCustomSidebar path /n8n/static/chutes-custom.js /n8n/static/chutes-custom.css
+    header @n8nCustomSidebar Cache-Control "no-store"
+
+    @chatCustomAssets path /static/custom.css /static/loader.js /static/site.webmanifest /chat/static/custom.css /chat/static/loader.js /chat/static/site.webmanifest
+    header @chatCustomAssets Cache-Control "no-store"
 
     handle /_dropzone/* {
         header Cache-Control "public, max-age=31536000, immutable"
@@ -35,12 +53,7 @@ __SERVER_NAME__ {
         file_server
     }
 
-    handle / {
-        header Cache-Control "no-store"
-        root * /opt/landing
-        rewrite * /index.html
-        file_server
-    }
+__ROOT_ENTRY_BLOCK__
 
     handle {
         reverse_proxy 127.0.0.1:8080 {

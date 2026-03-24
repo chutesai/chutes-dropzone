@@ -95,6 +95,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-dropzone}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_OPENWEBUI_DB:-openwebui}
       - WEBUI_URL=https://${DROPZONE_HOST:-localhost}/chat
+      - CORS_ALLOW_ORIGIN=https://${DROPZONE_HOST:-localhost}
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
       - WEBUI_NAME=${OPENWEBUI_NAME:-Chutes Chat}
       - ADMIN_EMAIL=${OPENWEBUI_ADMIN_EMAIL}

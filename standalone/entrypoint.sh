@@ -114,6 +114,40 @@ prompt_required() {
     fi
 }
 
+prompt_public_landing() {
+    local _answer
+    local _default="yes"
+
+    if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "false" ]; then
+        _default="no"
+    fi
+
+    if [ "$INTERACTIVE" != true ]; then
+        if [ "$_default" = "yes" ]; then
+            DROPZONE_ENABLE_PUBLIC_LANDING="true"
+        else
+            DROPZONE_ENABLE_PUBLIC_LANDING="false"
+        fi
+        return
+    fi
+
+    echo
+    echo "  Root entry behavior:"
+    echo "    yes - keep the public launcher at /"
+    echo "    no  - redirect / straight to /chat/"
+    if [ "$_default" = "yes" ]; then
+        read_value _answer "  Enable the public landing page? [Y/n]: "
+    else
+        read_value _answer "  Enable the public landing page? [y/N]: "
+    fi
+
+    case "${_answer:-$_default}" in
+        y|Y|yes|YES|Yes) DROPZONE_ENABLE_PUBLIC_LANDING="true" ;;
+        n|N|no|NO|No) DROPZONE_ENABLE_PUBLIC_LANDING="false" ;;
+        *) err "Please answer yes or no"; exit 1 ;;
+    esac
+}
+
 # ---------------------------------------------------------------------------
 # Secret generation (mirrors deploy.sh)
 # ---------------------------------------------------------------------------
@@ -148,6 +182,25 @@ env_line() {
     printf '%s=%s\n' "$1" "$(env_escape "$2")"
 }
 
+is_proxy_backed_openwebui_url() {
+    _value="${1%/}"
+
+    case "$_value" in
+        https://llm.chutes.ai/v1)
+            return 1
+            ;;
+        http://e2ee-proxy:80/v1|https://127.0.0.1:8443/v1)
+            return 0
+            ;;
+        "https://${DROPZONE_HOST:-}/v1"|"https://${LOCAL_HOSTNAME}/v1")
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 render_template_file() {
     TEMPLATE_PATH="$1" OUTPUT_PATH="$2" python3 - <<'PY'
 import os
@@ -159,6 +212,7 @@ replacements = {
     "__TLS_DIRECTIVE__": os.environ.get("TEMPLATE_TLS_DIRECTIVE", ""),
     "__RESOLVERS__": os.environ.get("TEMPLATE_RESOLVERS", ""),
     "__CHUTES_V1_BLOCK__": os.environ.get("TEMPLATE_CHUTES_V1_BLOCK", ""),
+    "__ROOT_ENTRY_BLOCK__": os.environ.get("TEMPLATE_ROOT_ENTRY_BLOCK", ""),
 }
 
 for placeholder, value in replacements.items():
@@ -170,6 +224,11 @@ PY
 
 caddy_chutes_v1_block() {
     if [ "$CHUTES_TRAFFIC_MODE" != "e2ee-proxy" ]; then
+        cat <<'EOF'
+    @chutes_v1 path /v1/*
+    respond @chutes_v1 404
+
+EOF
         return
     fi
 
@@ -185,8 +244,36 @@ caddy_chutes_v1_block() {
 EOF
 }
 
+caddy_root_entry_block() {
+    if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "false" ]; then
+        cat <<'EOF'
+    handle / {
+        redir /chat/ 302
+    }
+
+EOF
+        return
+    fi
+
+    cat <<'EOF'
+    handle / {
+        header Cache-Control "no-store"
+        root * /opt/landing
+        rewrite * /index.html
+        file_server
+    }
+
+EOF
+}
+
 nginx_chutes_v1_block() {
     if [ "$CHUTES_TRAFFIC_MODE" != "e2ee-proxy" ]; then
+        cat <<'EOF'
+        location /v1/ {
+            return 404;
+        }
+
+EOF
         return
     fi
 
@@ -201,6 +288,10 @@ nginx_chutes_v1_block() {
                 return 204;
             }
 
+            more_set_headers 'Access-Control-Allow-Origin: *';
+            more_set_headers 'Access-Control-Allow-Methods: GET, HEAD, OPTIONS';
+            more_set_headers 'Access-Control-Allow-Headers: *';
+            more_set_headers 'Access-Control-Expose-Headers: *';
             content_by_lua_block {
                 local handler = require("model_catalog")
                 handler.handle()
@@ -208,6 +299,7 @@ nginx_chutes_v1_block() {
         }
 
         location = /v1/messages {
+            client_max_body_size 10m;
             if ($request_method = 'OPTIONS') {
                 more_set_headers 'Access-Control-Allow-Origin: *';
                 more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
@@ -217,6 +309,10 @@ nginx_chutes_v1_block() {
                 return 204;
             }
 
+            more_set_headers 'Access-Control-Allow-Origin: *';
+            more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
+            more_set_headers 'Access-Control-Allow-Headers: *';
+            more_set_headers 'Access-Control-Expose-Headers: *';
             more_set_headers 'X-Dropzone-Proxy: e2ee-proxy';
 
             content_by_lua_block {
@@ -226,6 +322,7 @@ nginx_chutes_v1_block() {
         }
 
         location = /v1/responses {
+            client_max_body_size 10m;
             if ($request_method = 'OPTIONS') {
                 more_set_headers 'Access-Control-Allow-Origin: *';
                 more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
@@ -235,6 +332,10 @@ nginx_chutes_v1_block() {
                 return 204;
             }
 
+            more_set_headers 'Access-Control-Allow-Origin: *';
+            more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
+            more_set_headers 'Access-Control-Allow-Headers: *';
+            more_set_headers 'Access-Control-Expose-Headers: *';
             more_set_headers 'X-Dropzone-Proxy: e2ee-proxy';
 
             content_by_lua_block {
@@ -244,6 +345,7 @@ nginx_chutes_v1_block() {
         }
 
         location /v1/ {
+            client_max_body_size 10m;
             if ($request_method = 'OPTIONS') {
                 more_set_headers 'Access-Control-Allow-Origin: *';
                 more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
@@ -253,12 +355,37 @@ nginx_chutes_v1_block() {
                 return 204;
             }
 
+            more_set_headers 'Access-Control-Allow-Origin: *';
+            more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
+            more_set_headers 'Access-Control-Allow-Headers: *';
+            more_set_headers 'Access-Control-Expose-Headers: *';
             more_set_headers 'X-Dropzone-Proxy: e2ee-proxy';
 
             content_by_lua_block {
                 local handler = require("e2ee_handler")
                 handler.handle()
             }
+        }
+
+EOF
+}
+
+nginx_root_entry_block() {
+    if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "false" ]; then
+        cat <<'EOF'
+        location = / {
+            return 302 /chat/;
+        }
+
+EOF
+        return
+    fi
+
+    cat <<'EOF'
+        location = / {
+            add_header Cache-Control "no-store" always;
+            root /opt/landing;
+            try_files /index.html =404;
         }
 
 EOF
@@ -277,6 +404,7 @@ write_env_file() {
         echo
         env_line INSTALL_MODE "$INSTALL_MODE"
         env_line CHUTES_TRAFFIC_MODE "$CHUTES_TRAFFIC_MODE"
+        env_line DROPZONE_ENABLE_PUBLIC_LANDING "$DROPZONE_ENABLE_PUBLIC_LANDING"
         env_line ALLOW_NON_CONFIDENTIAL "$ALLOW_NON_CONFIDENTIAL"
         env_line CHUTES_SSO_PROXY_BYPASS "$CHUTES_SSO_PROXY_BYPASS"
         env_line CHUTES_PROXY_BASE_URL "$CHUTES_PROXY_BASE_URL"
@@ -342,6 +470,7 @@ else
     # Defaults
     INSTALL_MODE="${INSTALL_MODE:-}"
     CHUTES_TRAFFIC_MODE="${CHUTES_TRAFFIC_MODE:-direct}"
+    DROPZONE_ENABLE_PUBLIC_LANDING="${DROPZONE_ENABLE_PUBLIC_LANDING:-true}"
     ALLOW_NON_CONFIDENTIAL="${ALLOW_NON_CONFIDENTIAL:-false}"
     CHUTES_SSO_PROXY_BYPASS="${CHUTES_SSO_PROXY_BYPASS:-false}"
     CHUTES_OAUTH_CLIENT_ID="${CHUTES_OAUTH_CLIENT_ID:-}"
@@ -384,6 +513,8 @@ else
             INSTALL_MODE="${INSTALL_MODE:-local}"
         fi
     fi
+
+    prompt_public_landing
 
     # --- Traffic mode ---
     if [ "$INTERACTIVE" = true ]; then
@@ -449,6 +580,9 @@ else
     else
         CHUTES_PROXY_BASE_URL=""
         CHUTES_CREDENTIAL_TEST_BASE_URL=""
+        if [ -z "${OPENWEBUI_API_BASE_URL:-}" ] || is_proxy_backed_openwebui_url "$OPENWEBUI_API_BASE_URL"; then
+            OPENWEBUI_API_BASE_URL="https://llm.chutes.ai/v1"
+        fi
     fi
 
     # --- OAuth credentials ---
@@ -558,6 +692,7 @@ export CHUTES_API_KEY
 export HOST=127.0.0.1
 export PORT=8080
 export WEBUI_URL="https://${DROPZONE_HOST}/chat"
+export CORS_ALLOW_ORIGIN="https://${DROPZONE_HOST}"
 export WEBUI_SECRET_KEY
 export WEBUI_NAME="$OPENWEBUI_NAME"
 export ADMIN_EMAIL="$OPENWEBUI_ADMIN_EMAIL"
@@ -592,6 +727,7 @@ export STANDALONE_INSTALL_MODE="$INSTALL_MODE"
 export STANDALONE_TRAFFIC_MODE="$CHUTES_TRAFFIC_MODE"
 export STANDALONE_N8N_HOST="$DROPZONE_HOST"
 export STANDALONE_DROPZONE_HOST="$DROPZONE_HOST"
+export STANDALONE_ENABLE_PUBLIC_LANDING="${DROPZONE_ENABLE_PUBLIC_LANDING:-true}"
 export STANDALONE_ACME_EMAIL="${ACME_EMAIL:-}"
 export STANDALONE_ADMIN_EMAIL="$N8N_ADMIN_EMAIL"
 export STANDALONE_DATA_DIR="$DATA_DIR"
@@ -610,6 +746,7 @@ if [ "$INSTALL_MODE" = "local" ]; then
     TEMPLATE_SERVER_NAME="$DROPZONE_HOST" \
     TEMPLATE_RESOLVERS="8.8.8.8 8.8.4.4" \
     TEMPLATE_CHUTES_V1_BLOCK="$(nginx_chutes_v1_block)" \
+    TEMPLATE_ROOT_ENTRY_BLOCK="$(nginx_root_entry_block)" \
     render_template_file /opt/standalone/nginx-standalone.conf.template /tmp/nginx-standalone.conf
     ok "nginx config rendered (local mode)"
 fi
@@ -618,6 +755,7 @@ if [ "$INSTALL_MODE" = "domain" ]; then
     TEMPLATE_SERVER_NAME="$DROPZONE_HOST" \
     TEMPLATE_TLS_DIRECTIVE="tls ${ACME_EMAIL}" \
     TEMPLATE_CHUTES_V1_BLOCK="$(caddy_chutes_v1_block)" \
+    TEMPLATE_ROOT_ENTRY_BLOCK="$(caddy_root_entry_block)" \
     render_template_file /opt/standalone/Caddyfile.template /tmp/Caddyfile
     ok "Caddyfile rendered (domain mode)"
 

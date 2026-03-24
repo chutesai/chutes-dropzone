@@ -154,6 +154,12 @@ if command -v node >/dev/null 2>&1; then
     else
         fail "node --check branding/openwebui/loader.js"
     fi
+
+    if node --check "$PROJECT_DIR/branding/n8n/custom.js" >/dev/null 2>&1; then
+        pass "node --check branding/n8n/custom.js"
+    else
+        fail "node --check branding/n8n/custom.js"
+    fi
 fi
 
 if command -v python3 >/dev/null 2>&1; then
@@ -167,6 +173,12 @@ if command -v python3 >/dev/null 2>&1; then
         pass "python3 -m py_compile patch-openwebui-runtime.py"
     else
         fail "python3 -m py_compile patch-openwebui-runtime.py"
+    fi
+
+    if python3 -m py_compile "$PROJECT_DIR/branding/openwebui/dropzone_account.py" >/dev/null 2>&1; then
+        pass "python3 -m py_compile branding/openwebui/dropzone_account.py"
+    else
+        fail "python3 -m py_compile branding/openwebui/dropzone_account.py"
     fi
 else
     skip "python3 not installed - cannot validate OpenWebUI model-order sync helper"
@@ -208,7 +220,35 @@ else
     fail "docker compose config (local test proxy stack)"
 fi
 
-for placeholder in __SERVER_NAME__ __TLS_DIRECTIVE__ __CHUTES_V1_BLOCK__; do
+direct_openwebui_config="$(
+    CHUTES_TRAFFIC_MODE=direct \
+    OPENWEBUI_API_BASE_URL="https://llm.chutes.ai/v1" \
+    docker compose -f "$PROJECT_DIR/docker-compose.yml" -f "$PROJECT_DIR/docker-compose.local.yml" config 2>/dev/null || true
+)"
+if printf '%s\n' "$direct_openwebui_config" | grep -q 'OPENAI_API_BASE_URLS: https://llm.chutes.ai/v1'; then
+    pass "direct mode renders OpenWebUI against llm.chutes.ai"
+else
+    fail "direct mode did not render OpenWebUI against llm.chutes.ai"
+fi
+
+proxy_openwebui_config="$(
+    CHUTES_TRAFFIC_MODE=e2ee-proxy \
+    OPENWEBUI_API_BASE_URL="https://llm.chutes.ai/v1" \
+    docker compose -f "$PROJECT_DIR/docker-compose.yml" -f "$PROJECT_DIR/docker-compose.local.yml" -f "$PROJECT_DIR/docker-compose.traffic-proxy.yml" config 2>/dev/null || true
+)"
+if printf '%s\n' "$proxy_openwebui_config" | grep -q 'OPENAI_API_BASE_URLS: http://e2ee-proxy:80/v1'; then
+    pass "e2ee-proxy mode renders OpenWebUI against the sidecar"
+else
+    fail "e2ee-proxy mode did not render OpenWebUI against the sidecar"
+fi
+
+if printf '%s\n' "$proxy_openwebui_config" | grep -q 'CHUTES_PROXY_BASE_URL: http://e2ee-proxy:80'; then
+    pass "e2ee-proxy mode renders n8n against the sidecar"
+else
+    fail "e2ee-proxy mode did not render n8n against the sidecar"
+fi
+
+for placeholder in __SERVER_NAME__ __TLS_DIRECTIVE__ __CHUTES_V1_BLOCK__ __ROOT_ENTRY_BLOCK__; do
     if grep -q "$placeholder" "$PROJECT_DIR/conf/Caddyfile.template"; then
         pass "Caddy template has $placeholder"
     else
@@ -216,7 +256,7 @@ for placeholder in __SERVER_NAME__ __TLS_DIRECTIVE__ __CHUTES_V1_BLOCK__; do
     fi
 done
 
-for placeholder in __SERVER_NAME__ __RESOLVERS__ __CHUTES_V1_BLOCK__; do
+for placeholder in __SERVER_NAME__ __RESOLVERS__ __CHUTES_V1_BLOCK__ __ROOT_ENTRY_BLOCK__; do
     if grep -q "$placeholder" "$PROJECT_DIR/conf/local-proxy.nginx.template"; then
         pass "local proxy template has $placeholder"
     else
@@ -224,12 +264,21 @@ for placeholder in __SERVER_NAME__ __RESOLVERS__ __CHUTES_V1_BLOCK__; do
     fi
 done
 
-# shellcheck disable=SC2016,SC2154
+# shellcheck disable=SC2016
 if grep -q 'set \$chutes_v1_host e2ee-proxy;' "$PROJECT_DIR/deploy.sh" && \
-   grep -q 'proxy_pass \$chutes_v1_upstream;' "$PROJECT_DIR/conf/local-proxy.nginx.conf"; then
+   grep -q 'proxy_pass \$chutes_v1_upstream;' "$PROJECT_DIR/deploy.sh"; then
     pass "local proxy defers e2ee-proxy DNS lookup until request time"
 else
     fail "local proxy still resolves e2ee-proxy too early at startup"
+fi
+
+if grep -q '@chatCustomAssets path /static/custom.css /static/loader.js /static/site.webmanifest' "$PROJECT_DIR/conf/Caddyfile.template" && \
+   grep -q 'location = /static/custom.css {' "$PROJECT_DIR/conf/local-proxy.nginx.template" && \
+   grep -q 'location = /static/loader.js {' "$PROJECT_DIR/conf/local-proxy.nginx.template" && \
+   grep -q 'location = /static/site.webmanifest {' "$PROJECT_DIR/conf/local-proxy.nginx.template"; then
+    pass "chat custom assets are served no-store through the edge"
+else
+    fail "chat custom assets are missing edge no-store protection"
 fi
 
 if python3 - "$PROJECT_DIR/branding/openwebui/site.webmanifest" <<'PY' >/dev/null 2>&1
@@ -274,6 +323,19 @@ if grep -q '^OPENWEBUI_IMAGE=' "$PROJECT_DIR/.env.example"; then
     pass ".env.example exposes the pinned OpenWebUI image"
 else
     fail ".env.example is missing OPENWEBUI_IMAGE"
+fi
+
+if grep -q '^DROPZONE_ENABLE_PUBLIC_LANDING=' "$PROJECT_DIR/.env.example"; then
+    pass ".env.example exposes DROPZONE_ENABLE_PUBLIC_LANDING"
+else
+    fail ".env.example is missing DROPZONE_ENABLE_PUBLIC_LANDING"
+fi
+
+if grep -q 'DROPZONE_ENABLE_PUBLIC_LANDING: "false"' "$PROJECT_DIR/examples/kubernetes/standalone-domain-direct.yaml" && \
+   grep -q 'DROPZONE_HOST: "chat.chutes.ai"' "$PROJECT_DIR/examples/kubernetes/standalone-domain-direct.yaml"; then
+    pass "kubernetes standalone example defaults to chat.chutes.ai with the landing page disabled"
+else
+    fail "kubernetes standalone example is missing the chat.chutes.ai private-entry defaults"
 fi
 
 if grep -q '@sha256:' "$PROJECT_DIR/docker-compose.domain.yml"; then
@@ -322,6 +384,7 @@ source "$PROJECT_DIR/.env"
 set +a
 
 DROPZONE_HOST="${DROPZONE_HOST:-${N8N_HOST:-e2ee-local-proxy.chutes.dev}}"
+DROPZONE_ENABLE_PUBLIC_LANDING="${DROPZONE_ENABLE_PUBLIC_LANDING:-true}"
 N8N_EDGE_URL="https://${DROPZONE_HOST}/n8n"
 CHAT_EDGE_URL="https://${DROPZONE_HOST}/chat"
 LANDING_EDGE_URL="https://${DROPZONE_HOST}/"
@@ -372,25 +435,51 @@ else
     fail "OpenWebUI is unreachable on port 8080"
 fi
 
-landing_html="$(curl_edge -sk "$LANDING_EDGE_URL" 2>/dev/null || true)"
-if echo "$landing_html" | grep -q '/chat/' && echo "$landing_html" | grep -q '/n8n/'; then
-    pass "landing page is reachable and links to /chat/ and /n8n/"
+landing_headers="$(curl_edge -skI "$LANDING_EDGE_URL" 2>/dev/null | tr -d '\r' || true)"
+if echo "$landing_headers" | grep -qi '^X-Content-Type-Options: nosniff' && \
+   echo "$landing_headers" | grep -qi '^X-Frame-Options: SAMEORIGIN' && \
+   echo "$landing_headers" | grep -qi '^Referrer-Policy: strict-origin-when-cross-origin' && \
+   echo "$landing_headers" | grep -qi '^Strict-Transport-Security:' && \
+   echo "$landing_headers" | grep -qi '^Permissions-Policy:'; then
+    pass "public app edge sends baseline security headers"
 else
-    fail "landing page is missing launch links"
+    fail "public app edge is missing baseline security headers"
 fi
 
-landing_css_headers="$(curl_edge -skI "https://${DROPZONE_HOST}/_dropzone/styles.css" 2>/dev/null || true)"
-if echo "$landing_css_headers" | grep -qi '^Content-Type: text/css'; then
-    pass "landing stylesheet is served as text/css"
+if echo "$landing_headers" | grep -qi '^Access-Control-Allow-Origin: \*'; then
+    fail "public app edge is exposing wildcard CORS outside the /v1 API surface"
 else
-    fail "landing stylesheet content type is not text/css"
+    pass "public app edge does not expose wildcard CORS headers"
 fi
 
-landing_headers="$(curl_edge -skI "$LANDING_EDGE_URL" 2>/dev/null || true)"
-if echo "$landing_headers" | grep -qi '^Cache-Control: no-store'; then
-    pass "landing HTML disables stale browser caching"
+if [ "$DROPZONE_ENABLE_PUBLIC_LANDING" = "true" ]; then
+    landing_html="$(curl_edge -sk "$LANDING_EDGE_URL" 2>/dev/null || true)"
+    if echo "$landing_html" | grep -q '/chat/' && echo "$landing_html" | grep -q '/n8n/'; then
+        pass "landing page is reachable and links to /chat/ and /n8n/"
+    else
+        fail "landing page is missing launch links"
+    fi
+
+    landing_css_headers="$(curl_edge -skI "https://${DROPZONE_HOST}/_dropzone/styles.css" 2>/dev/null || true)"
+    if echo "$landing_css_headers" | grep -qi '^Content-Type: text/css'; then
+        pass "landing stylesheet is served as text/css"
+    else
+        fail "landing stylesheet content type is not text/css"
+    fi
+
+    if echo "$landing_headers" | grep -qi '^Cache-Control: no-store'; then
+        pass "landing HTML disables stale browser caching"
+    else
+        fail "landing HTML is missing Cache-Control: no-store"
+    fi
 else
-    fail "landing HTML is missing Cache-Control: no-store"
+    if echo "$landing_headers" | grep -qi '^HTTP/.* 302' && \
+       { echo "$landing_headers" | grep -qi '^location: /chat/$' || \
+         echo "$landing_headers" | grep -qi "^location: https\\?://${DROPZONE_HOST}/chat/$"; }; then
+        pass "root entry redirects straight to /chat/ when public landing is disabled"
+    else
+        fail "root entry did not redirect to /chat/ with DROPZONE_ENABLE_PUBLIC_LANDING=false"
+    fi
 fi
 
 auth_headers="$(curl_edge -skI "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F" 2>/dev/null || true)"
@@ -399,6 +488,17 @@ if echo "$auth_headers" | grep -qi '^HTTP/.* 200'; then
 else
     fail "root OpenWebUI auth alias did not return a login page"
 fi
+
+openwebui_account_status="$(curl_edge -sk -o /tmp/chutes-dropzone.openwebui-account.out -w '%{http_code}' \
+    "https://${DROPZONE_HOST}/api/v1/dropzone/account-summary" 2>/dev/null || echo 000)"
+case "$openwebui_account_status" in
+    401|403)
+        pass "OpenWebUI account-summary endpoint rejects anonymous requests"
+        ;;
+    *)
+        fail "OpenWebUI account-summary endpoint returned unexpected anonymous status $openwebui_account_status"
+        ;;
+esac
 
 chat_status="$(curl_edge -sk -o /tmp/chutes-dropzone.chat.out -w '%{http_code}' "$CHAT_EDGE_URL/" 2>/dev/null || echo 000)"
 case "$chat_status" in
@@ -413,6 +513,14 @@ case "$chat_status" in
         fail "OpenWebUI /chat/ route returned status $chat_status"
         ;;
 esac
+
+chat_alias_bad_headers="$(curl_edge -skI "https://${DROPZONE_HOST}/chat//evil.example" 2>/dev/null | tr -d '\r' || true)"
+if echo "$chat_alias_bad_headers" | grep -qi '^location: /home$' || \
+   echo "$chat_alias_bad_headers" | grep -qi "^location: https\\?://${DROPZONE_HOST}/home$"; then
+    pass "OpenWebUI chat alias sends malformed double-slash paths to /home"
+else
+    fail "OpenWebUI chat alias did not safely normalize malformed double-slash paths"
+fi
 
 chat_native_html="$(curl_edge -sk "https://${DROPZONE_HOST}/home" 2>/dev/null || true)"
 if echo "$chat_native_html" | grep -q 'href="/_app/' &&
@@ -437,6 +545,17 @@ if [ -n "$signin_html" ]; then
 else
     fail "n8n sign-in page unreachable at /n8n/"
 fi
+
+n8n_account_status="$(curl_edge -sk -o /tmp/chutes-dropzone.n8n-account.out -w '%{http_code}' \
+    "https://${DROPZONE_HOST}/n8n/rest/sso/chutes/account-summary" 2>/dev/null || echo 000)"
+case "$n8n_account_status" in
+    401|403)
+        pass "n8n account-summary endpoint rejects anonymous requests"
+        ;;
+    *)
+        fail "n8n account-summary endpoint returned unexpected anonymous status $n8n_account_status"
+        ;;
+esac
 
 settings_json="$(curl_edge -sk "${N8N_EDGE_URL}/rest/settings" 2>/dev/null || true)"
 sso_enabled="$(printf '%s' "$settings_json" | json_query '.data.sso.chutes.loginEnabled' 2>/dev/null || true)"
@@ -649,10 +768,33 @@ if [ "${CHUTES_TRAFFIC_MODE:-direct}" = "e2ee-proxy" ]; then
         fail "e2ee-proxy /v1/models route returned status $proxy_models_status"
     fi
 
+    if grep -qi '^Access-Control-Allow-Origin: \*' "$proxy_models_headers"; then
+        pass "e2ee-proxy keeps wildcard CORS scoped to the shared /v1 API surface"
+    else
+        fail "e2ee-proxy /v1/models is missing the expected API CORS header"
+    fi
+
     if grep -qi '^X-Dropzone-Proxy: e2ee-proxy' "$proxy_models_headers"; then
         pass "proxy model catalog responses identify the e2ee-proxy path"
     else
         fail "proxy model catalog responses are missing the e2ee-proxy marker header"
+    fi
+
+    if python3 - /tmp/chutes-n8n-local.proxy-models.out <<'PY' >/dev/null 2>&1
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], "r", encoding="utf-8"))
+models = payload.get("data", []) if isinstance(payload, dict) else []
+if not isinstance(models, list) or not models:
+    raise SystemExit(1)
+if any(not isinstance(model, dict) or not model.get("id") for model in models):
+    raise SystemExit(1)
+PY
+    then
+        pass "proxy model catalog returns an anonymous public model list"
+    else
+        fail "proxy model catalog did not return a valid anonymous public model list"
     fi
 
     if [ "${ALLOW_NON_CONFIDENTIAL:-false}" != "true" ]; then
@@ -737,6 +879,17 @@ PY
     else
         fail "proxy chat-completion responses are missing the e2ee-proxy marker header"
     fi
+else
+    direct_v1_status="$(curl_edge -sk -o /dev/null -w '%{http_code}' \
+        "https://${DROPZONE_HOST}/v1/models" 2>/dev/null || echo 000)"
+    case "$direct_v1_status" in
+        401|403|404)
+            pass "direct mode does not expose the shared /v1 edge"
+            ;;
+        *)
+            fail "direct mode unexpectedly exposed /v1/models with status $direct_v1_status"
+            ;;
+    esac
 fi
 
 credentials_response="$(curl_edge -sk -b /tmp/chutes-n8n-local.cookies \
