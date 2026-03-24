@@ -593,6 +593,10 @@ if ! grep -Eq '/(home|auth)' "$member_openwebui_final_url"; then
     exit 1
 fi
 
+if [ ! -s "$member_openwebui_cookie" ] || ! grep -q 'token' "$member_openwebui_cookie" 2>/dev/null; then
+    echo "DEBUG: OpenWebUI cookie jar content:" >&2
+    cat "$member_openwebui_cookie" >&2 || echo "(empty)" >&2
+fi
 member_openwebui_summary="$(openwebui_account_summary "$member_openwebui_cookie")"
 MEMBER_OPENWEBUI_SUMMARY="$member_openwebui_summary" python3 - <<'PY'
 import json
