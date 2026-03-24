@@ -31,7 +31,7 @@ services:
         condition: service_healthy
     environment:
       - CHUTES_IDP_BASE_URL=http://test-chutes-idp:8080
-      - CHUTES_CREDENTIAL_TEST_BASE_URL=${CHUTES_CREDENTIAL_TEST_BASE_URL:-http://test-chutes-idp:8080}
+      - CHUTES_CREDENTIAL_TEST_BASE_URL=http://test-chutes-idp:8080
       - CHUTES_ADMIN_USERNAMES=${CHUTES_ADMIN_USERNAMES:-admin-user}
 
   openwebui:
