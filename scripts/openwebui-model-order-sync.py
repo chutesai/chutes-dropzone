@@ -406,8 +406,8 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
             "OpenWebUI model discovery returned no models after runtime configuration"
         )
 
-    ordered_ids = []
-    seen_ids = set()
+    ordered_ids = ["chutes-auto"]
+    seen_ids = {"chutes-auto"}
     for model in sorted(models, key=functools.cmp_to_key(compare_models)):
         model_id = model.get("id") or model.get("name")
         if model_id and model_id not in seen_ids:
@@ -425,16 +425,18 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
         updates.append(f"MODEL_LOGOS({logo_count})")
 
     ranked = rank_models_by_capacity(set(ordered_ids))
-    default_model = ranked[0] if ranked else ""
-    if default_model and models_config.get("DEFAULT_MODELS") != default_model:
-        models_config["DEFAULT_MODELS"] = default_model
-        request_json("POST", "/api/v1/configs/models", token, models_config)
-        updates.append(f"DEFAULT_MODELS({default_model})")
+    if ranked:
+        auto_model_id = "chutes-auto"
+        auto_base = ranked[0]
 
-    if default_model and ranked:
-        composite = generate_composite_logo(ranked[:5])
-        if composite:
-            sync_default_model_logo(token, default_model, composite)
+        auto_updated = sync_auto_model(token, auto_model_id, auto_base, ranked[:5])
+        if auto_updated:
+            updates.append(f"CHUTES_AUTO({ranked[0]}...)")
+
+        if models_config.get("DEFAULT_MODELS") != auto_model_id:
+            models_config["DEFAULT_MODELS"] = auto_model_id
+            request_json("POST", "/api/v1/configs/models", token, models_config)
+            updates.append("DEFAULT_MODELS(chutes-auto)")
 
     return len(api_urls), updates, len(ordered_ids), used_backend_fallback
 
@@ -513,28 +515,50 @@ def generate_composite_logo(model_ids: list[str]) -> str:
     return f"data:image/png;base64,{encoded}"
 
 
-def sync_default_model_logo(token: str, model_id: str, data_uri: str) -> None:
-    """Set the composite logo as the profile image for the default model."""
+def sync_auto_model(
+    token: str, model_id: str, base_model_id: str, ranked: list[str]
+) -> bool:
+    """Create or update the Chutes Auto model with composite logo."""
     from open_webui.models.models import Models
+
+    composite = generate_composite_logo(ranked)
+    name = "Chutes Auto"
 
     with get_db() as db:
         existing = Models.get_model_by_id(model_id, db)
 
     if existing:
+        current_base = existing.base_model_id or ""
         current_url = ""
         if existing.meta and hasattr(existing.meta, "profile_image_url"):
             current_url = existing.meta.profile_image_url or ""
-        if current_url == data_uri:
-            return
+        if current_base == base_model_id and (not composite or current_url):
+            return False
         try:
-            request_json("POST", "/api/v1/models/model/update", token, {
+            payload = {
                 "id": model_id,
-                "name": existing.name or model_id,
-                "meta": {"profile_image_url": data_uri},
+                "name": name,
+                "base_model_id": base_model_id,
+                "meta": {"profile_image_url": composite} if composite else {},
                 "params": existing.params.model_dump() if existing.params else {},
-            })
+            }
+            request_json("POST", "/api/v1/models/model/update", token, payload)
+            return True
         except Exception:
-            pass
+            return False
+    else:
+        try:
+            payload = {
+                "id": model_id,
+                "name": name,
+                "base_model_id": base_model_id,
+                "meta": {"profile_image_url": composite} if composite else {},
+                "params": {},
+            }
+            request_json("POST", "/api/v1/models/create", token, payload)
+            return True
+        except Exception:
+            return False
 
 
 def sync_model_logos(token: str, model_ids: list[str]) -> int:
