@@ -554,7 +554,10 @@ MEMBER_N8N_SUMMARY="$member_n8n_summary" python3 - <<'PY'
 import json
 import os
 
-summary = json.loads(os.environ["MEMBER_N8N_SUMMARY"])
+raw = os.environ["MEMBER_N8N_SUMMARY"]
+summary = json.loads(raw)
+if "username" not in summary:
+    raise SystemExit(f"n8n account summary missing 'username': {raw[:500]}")
 assert summary["username"] == "member-user"
 assert summary["tier"] == "pro"
 assert summary["tierLabel"] == "Pro"
