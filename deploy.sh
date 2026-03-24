@@ -608,7 +608,7 @@ render_caddyfile() {
 
 render_local_proxy_config() {
     TEMPLATE_SERVER_NAME="$DROPZONE_HOST" \
-    TEMPLATE_RESOLVERS="8.8.8.8 8.8.4.4" \
+    TEMPLATE_RESOLVERS="127.0.0.11 8.8.8.8 8.8.4.4" \
     TEMPLATE_CHUTES_V1_BLOCK="$(nginx_chutes_v1_block)" \
     TEMPLATE_ROOT_ENTRY_BLOCK="$(nginx_root_entry_block)" \
     render_template_file \
