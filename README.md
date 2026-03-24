@@ -2,10 +2,11 @@
 
 Self-hosted Chutes workspace with:
 
-- a public landing page at `/`
+- an optional public landing page at `/`
 - OpenWebUI at `/chat/`
 - n8n at `/n8n/`
 - native Chutes SSO for both apps
+- Chutes quota/tier/account chrome inside both apps
 - one shared Postgres instance
 - optional shared `e2ee-proxy` routing for OpenAI-compatible traffic
 
@@ -29,6 +30,48 @@ docker run --rm -it \
 ```
 
 See [Standalone Image](#standalone-image) for non-interactive runs, domain mode, runtime flags, persisted state layout, and building from source.
+
+### Kubernetes
+
+For Kubernetes, the easiest supported path is the standalone image with:
+
+- `INSTALL_MODE=domain`
+- `CHUTES_TRAFFIC_MODE=direct`
+- one persistent volume mounted at `/data`
+- a `LoadBalancer` service exposing ports `80` and `443`
+
+That lets the image keep its built-in Caddy/ACME flow for your real hostname instead of trying to split TLS ownership between the cluster ingress and the container.
+
+The example manifest is intentionally cluster-neutral, so the same YAML can work on:
+
+- standard Kubernetes clusters with a real `LoadBalancer` implementation
+- MicroK8s with `hostpath-storage` and `metallb` enabled
+
+Example manifest:
+
+- [examples/kubernetes/standalone-domain-direct.yaml](./examples/kubernetes/standalone-domain-direct.yaml)
+
+Typical flow:
+
+1. Replace the placeholder secrets and host values in that manifest.
+   The example defaults to `chat.chutes.ai` with `DROPZONE_ENABLE_PUBLIC_LANDING=false`, so `/` redirects straight to `/chat/`.
+   Also replace `ghcr.io/chutesai/chutes-dropzone:<release-tag>` with the release tag you want to pin.
+2. Apply it: `kubectl apply -f examples/kubernetes/standalone-domain-direct.yaml`
+3. Point your DNS `A`/`AAAA` record for `DROPZONE_HOST` at the service's external IP or hostname.
+4. Wait for Caddy inside the pod to complete ACME issuance.
+
+Important notes:
+
+- Keep this as a single replica. The standalone image stores state under `/data`.
+- For the cleanest setup, expose the service directly with `LoadBalancer`. That is simpler than putting this image behind an ingress, because the image already owns HTTPS termination and ACME in `domain` mode.
+- In `direct` mode, OpenWebUI talks to `https://llm.chutes.ai/v1`, and n8n uses its native direct Chutes resolution path.
+- If you want proxy-mode or multi-pod patterns later, that is a different deployment shape than this simplest standalone example.
+
+MicroK8s notes:
+
+- Enable storage: `microk8s enable hostpath-storage`
+- Enable a load balancer IP pool: `microk8s enable metallb:<start-ip>-<end-ip>`
+- Then apply the same manifest and point DNS at the assigned external IP
 
 ### Repo-Based
 
@@ -106,7 +149,7 @@ Interactive deploy asks for:
 
 After deploy:
 
-- `https://<host>/` is the landing page
+- `https://<host>/` is either the landing page or a redirect to `/chat/`, depending on `DROPZONE_ENABLE_PUBLIC_LANDING`
 - `https://<host>/chat/` opens OpenWebUI
 - `https://<host>/n8n/` opens n8n
 
@@ -128,10 +171,14 @@ Recommended scopes:
 
 The public topology is fixed in v1:
 
-- `/` serves a dark Chutes-branded landing page
+- `/` either serves a dark Chutes-branded landing page or redirects to `/chat/`
 - `/chat/` is the human-friendly OpenWebUI entrypoint and redirects into OpenWebUI's native home route
 - `/n8n/` reverse-proxies to n8n without stripping the prefix
 - `/v1/*` is exposed only when `CHUTES_TRAFFIC_MODE=e2ee-proxy`
+
+`DROPZONE_ENABLE_PUBLIC_LANDING=true` preserves the launcher at `/`.
+
+`DROPZONE_ENABLE_PUBLIC_LANDING=false` makes `/` return a redirect to `/chat/`, which is the recommended standalone domain deployment shape for `chat.chutes.ai`.
 
 Local installs intentionally stay on a single exact-cert host instead of subdomains.
 
@@ -155,6 +202,7 @@ Local installs intentionally stay on a single exact-cert host instead of subdoma
 See [.env.example](./.env.example) for the full set. The main public/operator-facing vars are:
 
 - `DROPZONE_HOST`
+- `DROPZONE_ENABLE_PUBLIC_LANDING`
 - `POSTGRES_N8N_DB`
 - `POSTGRES_OPENWEBUI_DB`
 - `OPENWEBUI_VERSION`
@@ -188,7 +236,9 @@ At startup, Dropzone also seeds OpenWebUI runtime config so model backends use t
 
 Dropzone keeps that ordering fresh in the background with a server-side sync worker. By default, OpenWebUI refreshes its upstream model cache every 5 minutes and the worker reseeds `MODEL_ORDER_LIST` on the same cadence, so newly published Chutes models settle into the intended order without a redeploy.
 
-When `CHUTES_TRAFFIC_MODE=e2ee-proxy` and `ALLOW_NON_CONFIDENTIAL=false`, both OpenWebUI and n8n talk to the shared `e2ee-proxy` sidecar and see only TEE-backed text models from its `/v1/models` catalog.
+When `CHUTES_TRAFFIC_MODE=direct`, OpenWebUI talks straight to `https://llm.chutes.ai/v1` and n8n resolves text traffic against the native Chutes LLM endpoints.
+
+When `CHUTES_TRAFFIC_MODE=e2ee-proxy`, both OpenWebUI and n8n send invocation traffic through the shared `e2ee-proxy` sidecar. The sidecar's `/v1/models` catalog still sources model metadata anonymously from `https://llm.chutes.ai/v1/models`, then applies local TEE-only filtering when `ALLOW_NON_CONFIDENTIAL=false`.
 
 Chutes currently does not advertise an `email` scope or `email` claim in the live OIDC discovery document, so OpenWebUI uses its synthetic-email fallback for user creation.
 

@@ -1,0 +1,115 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: chutes-dropzone-env
+type: Opaque
+stringData:
+  INSTALL_MODE: "domain"
+  CHUTES_TRAFFIC_MODE: "direct"
+  DROPZONE_ENABLE_PUBLIC_LANDING: "false"
+  DROPZONE_HOST: "chat.chutes.ai"
+  ACME_EMAIL: "sirouk@chutes.ai"
+
+  CHUTES_OAUTH_CLIENT_ID: "replace-me"
+  CHUTES_OAUTH_CLIENT_SECRET: "replace-me"
+  CHUTES_SSO_SCOPES: "openid profile chutes:read chutes:invoke"
+
+  N8N_ENCRYPTION_KEY: "replace-with-64-hex-or-other-strong-secret"
+  N8N_JWT_SECRET: "replace-with-64-hex-or-other-strong-secret"
+  WEBUI_SECRET_KEY: "replace-with-64-hex-or-other-strong-secret"
+
+  N8N_ADMIN_EMAIL: "admin@chutes.local"
+  N8N_ADMIN_PASSWORD: "replace-me"
+  OPENWEBUI_ADMIN_NAME: "Chutes Chat Admin"
+  OPENWEBUI_ADMIN_EMAIL: "admin@chutes.local"
+  OPENWEBUI_ADMIN_PASSWORD: "replace-me"
+
+  OPENWEBUI_NAME: "Chutes Chat"
+  OPENWEBUI_API_BASE_URL: "https://llm.chutes.ai/v1"
+  OPENWEBUI_API_KEY: ""
+  OPENWEBUI_MODELS_CACHE_TTL: "300"
+  OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL: "300"
+
+  ALLOW_NON_CONFIDENTIAL: "false"
+  CHUTES_SSO_PROXY_BYPASS: "false"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: chutes-dropzone-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chutes-dropzone
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: chutes-dropzone
+  template:
+    metadata:
+      labels:
+        app: chutes-dropzone
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: chutes-dropzone
+          image: "ghcr.io/chutesai/chutes-dropzone:<release-tag>"
+          imagePullPolicy: Always
+          envFrom:
+            - secretRef:
+                name: chutes-dropzone-env
+          ports:
+            - name: http
+              containerPort: 80
+            - name: https
+              containerPort: 443
+          readinessProbe:
+            tcpSocket:
+              port: https
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: https
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "6Gi"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: chutes-dropzone-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chutes-dropzone
+spec:
+  type: LoadBalancer
+  selector:
+    app: chutes-dropzone
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: https
+      port: 443
+      targetPort: https

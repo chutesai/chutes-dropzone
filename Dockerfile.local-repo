@@ -149,6 +149,7 @@ COPY branding/openwebui/custom.css /app/backend/open_webui/static/custom.css
 COPY branding/openwebui/loader.js /app/backend/open_webui/static/loader.js
 COPY branding/openwebui/chutes-logo.svg /app/backend/open_webui/static/chutes-logo.svg
 COPY branding/openwebui/n8n-logo.svg /app/backend/open_webui/static/n8n-logo.svg
+COPY branding/openwebui/dropzone_account.py /app/backend/open_webui/dropzone_account.py
 COPY branding/openwebui/site.webmanifest /app/backend/open_webui/static/site.webmanifest
 COPY branding/openwebui/chutes-chat-icon-180.png /app/backend/open_webui/static/chutes-chat-icon-180.png
 COPY branding/openwebui/chutes-chat-icon-192.png /app/backend/open_webui/static/chutes-chat-icon-192.png
@@ -193,10 +194,12 @@ RUN N8N_UI_DIST="/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-editor-u
     install -m 0644 /opt/branding/n8n/custom.js "$N8N_UI_DIST/static/chutes-custom.js" && \
     install -m 0644 /opt/branding/n8n/chutes-logo.svg "$N8N_UI_DIST/static/chutes-logo.svg" && \
     install -m 0644 /opt/branding/n8n/n8n-logo.svg "$N8N_UI_DIST/static/n8n-logo.svg" && \
+    css_hash="$(sha256sum /opt/branding/n8n/custom.css | awk '{print substr($1,1,12)}')" && \
+    js_hash="$(sha256sum /opt/branding/n8n/custom.js | awk '{print substr($1,1,12)}')" && \
     node /opt/build-tools/patch-n8n-build.mjs \
         "$N8N_UI_DIST/index.html" \
-        "/{{BASE_PATH}}/static/chutes-custom.css" \
-        "/{{BASE_PATH}}/static/chutes-custom.js"
+        "/{{BASE_PATH}}/static/chutes-custom.css?v=${css_hash}" \
+        "/{{BASE_PATH}}/static/chutes-custom.js?v=${js_hash}"
 
 COPY --from=chutes-nodes-builder /build/dist/ /opt/custom-nodes/n8n-nodes-chutes/dist/
 COPY --from=chutes-nodes-builder /build/package.json /opt/custom-nodes/n8n-nodes-chutes/
@@ -280,10 +283,12 @@ RUN N8N_UI_DIST="/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-editor-u
     install -m 0644 /opt/branding/n8n/custom.js "$N8N_UI_DIST/static/chutes-custom.js" && \
     install -m 0644 /opt/branding/n8n/chutes-logo.svg "$N8N_UI_DIST/static/chutes-logo.svg" && \
     install -m 0644 /opt/branding/n8n/n8n-logo.svg "$N8N_UI_DIST/static/n8n-logo.svg" && \
+    css_hash="$(sha256sum /opt/branding/n8n/custom.css | awk '{print substr($1,1,12)}')" && \
+    js_hash="$(sha256sum /opt/branding/n8n/custom.js | awk '{print substr($1,1,12)}')" && \
     node /opt/build-tools/patch-n8n-build.mjs \
         "$N8N_UI_DIST/index.html" \
-        "/{{BASE_PATH}}/static/chutes-custom.css" \
-        "/{{BASE_PATH}}/static/chutes-custom.js"
+        "/{{BASE_PATH}}/static/chutes-custom.css?v=${css_hash}" \
+        "/{{BASE_PATH}}/static/chutes-custom.js?v=${js_hash}"
 
 COPY branding/openwebui/custom.css /app/build/static/custom.css
 COPY branding/openwebui/loader.js /app/build/static/loader.js
@@ -300,6 +305,7 @@ COPY branding/openwebui/custom.css /app/backend/open_webui/static/custom.css
 COPY branding/openwebui/loader.js /app/backend/open_webui/static/loader.js
 COPY branding/openwebui/chutes-logo.svg /app/backend/open_webui/static/chutes-logo.svg
 COPY branding/openwebui/n8n-logo.svg /app/backend/open_webui/static/n8n-logo.svg
+COPY branding/openwebui/dropzone_account.py /app/backend/open_webui/dropzone_account.py
 COPY branding/openwebui/site.webmanifest /app/backend/open_webui/static/site.webmanifest
 COPY branding/openwebui/chutes-chat-icon-180.png /app/backend/open_webui/static/chutes-chat-icon-180.png
 COPY branding/openwebui/chutes-chat-icon-192.png /app/backend/open_webui/static/chutes-chat-icon-192.png
