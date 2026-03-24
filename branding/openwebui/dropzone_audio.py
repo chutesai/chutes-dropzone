@@ -23,10 +23,26 @@ from typing import Optional
 
 from open_webui.internal.db import get_session
 from open_webui.utils.auth import get_verified_user
+from open_webui.models.users import Users, UserModel
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/dropzone", tags=["dropzone-audio"])
+
+
+def _resolve_user(request: Request) -> UserModel:
+    """Resolve user from forwarded user-id header (internal OpenWebUI calls).
+
+    OpenWebUI's audio router calls us with Authorization: Bearer <api-key>
+    and X-OpenWebUI-User-Id: <user-id>. We trust the user-id header since
+    this endpoint is only reachable via loopback from OpenWebUI itself.
+    """
+    user_id = request.headers.get("X-OpenWebUI-User-Id", "")
+    if user_id:
+        found = Users.get_user_by_id(user_id)
+        if found:
+            return found
+    raise HTTPException(status_code=401, detail="Authentication required — missing user context")
 
 UTILIZATION_URL = os.environ.get(
     "CHUTES_UTILIZATION_URL", "https://api.chutes.ai/chutes/utilization"
@@ -152,7 +168,7 @@ class TTSRequest(BaseModel):
 
 
 @router.post("/audio/speech")
-async def text_to_speech(request: Request, body: TTSRequest, user=Depends(get_verified_user), db: Session = Depends(get_session)):
+async def text_to_speech(request: Request, body: TTSRequest, user=Depends(_resolve_user), db: Session = Depends(get_session)):
     discovery = _discover_chutes()
     tts = discovery.get("tts")
     if not tts:
@@ -199,7 +215,7 @@ async def speech_to_text(
     request: Request,
     file: UploadFile = File(...),
     model: Optional[str] = Form("whisper-large-v3"),
-    user=Depends(get_verified_user),
+    user=Depends(_resolve_user),
     db: Session = Depends(get_session),
 ):
     discovery = _discover_chutes()
