@@ -397,7 +397,12 @@ if [ -z "$EDGE_SERVICE" ]; then
     esac
 fi
 
-for service in postgres n8n openwebui "$EDGE_SERVICE"; do
+WAIT_SERVICES="postgres n8n openwebui $EDGE_SERVICE"
+if [ "${CHUTES_TRAFFIC_MODE:-direct}" = "e2ee-proxy" ]; then
+    WAIT_SERVICES="$WAIT_SERVICES e2ee-proxy"
+fi
+
+for service in $WAIT_SERVICES; do
     status="$(wait_for_service "$service" 30 || true)"
     if [ "$status" = "healthy" ] || [ "$status" = "running" ]; then
         pass "$service container $status"

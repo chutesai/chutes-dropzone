@@ -579,13 +579,16 @@ MEMBER_OPENWEBUI_SUMMARY="$member_openwebui_summary" python3 - <<'PY'
 import json
 import os
 
-summary = json.loads(os.environ["MEMBER_OPENWEBUI_SUMMARY"])
-assert summary["username"] == "member-user"
+raw = os.environ["MEMBER_OPENWEBUI_SUMMARY"]
+summary = json.loads(raw)
+if "username" not in summary:
+    raise SystemExit(f"account summary missing 'username': {raw[:500]}")
+assert summary["username"] == "member-user", f"expected member-user, got {summary['username']}"
 assert summary["tier"] == "pro"
 assert summary["tierLabel"] == "Pro"
 assert abs(summary["quota"]["used"] - 1284.9) < 0.01
 assert abs(summary["quota"]["limit"] - 5001) < 0.01
-assert summary["links"]["accountUrl"] == "https://chutes.ai/app/settings"
+assert summary["links"]["accountUrl"] == "https://chutes.ai/app/api/billing-balance#daily-quota-usage"
 assert summary["links"]["homeUrl"] == "https://chutes.ai/"
 PY
 
