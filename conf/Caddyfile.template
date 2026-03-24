@@ -14,11 +14,11 @@ __SERVER_NAME__ {
     __CHUTES_V1_BLOCK__
 
     redir /chat /chat/ 308
-    redir /chat/ /home 302
+    redir /chat/ /c/new 302
     redir /n8n /n8n/ 308
 
     @chatAliasBad path_regexp chatAliasBad ^/chat//+.*$
-    redir @chatAliasBad /home 302
+    redir @chatAliasBad /c/new 302
 
     @chatAlias path_regexp chatAlias ^/chat/([^/].*)$
     redir @chatAlias /{re.chatAlias.1} 308

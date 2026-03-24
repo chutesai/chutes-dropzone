@@ -559,7 +559,7 @@ caddy_root_entry_block() {
     if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "false" ]; then
         cat <<'EOF'
     handle / {
-        redir /chat/ 302
+        redir /c/new 302
     }
 
 EOF
@@ -581,7 +581,7 @@ nginx_root_entry_block() {
     if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "false" ]; then
         cat <<'EOF'
         location = / {
-            return 302 /chat/;
+            return 302 /c/new;
         }
 
 EOF

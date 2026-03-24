@@ -132,7 +132,7 @@ http {
         more_set_headers 'Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()';
 
         if ($request_uri ~ "^/chat//+") {
-            return 302 /home;
+            return 302 /c/new;
         }
 
         __CHUTES_V1_BLOCK__
@@ -142,7 +142,7 @@ http {
         }
 
         location = /chat/ {
-            return 302 /home;
+            return 302 /c/new;
         }
 
         location = /n8n {

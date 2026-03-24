@@ -510,10 +510,10 @@ esac
 chat_status="$(curl_edge -sk -o /tmp/chutes-dropzone.chat.out -w '%{http_code}' "$CHAT_EDGE_URL/" 2>/dev/null || echo 000)"
 case "$chat_status" in
     302)
-        if curl_edge -skI "$CHAT_EDGE_URL/" 2>/dev/null | grep -qi "^location: .*${DROPZONE_HOST}/home\\|^location: /home"; then
-            pass "OpenWebUI /chat/ entrypoint redirects into the native app home route"
+        if curl_edge -skI "$CHAT_EDGE_URL/" 2>/dev/null | grep -qi "^location: .*/c/new\\|^location: /c/new"; then
+            pass "OpenWebUI /chat/ entrypoint redirects to new chat"
         else
-            fail "OpenWebUI /chat/ entrypoint did not redirect to /home"
+            fail "OpenWebUI /chat/ entrypoint did not redirect to /c/new"
         fi
         ;;
     *)
@@ -522,9 +522,9 @@ case "$chat_status" in
 esac
 
 chat_alias_bad_headers="$(curl_edge -skI "https://${DROPZONE_HOST}/chat//evil.example" 2>/dev/null | tr -d '\r' || true)"
-if echo "$chat_alias_bad_headers" | grep -qi '^location: /home$' || \
-   echo "$chat_alias_bad_headers" | grep -qi "^location: https\\?://${DROPZONE_HOST}/home$"; then
-    pass "OpenWebUI chat alias sends malformed double-slash paths to /home"
+if echo "$chat_alias_bad_headers" | grep -qi '^location: /c/new$' || \
+   echo "$chat_alias_bad_headers" | grep -qi "^location: https\\?://${DROPZONE_HOST}/c/new$"; then
+    pass "OpenWebUI chat alias sends malformed double-slash paths to /c/new"
 else
     fail "OpenWebUI chat alias did not safely normalize malformed double-slash paths"
 fi

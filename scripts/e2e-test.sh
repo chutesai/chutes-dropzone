@@ -501,12 +501,12 @@ if [[ "$chat_status" != "302" ]]; then
     exit 1
 fi
 
-if ! curl_edge -skI "https://${DROPZONE_HOST}/chat/" | grep -qi "^location: .*${DROPZONE_HOST}/home\\|^location: /home"; then
-    echo "FAIL: OpenWebUI /chat/ entrypoint is not redirecting to /home" >&2
+if ! curl_edge -skI "https://${DROPZONE_HOST}/chat/" | grep -qi "^location: .*/c/new\\|^location: /c/new"; then
+    echo "FAIL: OpenWebUI /chat/ entrypoint is not redirecting to /c/new" >&2
     exit 1
 fi
 
-chat_native_html="$(curl_edge -sk "https://${DROPZONE_HOST}/home")"
+chat_native_html="$(curl_edge -sk "https://${DROPZONE_HOST}/c/new")"
 if [[ "$chat_native_html" != *'href="/_app/'* || "$chat_native_html" != *'src="/static/'* || "$chat_native_html" == *'base: "/chat"'* ]]; then
     echo "FAIL: OpenWebUI frontend HTML is not using native root routes" >&2
     exit 1

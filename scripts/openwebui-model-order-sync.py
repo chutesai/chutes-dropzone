@@ -23,7 +23,7 @@ PROVIDER_LOGOS: dict[str, str] = {
     "mistral": "https://cdn.rayonlabs.ai/chutes/logos/mistral.webp",
     "openai": "https://cdn.rayonlabs.ai/chutes/logos/openailogo.webp",
     "qwen": "https://cdn.rayonlabs.ai/chutes/logos/qwen.webp",
-    "minimax": "https://logos.chutes.ai/logos/minimax.webp",
+    # minimax: no logo available yet on CDN, falls back to Chutes logo
     "gemma": "https://cdn.rayonlabs.ai/chutes/logos/gemma.webp",
     "meta": "https://cdn.rayonlabs.ai/chutes/logos/metaai.webp",
     "zai": "https://cdn.rayonlabs.ai/chutes/logos/zai.webp",
@@ -47,8 +47,6 @@ def logo_url_for_model(model_id: str) -> str:
         return PROVIDER_LOGOS["openai"]
     if "microsoft" in value or "/phi" in value:
         return PROVIDER_LOGOS["microsoft"]
-    if "minimax" in value:
-        return PROVIDER_LOGOS["minimax"]
     if "gemma" in value:
         return PROVIDER_LOGOS["gemma"]
     if ("llama" in value or "meta" in value) and "nemotron" not in value:
