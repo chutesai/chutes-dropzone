@@ -721,6 +721,16 @@ export OPENAI_API_KEYS="${OPENWEBUI_API_KEY:-}"
 export MODELS_CACHE_TTL="${OPENWEBUI_MODELS_CACHE_TTL:-300}"
 export OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL="${OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL:-300}"
 export OPENWEBUI_SYNC_BASE_URL="http://127.0.0.1:8080"
+export ENABLE_FORWARD_USER_INFO_HEADERS=true
+export AUDIO_TTS_ENGINE=openai
+export AUDIO_TTS_OPENAI_API_BASE_URL="http://127.0.0.1:8080/api/v1/dropzone"
+export AUDIO_TTS_OPENAI_API_KEY=unused
+export AUDIO_TTS_MODEL=kokoro
+export AUDIO_TTS_VOICE=af_heart
+export AUDIO_STT_ENGINE=openai
+export AUDIO_STT_OPENAI_API_BASE_URL="http://127.0.0.1:8080/api/v1/dropzone"
+export AUDIO_STT_OPENAI_API_KEY=unused
+export AUDIO_STT_MODEL=whisper-large-v3
 
 # Standalone mode markers (read by s6 service scripts and configure)
 export STANDALONE_INSTALL_MODE="$INSTALL_MODE"
