@@ -152,6 +152,7 @@ COPY branding/openwebui/chutes-logo.svg /app/backend/open_webui/static/chutes-lo
 COPY branding/openwebui/n8n-logo.svg /app/backend/open_webui/static/n8n-logo.svg
 COPY branding/openwebui/chutas2.webp /app/backend/open_webui/static/chutas2.webp
 COPY branding/openwebui/dropzone_account.py /app/backend/open_webui/dropzone_account.py
+COPY branding/openwebui/dropzone_audio.py /app/backend/open_webui/dropzone_audio.py
 COPY branding/openwebui/site.webmanifest /app/backend/open_webui/static/site.webmanifest
 COPY branding/openwebui/chutes-chat-icon-180.png /app/backend/open_webui/static/chutes-chat-icon-180.png
 COPY branding/openwebui/chutes-chat-icon-192.png /app/backend/open_webui/static/chutes-chat-icon-192.png
@@ -310,6 +311,7 @@ COPY branding/openwebui/chutes-logo.svg /app/backend/open_webui/static/chutes-lo
 COPY branding/openwebui/n8n-logo.svg /app/backend/open_webui/static/n8n-logo.svg
 COPY branding/openwebui/chutas2.webp /app/backend/open_webui/static/chutas2.webp
 COPY branding/openwebui/dropzone_account.py /app/backend/open_webui/dropzone_account.py
+COPY branding/openwebui/dropzone_audio.py /app/backend/open_webui/dropzone_audio.py
 COPY branding/openwebui/site.webmanifest /app/backend/open_webui/static/site.webmanifest
 COPY branding/openwebui/chutes-chat-icon-180.png /app/backend/open_webui/static/chutes-chat-icon-180.png
 COPY branding/openwebui/chutes-chat-icon-192.png /app/backend/open_webui/static/chutes-chat-icon-192.png
