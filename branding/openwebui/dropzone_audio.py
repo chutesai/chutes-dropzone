@@ -282,7 +282,6 @@ async def speech_to_text(
     try:
         raw = _invoke_chute(stt["slug"], STT_CORD, {
             "audio_b64": audio_b64,
-            "language": None,
         }, token)
     except urllib.error.HTTPError as e:
         raise HTTPException(status_code=e.code, detail=f"STT chute error: {e.reason}")
