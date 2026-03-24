@@ -31,6 +31,60 @@ PROVIDER_LOGOS: dict[str, str] = {
 
 CHUTES_LOGO_URL = "/static/chutes-logo.svg"
 
+HF_AVATAR_RE = re.compile(
+    r"https://cdn-avatars\.huggingface\.co/v1/production/uploads/[a-f0-9]+/[A-Za-z0-9_-]+\.\w+"
+)
+HF_AVATAR_CACHE_PATH = os.environ.get(
+    "HF_AVATAR_CACHE", "/tmp/chutes-hf-avatar-cache.json"
+)
+
+_hf_cache: dict[str, str] | None = None
+
+
+def _load_hf_cache() -> dict[str, str]:
+    global _hf_cache
+    if _hf_cache is not None:
+        return _hf_cache
+    try:
+        with open(HF_AVATAR_CACHE_PATH, "r") as f:
+            _hf_cache = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        _hf_cache = {}
+    return _hf_cache
+
+
+def _save_hf_cache(cache: dict[str, str]) -> None:
+    try:
+        with open(HF_AVATAR_CACHE_PATH, "w") as f:
+            json.dump(cache, f)
+    except OSError:
+        pass
+
+
+def fetch_hf_avatar(org: str) -> str:
+    """Fetch the org avatar from HuggingFace. Returns URL or empty string."""
+    cache = _load_hf_cache()
+    if org in cache:
+        return cache[org]
+
+    try:
+        req = urllib.request.Request(
+            f"https://huggingface.co/{org}",
+            headers={"User-Agent": "chutes-dropzone/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
+        cache[org] = ""
+        _save_hf_cache(cache)
+        return ""
+
+    match = HF_AVATAR_RE.search(html)
+    url = match.group(0) if match else ""
+    cache[org] = url
+    _save_hf_cache(cache)
+    return url
+
 
 def logo_url_for_model(model_id: str) -> str:
     """Return the provider logo URL for a model id, or the Chutes fallback."""
@@ -54,6 +108,10 @@ def logo_url_for_model(model_id: str) -> str:
     if "glm" in value or "zai-org" in value or "zai/" in value:
         return PROVIDER_LOGOS["zai"]
     if "/" in value:
+        org = value.split("/", 1)[0]
+        hf_avatar = fetch_hf_avatar(org)
+        if hf_avatar:
+            return hf_avatar
         return CHUTES_LOGO_URL
     return ""
 
