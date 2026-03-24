@@ -475,13 +475,26 @@ def _get_chutes_oauth_token() -> str:
 
 
 def warmup_audio_chutes(token: str) -> int:
-    """Warm up TTS/STT chutes every sync cycle so they're ready for users."""
+    """Warm up cold TTS/STT chutes so they're ready for users."""
+    utilization = fetch_utilization()
+    if not utilization:
+        return 0
+
+    active_by_name = {}
+    for entry in utilization:
+        active_by_name[entry.get("name", "")] = entry.get("active_instance_count", 0)
+
+    cold = [name for name in AUDIO_CHUTE_NAMES if active_by_name.get(name, 0) == 0]
+    if not cold:
+        return 0
+
     chutes_token = _get_chutes_oauth_token()
     if not chutes_token:
         return 0
+
     api = os.environ.get("CHUTES_IDP_BASE_URL", "https://api.chutes.ai").rstrip("/")
     warmed = 0
-    for name in AUDIO_CHUTE_NAMES:
+    for name in cold:
         req = urllib.request.Request(
             f"{api}/chutes/warmup/{name}",
             headers={"Authorization": f"Bearer {chutes_token}", "Accept": "application/json"},
