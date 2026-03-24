@@ -239,6 +239,52 @@ def public_models_url() -> str:
     return os.environ.get("CHUTES_PUBLIC_MODELS_URL", "https://llm.chutes.ai/v1/models").rstrip("/")
 
 
+def utilization_url() -> str:
+    return os.environ.get(
+        "CHUTES_UTILIZATION_URL", "https://api.chutes.ai/chutes/utilization"
+    ).rstrip("/")
+
+
+def fetch_utilization() -> list[dict]:
+    request = urllib.request.Request(
+        utilization_url(),
+        headers={"Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError):
+        return []
+    return payload if isinstance(payload, list) else []
+
+
+def pick_default_model(available_model_ids: set[str], top_n: int = 5) -> str:
+    """Pick the best default model by available capacity from utilization data.
+
+    Score = active_instance_count * (1 - utilization_5m)
+    Highest score means most headroom to serve requests.
+    Returns a comma-separated list of the top N model IDs.
+    """
+    utilization = fetch_utilization()
+    if not utilization:
+        return ""
+
+    scored = []
+    for entry in utilization:
+        name = entry.get("name", "")
+        if name not in available_model_ids:
+            continue
+        instances = entry.get("active_instance_count", 0)
+        if instances <= 0:
+            continue
+        util_5m = entry.get("utilization_5m", 1.0)
+        score = instances * (1.0 - util_5m)
+        scored.append((score, name))
+
+    scored.sort(reverse=True)
+    return ",".join(name for _, name in scored[:top_n])
+
+
 def fetch_public_models() -> tuple[list[dict], bool]:
     request = urllib.request.Request(
         public_models_url(),
@@ -323,6 +369,12 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
     logo_count = sync_model_logos(token, ordered_ids)
     if logo_count:
         updates.append(f"MODEL_LOGOS({logo_count})")
+
+    default_model = pick_default_model(set(ordered_ids))
+    if default_model and models_config.get("DEFAULT_MODELS") != default_model:
+        models_config["DEFAULT_MODELS"] = default_model
+        request_json("POST", "/api/v1/configs/models", token, models_config)
+        updates.append(f"DEFAULT_MODELS({default_model.split(',')[0]}...)")
 
     return len(api_urls), updates, len(ordered_ids), used_backend_fallback
 
