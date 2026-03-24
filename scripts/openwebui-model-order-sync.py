@@ -529,7 +529,8 @@ def sync_auto_model(
 
     ranked_key = hashlib.sha256(",".join(ranked).encode()).hexdigest()[:16]
     name = "Chutes Auto"
-    description = f"Best available model, updated every 5 minutes. Routing: {base_model_id}"
+    short_names = ", ".join(m.split("/", 1)[-1] for m in ranked)
+    description = f"Best available model, updated every 5 minutes. Routing: {short_names}"
 
     with get_db() as db:
         existing = Models.get_model_by_id(model_id, db)
