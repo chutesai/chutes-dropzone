@@ -44,3 +44,4 @@ services:
       - DEFAULT_USER_ROLE=user
       - OPENID_PROVIDER_URL=http://test-chutes-idp:8080/.well-known/openid-configuration
       - OAUTH_SCOPES=${CHUTES_SSO_SCOPES:-openid profile chutes:read chutes:invoke}
+      - CHUTES_IDP_BASE_URL=http://test-chutes-idp:8080
