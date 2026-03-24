@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# Synchronize OpenWebUI upstream auth config and model ordering.
+# Synchronize OpenWebUI upstream auth config, model ordering, and provider logos.
 #
 import argparse
 import functools
@@ -14,6 +14,50 @@ from datetime import timedelta
 from open_webui.internal.db import get_db
 from open_webui.models.users import Users
 from open_webui.utils.auth import create_token
+
+
+PROVIDER_LOGOS: dict[str, str] = {
+    "deepseek": "https://cdn.rayonlabs.ai/chutes/logos/deepseeknew.webp",
+    "kimi": "https://cdn.rayonlabs.ai/chutes/logos/kimik2-icon.webp",
+    "microsoft": "https://cdn.rayonlabs.ai/chutes/logos/phi.webp",
+    "mistral": "https://cdn.rayonlabs.ai/chutes/logos/mistral.webp",
+    "openai": "https://cdn.rayonlabs.ai/chutes/logos/openailogo.webp",
+    "qwen": "https://cdn.rayonlabs.ai/chutes/logos/qwen.webp",
+    "minimax": "https://logos.chutes.ai/logos/minimax.webp",
+    "gemma": "https://cdn.rayonlabs.ai/chutes/logos/gemma.webp",
+    "meta": "https://cdn.rayonlabs.ai/chutes/logos/metaai.webp",
+    "zai": "https://cdn.rayonlabs.ai/chutes/logos/zai.webp",
+}
+
+CHUTES_LOGO_URL = "/static/chutes-logo.svg"
+
+
+def logo_url_for_model(model_id: str) -> str:
+    """Return the provider logo URL for a model id, or the Chutes fallback."""
+    value = model_id.lower()
+    if "deepseek" in value:
+        return PROVIDER_LOGOS["deepseek"]
+    if "kimi" in value:
+        return PROVIDER_LOGOS["kimi"]
+    if "mistral" in value:
+        return PROVIDER_LOGOS["mistral"]
+    if "qwen" in value or "qwq" in value or "/wan" in value:
+        return PROVIDER_LOGOS["qwen"]
+    if "openai" in value or "gpt-oss" in value:
+        return PROVIDER_LOGOS["openai"]
+    if "microsoft" in value or "/phi" in value:
+        return PROVIDER_LOGOS["microsoft"]
+    if "minimax" in value:
+        return PROVIDER_LOGOS["minimax"]
+    if "gemma" in value:
+        return PROVIDER_LOGOS["gemma"]
+    if ("llama" in value or "meta" in value) and "nemotron" not in value:
+        return PROVIDER_LOGOS["meta"]
+    if "glm" in value or "zai-org" in value or "zai/" in value:
+        return PROVIDER_LOGOS["zai"]
+    if "/" in value:
+        return CHUTES_LOGO_URL
+    return ""
 
 
 TOKEN_RE = re.compile(r"[A-Za-z0-9.]+")
@@ -276,7 +320,56 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
         request_json("POST", "/api/v1/configs/models", token, models_config)
         updates.append("MODEL_ORDER_LIST")
 
+    logo_count = sync_model_logos(token, ordered_ids)
+    if logo_count:
+        updates.append(f"MODEL_LOGOS({logo_count})")
+
     return len(api_urls), updates, len(ordered_ids), used_backend_fallback
+
+
+def sync_model_logos(token: str, model_ids: list[str]) -> int:
+    """Create or update model override records so OpenWebUI shows provider logos."""
+    from open_webui.models.models import Models
+
+    synced = 0
+    for model_id in model_ids:
+        logo = logo_url_for_model(model_id)
+        if not logo:
+            continue
+
+        with get_db() as db:
+            existing = Models.get_model_by_id(model_id, db)
+
+        if existing:
+            current_url = ""
+            if existing.meta and hasattr(existing.meta, "profile_image_url"):
+                current_url = existing.meta.profile_image_url or ""
+            if current_url == logo:
+                continue
+            try:
+                request_json("POST", "/api/v1/models/model/update", token, {
+                    "id": model_id,
+                    "name": existing.name or model_id,
+                    "meta": {"profile_image_url": logo},
+                    "params": existing.params.model_dump() if existing.params else {},
+                })
+                synced += 1
+            except Exception:
+                pass
+        else:
+            try:
+                request_json("POST", "/api/v1/models/create", token, {
+                    "id": model_id,
+                    "name": model_id,
+                    "base_model_id": None,
+                    "meta": {"profile_image_url": logo},
+                    "params": {},
+                })
+                synced += 1
+            except Exception:
+                pass
+
+    return synced
 
 
 def parse_args() -> argparse.Namespace:

@@ -16,20 +16,6 @@
   var tooltipLayer = null;
   var activeTooltipTarget = null;
 
-  var PROVIDER_LOGOS = {
-    deepseek: "https://cdn.rayonlabs.ai/chutes/logos/deepseeknew.webp",
-    kimi: "https://cdn.rayonlabs.ai/chutes/logos/kimik2-icon.webp",
-    microsoft: "https://cdn.rayonlabs.ai/chutes/logos/phi.webp",
-    mistral: "https://cdn.rayonlabs.ai/chutes/logos/mistral.webp",
-    openai: "https://cdn.rayonlabs.ai/chutes/logos/openailogo.webp",
-    qwen: "https://cdn.rayonlabs.ai/chutes/logos/qwen.webp",
-    zai: "https://cdn.rayonlabs.ai/chutes/logos/zai.webp",
-    minimax: "https://logos.chutes.ai/logos/minimax.webp",
-    gemma: "https://cdn.rayonlabs.ai/chutes/logos/gemma.webp",
-    meta: "https://cdn.rayonlabs.ai/chutes/logos/metaai.webp",
-    glm: "https://cdn.rayonlabs.ai/chutes/logos/zai.webp",
-    chutes: CHUTES_LOGO_URL,
-  };
 
   function isVisible(node) {
     if (!node || !node.getBoundingClientRect) return false;
@@ -654,88 +640,10 @@
     return String(value || "").replace(/\s+/g, " ").trim();
   }
 
-  function providerLogoUrl(label) {
-    var value = normalizeText(label).toLowerCase();
-    if (!value || value.length > 80 || value === "all providers") return "";
-    if (value.indexOf("deepseek") !== -1) return PROVIDER_LOGOS.deepseek;
-    if (value.indexOf("kimi") !== -1) return PROVIDER_LOGOS.kimi;
-    if (value.indexOf("microsoft") !== -1) return PROVIDER_LOGOS.microsoft;
-    if (value.indexOf("mistral") !== -1) return PROVIDER_LOGOS.mistral;
-    if (value.indexOf("openai") !== -1) return PROVIDER_LOGOS.openai;
-    if (value.indexOf("qwen") !== -1) return PROVIDER_LOGOS.qwen;
-    if (value === "zai" || value.indexOf("glm") !== -1) return PROVIDER_LOGOS.zai;
-    return "";
-  }
-
-  function modelLogoUrl(label) {
-    var value = normalizeText(label).toLowerCase();
-    if (!value || value.length > 120) return "";
-    if (value.indexOf("deepseek") !== -1) return PROVIDER_LOGOS.deepseek;
-    if (value.indexOf("kimi") !== -1) return PROVIDER_LOGOS.kimi;
-    if (value.indexOf("zai-org") !== -1 || value.indexOf("glm") !== -1) return PROVIDER_LOGOS.zai;
-    if (value.indexOf("mistral") !== -1) return PROVIDER_LOGOS.mistral;
-    if (value.indexOf("qwen") !== -1 || value.indexOf("qwq") !== -1 || value.indexOf("wan") !== -1) {
-      return PROVIDER_LOGOS.qwen;
-    }
-    if (value.indexOf("openai") !== -1 || value.indexOf("gpt-oss") !== -1) return PROVIDER_LOGOS.openai;
-    if (value.indexOf("microsoft") !== -1 || value.indexOf("/phi") !== -1) return PROVIDER_LOGOS.microsoft;
-    if (value.indexOf("minimax") !== -1) return PROVIDER_LOGOS.minimax;
-    if (value.indexOf("gemma") !== -1) return PROVIDER_LOGOS.gemma;
-    if ((value.indexOf("llama") !== -1 || value.indexOf("meta") !== -1) && value.indexOf("nemotron") === -1) {
-      return PROVIDER_LOGOS.meta;
-    }
-    if (value.indexOf("/") !== -1 && value.indexOf("http") !== 0) {
-      return CHUTES_LOGO_URL;
-    }
-    return "";
-  }
-
-  function decorateNode(node, logoUrl, className, alt) {
-    if (!node || !logoUrl) return;
-    if (node.closest("[data-chutes-account-card]")) return;
-    if (node.closest("[data-chutes-logo]")) return;
-    if (node.querySelector("[data-chutes-logo]")) return;
-    if (node.querySelector("." + className)) return;
-    if (node.querySelector("img") && !node.classList.contains("chutes-selected-model")) return;
-
-    var icon = document.createElement("img");
-    icon.className = className;
-    icon.src = logoUrl;
-    icon.alt = alt;
-    icon.loading = "lazy";
-    node.setAttribute("data-chutes-logo", "true");
-    node.insertBefore(icon, node.firstChild);
-  }
-
-  function decorateModelLogos() {
-    Array.prototype.forEach.call(
-      document.querySelectorAll("button, [role='option'], [role='menuitem'], [role='listbox'] > *, .model-selector-item, .chutes-selected-model"),
-      function (node) {
-        if (!isVisible(node) || node.closest("[data-chutes-account-card]")) return;
-        if (node.closest("[data-chutes-logo]")) return;
-
-        var text = normalizeText(node.textContent);
-        if (!text || text.length > 80) return;
-
-        var providerLogo = providerLogoUrl(text);
-        if (providerLogo) {
-          decorateNode(node, providerLogo, "chutes-provider-logo", text + " logo");
-          return;
-        }
-
-        var modelLogo = modelLogoUrl(text);
-        if (!modelLogo) return;
-
-        decorateNode(node, modelLogo, "chutes-model-logo", text + " logo");
-      },
-    );
-  }
-
   function refresh() {
     scheduled = false;
     patchBranding();
     ensureSidebarCard();
-    decorateModelLogos();
   }
 
   function scheduleRefresh() {
