@@ -40,12 +40,17 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres <<-EOSQL
   \$\$;
 EOSQL
 
-# Revoke cross-database access when per-service users are configured
+# Grant schema permissions (required on PostgreSQL 15+ where public schema
+# is no longer writable by non-owners) and revoke cross-database access.
 if [ "${N8N_USER}" != "${POSTGRES_USER}" ]; then
+  psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "${N8N_DB}" \
+    -c "GRANT ALL ON SCHEMA public TO ${N8N_USER};"
   psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "${OWUI_DB}" \
     -c "REVOKE ALL ON DATABASE ${OWUI_DB} FROM ${N8N_USER};" 2>/dev/null || true
 fi
 if [ "${OWUI_USER}" != "${POSTGRES_USER}" ]; then
+  psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "${OWUI_DB}" \
+    -c "GRANT ALL ON SCHEMA public TO ${OWUI_USER};"
   psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "${N8N_DB}" \
     -c "REVOKE ALL ON DATABASE ${N8N_DB} FROM ${OWUI_USER};" 2>/dev/null || true
 fi
