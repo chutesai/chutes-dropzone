@@ -31,13 +31,25 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/dropzone", tags=["dropzone-audio"])
 
 
+_LOOPBACK_PREFIXES = ("127.", "::1", "localhost")
+
+
+def _is_loopback(request: Request) -> bool:
+    """Check that the request originates from loopback (internal OpenWebUI call)."""
+    client_host = request.client.host if request.client else ""
+    return any(client_host.startswith(p) for p in _LOOPBACK_PREFIXES)
+
+
 def _resolve_user(request: Request) -> UserModel:
     """Resolve user from forwarded user-id header (internal OpenWebUI calls).
 
     OpenWebUI's audio router calls us with Authorization: Bearer <api-key>
-    and X-OpenWebUI-User-Id: <user-id>. We trust the user-id header since
-    this endpoint is only reachable via loopback from OpenWebUI itself.
+    and X-OpenWebUI-User-Id: <user-id>. We trust the user-id header only
+    when the request arrives from loopback (i.e. OpenWebUI calling itself).
+    The edge proxy also strips this header from external requests.
     """
+    if not _is_loopback(request):
+        raise HTTPException(status_code=403, detail="This endpoint is internal-only")
     user_id = request.headers.get("X-OpenWebUI-User-Id", "")
     if user_id:
         found = Users.get_user_by_id(user_id)
@@ -204,6 +216,10 @@ def _invoke_chute(slug: str, cord: str, payload: dict, token: str, timeout: int 
         return resp.read()
 
 
+MAX_TTS_INPUT_LENGTH = 10_000  # characters
+MAX_STT_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
+
+
 class TTSRequest(BaseModel):
     model: Optional[str] = "kokoro"
     input: str
@@ -213,6 +229,9 @@ class TTSRequest(BaseModel):
 
 @router.post("/audio/speech")
 async def text_to_speech(request: Request, body: TTSRequest, user=Depends(_resolve_user), db: Session = Depends(get_session)):
+    if len(body.input) > MAX_TTS_INPUT_LENGTH:
+        raise HTTPException(status_code=413, detail=f"TTS input exceeds {MAX_TTS_INPUT_LENGTH} characters")
+
     discovery = _discover_chutes()
     tts = discovery.get("tts")
     if not tts:
@@ -272,6 +291,8 @@ async def speech_to_text(
         raise HTTPException(status_code=401, detail="No Chutes session — sign in with Chutes SSO")
 
     audio_data = await file.read()
+    if len(audio_data) > MAX_STT_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"Audio upload exceeds {MAX_STT_UPLOAD_BYTES // (1024 * 1024)} MB")
     audio_b64 = base64.b64encode(audio_data).decode("ascii")
 
     try:

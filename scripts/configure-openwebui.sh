@@ -50,7 +50,7 @@ promote_pending_oauth_users() {
     local promoted=""
     promoted="$(
         compose exec -T postgres psql \
-            -U "${POSTGRES_USER:-dropzone}" \
+            -U "${POSTGRES_OPENWEBUI_USER:-${POSTGRES_USER:-dropzone}}" \
             -d "${POSTGRES_OPENWEBUI_DB:-openwebui}" \
             -Atqc "WITH promoted AS (
                         UPDATE \"user\"

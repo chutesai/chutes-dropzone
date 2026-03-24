@@ -172,15 +172,7 @@ export class ChutesSsoService {
 	async getAccountSummaryForUser(user: Pick<User, 'id' | 'email' | 'firstName'>) {
 		let managedCredential: ManagedCredentialLookup;
 
-		try {
-			managedCredential = await this.getManagedCredentialForUser(user.id);
-		} catch (error) {
-			const fallbackCredential = await this.getAdminFallbackManagedCredential(user.id);
-			if (!fallbackCredential) {
-				throw error;
-			}
-			managedCredential = fallbackCredential;
-		}
+		managedCredential = await this.getManagedCredentialForUser(user.id);
 
 		try {
 			const { account, quotas, liveQuota } = await this.fetchAccountBundle(
@@ -446,54 +438,6 @@ export class ChutesSsoService {
 
 		return {
 			credential: existingCredential,
-			data: decrypted,
-		};
-	}
-
-	private async getAdminFallbackManagedCredential(
-		userId: string,
-	): Promise<ManagedCredentialLookup | null> {
-		const currentUser = await this.userRepository.findOne({
-			where: { id: userId },
-			relations: ['role'],
-		});
-
-		if (
-			currentUser?.role?.slug !== GLOBAL_ADMIN_ROLE.slug &&
-			currentUser?.role?.slug !== 'global:owner'
-		) {
-			return null;
-		}
-
-		const credentialShares = await this.sharedCredentialsRepository.find({
-			where: {
-				role: 'credential:owner',
-				credentials: {
-					type: 'chutesApi',
-					name: this.managedCredentialName,
-				},
-			},
-			relations: {
-				credentials: true,
-			},
-		});
-
-		const managedCredential = credentialShares
-			.map((share) => share.credentials)
-			.filter((credential): credential is NonNullable<typeof credential> => Boolean(credential));
-
-		if (managedCredential.length !== 1) {
-			return null;
-		}
-
-		const decrypted =
-			(this.credentialsService.decrypt(
-				managedCredential[0],
-				true,
-			) as ChutesManagedCredentialData | null) ?? {};
-
-		return {
-			credential: managedCredential[0],
 			data: decrypted,
 		};
 	}

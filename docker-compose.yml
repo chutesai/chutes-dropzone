@@ -5,6 +5,12 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-dropzone}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_N8N_DB:-${POSTGRES_DB:-n8n}}
+      POSTGRES_N8N_DB: ${POSTGRES_N8N_DB:-${POSTGRES_DB:-n8n}}
+      POSTGRES_OPENWEBUI_DB: ${POSTGRES_OPENWEBUI_DB:-openwebui}
+      POSTGRES_N8N_USER: ${POSTGRES_N8N_USER:-}
+      POSTGRES_N8N_PASSWORD: ${POSTGRES_N8N_PASSWORD:-}
+      POSTGRES_OPENWEBUI_USER: ${POSTGRES_OPENWEBUI_USER:-}
+      POSTGRES_OPENWEBUI_PASSWORD: ${POSTGRES_OPENWEBUI_PASSWORD:-}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
@@ -34,8 +40,8 @@ services:
       - DB_POSTGRESDB_HOST=postgres
       - DB_POSTGRESDB_PORT=5432
       - DB_POSTGRESDB_DATABASE=${POSTGRES_N8N_DB:-${POSTGRES_DB:-n8n}}
-      - DB_POSTGRESDB_USER=${POSTGRES_USER:-dropzone}
-      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_POSTGRESDB_USER=${POSTGRES_N8N_USER:-${POSTGRES_USER:-dropzone}}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_N8N_PASSWORD:-${POSTGRES_PASSWORD}}
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
       - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_JWT_SECRET}
       - N8N_HOST=${DROPZONE_HOST:-localhost}
@@ -93,15 +99,18 @@ services:
         OPENWEBUI_VERSION: ${OPENWEBUI_VERSION:-v0.8.10}
         OPENWEBUI_IMAGE: ${OPENWEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.8.10@sha256:7eb132b5f14905ef4b07872428681151b6a98e024132cdc9e8124119780e2261}
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-dropzone}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_OPENWEBUI_DB:-openwebui}
+      - DATABASE_URL=postgresql://${POSTGRES_OPENWEBUI_USER:-${POSTGRES_USER:-dropzone}}:${POSTGRES_OPENWEBUI_PASSWORD:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_OPENWEBUI_DB:-openwebui}
       - WEBUI_URL=https://${DROPZONE_HOST:-localhost}/chat
       - CORS_ALLOW_ORIGIN=https://${DROPZONE_HOST:-localhost}
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
       - WEBUI_NAME=${OPENWEBUI_NAME:-Chutes Chat}
-      - ADMIN_EMAIL=${OPENWEBUI_ADMIN_EMAIL}
-      - WEBUI_ADMIN_EMAIL=${OPENWEBUI_ADMIN_EMAIL}
+      # Internal service account — password auth is disabled so this admin
+      # is only reachable via internal API tokens for background config sync.
+      # It is never exposed to end users or accessible via the SSO login flow.
+      - ADMIN_EMAIL=${OPENWEBUI_ADMIN_EMAIL:-svc-dropzone@internal.chutes.local}
+      - WEBUI_ADMIN_EMAIL=${OPENWEBUI_ADMIN_EMAIL:-svc-dropzone@internal.chutes.local}
       - WEBUI_ADMIN_PASSWORD=${OPENWEBUI_ADMIN_PASSWORD}
-      - WEBUI_ADMIN_NAME=${OPENWEBUI_ADMIN_NAME:-Chutes Chat Admin}
+      - WEBUI_ADMIN_NAME=${OPENWEBUI_ADMIN_NAME:-Dropzone Service Account}
       - ENABLE_PERSISTENT_CONFIG=false
       - ENABLE_OAUTH_PERSISTENT_CONFIG=false
       - ENABLE_OAUTH_SIGNUP=true
@@ -162,10 +171,10 @@ services:
     image: ${DROPZONE_OPENWEBUI_IMAGE:-chutes-dropzone-openwebui:local}
     command: ["/opt/dropzone/openwebui-model-order-sync-loop.sh"]
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-dropzone}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_OPENWEBUI_DB:-openwebui}
+      - DATABASE_URL=postgresql://${POSTGRES_OPENWEBUI_USER:-${POSTGRES_USER:-dropzone}}:${POSTGRES_OPENWEBUI_PASSWORD:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_OPENWEBUI_DB:-openwebui}
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
-      - ADMIN_EMAIL=${OPENWEBUI_ADMIN_EMAIL}
-      - WEBUI_ADMIN_EMAIL=${OPENWEBUI_ADMIN_EMAIL}
+      - ADMIN_EMAIL=${OPENWEBUI_ADMIN_EMAIL:-svc-dropzone@internal.chutes.local}
+      - WEBUI_ADMIN_EMAIL=${OPENWEBUI_ADMIN_EMAIL:-svc-dropzone@internal.chutes.local}
       - PYTHONPATH=/app/backend
       - OPENWEBUI_SYNC_BASE_URL=http://openwebui:8080
       - OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL=${OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL:-300}

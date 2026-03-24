@@ -281,6 +281,11 @@ __ROOT_ENTRY_BLOCK__
             proxy_set_header X-Forwarded-Proto https;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection $connection_upgrade;
+            # Strip internal-only headers to prevent external spoofing
+            proxy_set_header X-OpenWebUI-User-Id "";
+            proxy_set_header X-OpenWebUI-User-Email "";
+            proxy_set_header X-OpenWebUI-User-Name "";
+            proxy_set_header X-OpenWebUI-User-Role "";
             proxy_buffering off;
             proxy_read_timeout 600s;
             proxy_send_timeout 600s;

@@ -60,6 +60,11 @@ __ROOT_ENTRY_BLOCK__
             header_up X-Forwarded-For {remote_host}
             header_up X-Forwarded-Host {host}
             header_up X-Forwarded-Proto {scheme}
+            # Strip internal-only headers to prevent external spoofing
+            header_up -X-OpenWebUI-User-Id
+            header_up -X-OpenWebUI-User-Email
+            header_up -X-OpenWebUI-User-Name
+            header_up -X-OpenWebUI-User-Role
         }
     }
 }
