@@ -99,10 +99,11 @@ def _discover_chutes() -> dict:
     for entry in utilization:
         name = entry.get("name", "")
         instances = entry.get("active_instance_count", 0)
-        if instances <= 0:
+        total = entry.get("total_instance_count", 0)
+        if instances <= 0 and total <= 0:
             continue
         util_5m = entry.get("utilization_5m", 1.0)
-        score = instances * (1.0 - util_5m)
+        score = max(instances * (1.0 - util_5m), 0.001) if instances > 0 else 0.0001
         slug = slug_map.get(name, "")
 
         name_lower = name.lower()
