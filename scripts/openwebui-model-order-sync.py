@@ -519,43 +519,51 @@ def sync_auto_model(
     token: str, model_id: str, base_model_id: str, ranked: list[str]
 ) -> bool:
     """Create or update the Chutes Auto model with composite logo."""
+    import hashlib
+
     from open_webui.models.models import Models
 
-    composite = generate_composite_logo(ranked)
+    ranked_key = hashlib.sha256(",".join(ranked).encode()).hexdigest()[:16]
     name = "Chutes Auto"
+    description = f"Best available model, updated every 5 minutes. Routing: {base_model_id}"
 
     with get_db() as db:
         existing = Models.get_model_by_id(model_id, db)
 
+    current_key = ""
     if existing:
-        current_base = existing.base_model_id or ""
-        current_url = ""
-        if existing.meta and hasattr(existing.meta, "profile_image_url"):
-            current_url = existing.meta.profile_image_url or ""
-        if current_base == base_model_id and (not composite or current_url):
+        current_desc = ""
+        if existing.meta and hasattr(existing.meta, "description"):
+            current_desc = existing.meta.description or ""
+        if current_desc.endswith(f"[{ranked_key}]"):
             return False
+
+    composite = generate_composite_logo(ranked)
+    meta = {"description": f"{description} [{ranked_key}]"}
+    if composite:
+        meta["profile_image_url"] = composite
+
+    if existing:
         try:
-            payload = {
+            request_json("POST", "/api/v1/models/model/update", token, {
                 "id": model_id,
                 "name": name,
                 "base_model_id": base_model_id,
-                "meta": {"profile_image_url": composite} if composite else {},
+                "meta": meta,
                 "params": existing.params.model_dump() if existing.params else {},
-            }
-            request_json("POST", "/api/v1/models/model/update", token, payload)
+            })
             return True
         except Exception:
             return False
     else:
         try:
-            payload = {
+            request_json("POST", "/api/v1/models/create", token, {
                 "id": model_id,
                 "name": name,
                 "base_model_id": base_model_id,
-                "meta": {"profile_image_url": composite} if composite else {},
+                "meta": meta,
                 "params": {},
-            }
-            request_json("POST", "/api/v1/models/create", token, payload)
+            })
             return True
         except Exception:
             return False
