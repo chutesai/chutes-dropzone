@@ -324,3 +324,14 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
   font-size: 0.56rem;
 }
 
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: url("/static/chutas2.webp") center bottom / cover no-repeat;
+  opacity: 0.08;
+  filter: blur(6px) brightness(1.5);
+}
+
