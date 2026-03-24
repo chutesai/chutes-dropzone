@@ -427,7 +427,11 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
     ranked = rank_models_by_capacity(set(ordered_ids))
     if ranked:
         auto_model_id = "chutes-auto"
-        auto_base = ranked[0]
+        is_proxy = any("e2ee-proxy" in u for u in api_urls)
+        if is_proxy:
+            auto_base = ranked[0]
+        else:
+            auto_base = ",".join(ranked[:5])
 
         auto_updated = sync_auto_model(token, auto_model_id, auto_base, ranked[:5])
         if auto_updated:

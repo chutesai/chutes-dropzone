@@ -35,6 +35,27 @@ def patch_main(path: Path) -> None:
         '@app.get("/api/v1/dropzone/account-summary")\nasync def get_dropzone_account_summary(\n    user=Depends(get_verified_user), db: Session = Depends(get_session)\n):\n    return get_chutes_account_summary(user, db)\n\n\napp.include_router(dropzone_audio_router)\n\n\n@app.get("/manifest.json")\nasync def get_manifest_json():\n    if app.state.EXTERNAL_PWA_MANIFEST_URL:\n        return requests.get(app.state.EXTERNAL_PWA_MANIFEST_URL).json()\n    else:\n        return {\n            "name": app.state.WEBUI_NAME,\n            "short_name": app.state.WEBUI_NAME,\n            "description": "Chutes Chat is a private AI workspace powered by Chutes.",\n            "start_url": "/chat/",\n            "scope": "/chat/",\n            "display": "standalone",\n            "theme_color": "#171717",\n            "background_color": "#171717",\n            "icons": [\n                {\n                    "src": "/chat/static/chutes-chat-icon-192.png",\n                    "type": "image/png",\n                    "sizes": "192x192",\n                    "purpose": "any maskable",\n                },\n                {\n                    "src": "/chat/static/chutes-chat-icon-512.png",\n                    "type": "image/png",\n                    "sizes": "512x512",\n                    "purpose": "any maskable",\n                },\n            ],\n            "share_target": {\n                "action": "/chat/",\n                "method": "GET",\n                "params": {"text": "shared"},\n            },\n        }\n',
         "manifest route block",
     )
+    # Allow comma-delimited base_model_id (Chutes multi-model routing) to bypass
+    # the MODELS lookup — the first model in the list determines the backend.
+    patched = replace_once(
+        patched,
+        "            if base_model_id not in request.app.state.MODELS:\n",
+        "            if \",\" not in base_model_id and base_model_id not in request.app.state.MODELS:\n",
+        "multi-model routing bypass",
+    )
+    path.write_text(patched, encoding="utf-8")
+
+
+def patch_openai_router(path: Path) -> None:
+    original = path.read_text(encoding="utf-8")
+    # When model_id is a comma-delimited routing string, use the first model
+    # for backend resolution (urlIdx) while keeping the full string in the payload.
+    patched = replace_once(
+        original,
+        "    model = models.get(model_id)\n\n    if model:\n        idx = model[\"urlIdx\"]\n    else:\n        raise HTTPException(\n            status_code=404,\n            detail=\"Model not found\",\n        )\n",
+        '    model = models.get(model_id)\n    if not model and "," in model_id:\n        model = models.get(model_id.split(",")[0])\n\n    if model:\n        idx = model["urlIdx"]\n    else:\n        raise HTTPException(\n            status_code=404,\n            detail="Model not found",\n        )\n',
+        "multi-model urlIdx resolution",
+    )
     path.write_text(patched, encoding="utf-8")
 
 
@@ -45,6 +66,7 @@ def main() -> int:
     root = Path(sys.argv[1])
     patch_env(root / "backend" / "open_webui" / "env.py")
     patch_main(root / "backend" / "open_webui" / "main.py")
+    patch_openai_router(root / "backend" / "open_webui" / "routers" / "openai.py")
     return 0
 
 
