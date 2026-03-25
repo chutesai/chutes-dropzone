@@ -8,9 +8,10 @@ stringData:
   CHUTES_TRAFFIC_MODE: "direct"
   DROPZONE_ENABLE_PUBLIC_LANDING: "false"
   DROPZONE_HOST: "chat.chutes.ai"
-  # Leave ACME_EMAIL empty when TLS is handled by your ingress controller.
-  # Set it to an email address to have Caddy manage Let's Encrypt certificates.
-  ACME_EMAIL: ""
+  # Caddy manages a Let's Encrypt certificate by default.
+  # Clear ACME_EMAIL to disable TLS and listen on HTTP only
+  # (useful when TLS is handled upstream by an ingress or load balancer).
+  ACME_EMAIL: "ops@chutes.ai"
 
   # Chutes OAuth — create an app at https://chutes.ai/app/settings/apps
   CHUTES_OAUTH_CLIENT_ID: "REPLACE_ME"
@@ -95,6 +96,9 @@ spec:
               port: https
             initialDelaySeconds: 60
             periodSeconds: 20
+          # If ACME_EMAIL is cleared (TLS handled upstream), change the
+          # probes and Service to target port "http" instead of "https"
+          # and remove the https containerPort above.
           volumeMounts:
             - name: data
               mountPath: /data
