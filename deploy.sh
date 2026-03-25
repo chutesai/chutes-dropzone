@@ -603,8 +603,19 @@ EOF
 }
 
 render_caddyfile() {
-    TEMPLATE_SERVER_NAME="$DROPZONE_HOST" \
-    TEMPLATE_TLS_DIRECTIVE="tls ${ACME_EMAIL}" \
+    local tls_directive
+    local server_name
+
+    if [ -n "${ACME_EMAIL:-}" ]; then
+        tls_directive="tls ${ACME_EMAIL}"
+        server_name="$DROPZONE_HOST"
+    else
+        tls_directive=""
+        server_name="http://${DROPZONE_HOST}"
+    fi
+
+    TEMPLATE_SERVER_NAME="$server_name" \
+    TEMPLATE_TLS_DIRECTIVE="$tls_directive" \
     TEMPLATE_CHUTES_V1_BLOCK="$(caddy_chutes_v1_block)" \
     TEMPLATE_ROOT_ENTRY_BLOCK="$(caddy_root_entry_block)" \
     render_template_file "$SCRIPT_DIR/conf/Caddyfile.template" "$SCRIPT_DIR/conf/Caddyfile"
@@ -1504,8 +1515,40 @@ else
 
     prompt_required_value DROPZONE_HOST "Public Dropzone hostname"
     N8N_HOST="$DROPZONE_HOST"
-    prompt_required_value ACME_EMAIL "Let's Encrypt email"
     validate_domain_hostname "$DROPZONE_HOST"
+
+    # TLS certificate management
+    if [ "${BOOTSTRAP_OVERRIDE_SET_ACME_EMAIL:-false}" = "true" ]; then
+        :  # honour explicit override
+    elif [ "$INTERACTIVE" = true ]; then
+        local _tls_default="yes"
+        if [ "$EXISTING_INSTALL" = true ] && [ -z "${ACME_EMAIL:-}" ]; then
+            _tls_default="no"
+        fi
+        echo
+        echo "  TLS certificate management:"
+        echo "    yes - Caddy obtains a Let's Encrypt certificate automatically (requires port 80/443 open)"
+        echo "    no  - listen on HTTP only; use this when TLS is handled upstream (K8s ingress, cloud LB)"
+        if [ "$_tls_default" = "yes" ]; then
+            read_interactive_value _tls_answer "  Manage TLS certificate automatically? [Y/n]: "
+        else
+            read_interactive_value _tls_answer "  Manage TLS certificate automatically? [y/N]: "
+        fi
+        case "${_tls_answer:-$_tls_default}" in
+            y|Y|yes|YES|Yes)
+                prompt_required_value ACME_EMAIL "Let's Encrypt email"
+                ;;
+            n|N|no|NO|No)
+                ACME_EMAIL=""
+                ;;
+            *)
+                err "Please answer yes or no"
+                exit 1
+                ;;
+        esac
+    elif [ -n "${ACME_EMAIL:-}" ]; then
+        :  # non-interactive with existing ACME_EMAIL, keep it
+    fi
 
     if [ "${BOOTSTRAP_OVERRIDE_SET_CHUTES_COMPOSE_FILES:-false}" != "true" ]; then
         CHUTES_COMPOSE_FILES="$(compose_files_default domain "$CHUTES_TRAFFIC_MODE")"
@@ -1618,9 +1661,8 @@ do
     fi
 done
 
-if [ "$INSTALL_MODE" = "domain" ] && [ -z "$ACME_EMAIL" ]; then
-    err "ACME_EMAIL must not be empty for domain installs"
-    exit 1
+if [ "$INSTALL_MODE" = "domain" ] && [ -z "${ACME_EMAIL:-}" ]; then
+    info "No ACME_EMAIL set; Caddy will listen on HTTP only (TLS must be handled upstream)"
 fi
 
 info "Writing .env ..."
@@ -1789,7 +1831,11 @@ echo "                  https://${DROPZONE_HOST}/rest/sso/chutes/callback"
 if [ "$INSTALL_MODE" = "local" ]; then
     echo "    TLS: embedded e2ee-proxy certificate for ${LOCAL_HOSTNAME}"
 else
-    echo "    TLS: Let's Encrypt via Caddy"
+    if [ -n "${ACME_EMAIL:-}" ]; then
+        echo "    TLS: Let's Encrypt via Caddy (${ACME_EMAIL})"
+    else
+        echo "    TLS: none (HTTP only — TLS must be handled upstream)"
+    fi
 fi
 echo
 echo "  Chutes SSO is enabled on OpenWebUI and the native n8n sign-in page."

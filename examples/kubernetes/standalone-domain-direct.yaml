@@ -8,7 +8,9 @@ stringData:
   CHUTES_TRAFFIC_MODE: "direct"
   DROPZONE_ENABLE_PUBLIC_LANDING: "false"
   DROPZONE_HOST: "REPLACE_ME_HOSTNAME"
-  ACME_EMAIL: "REPLACE_ME_EMAIL"
+  # Leave ACME_EMAIL empty when TLS is handled by your ingress controller.
+  # Set it to an email address to have Caddy manage Let's Encrypt certificates.
+  ACME_EMAIL: ""
 
   # Chutes OAuth — create an app at https://chutes.ai/app/settings/apps
   CHUTES_OAUTH_CLIENT_ID: "REPLACE_ME"

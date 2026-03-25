@@ -555,7 +555,21 @@ else
     else
         if [ "$INTERACTIVE" = true ]; then
             prompt_required DROPZONE_HOST "Public Dropzone hostname"
-            prompt_required ACME_EMAIL "Let's Encrypt email"
+
+            echo
+            echo "  TLS certificate management:"
+            echo "    yes - Caddy obtains a Let's Encrypt certificate automatically"
+            echo "    no  - listen on HTTP only (use when TLS is handled upstream)"
+            read_value _tls_answer "  Manage TLS certificate automatically? [Y/n]: "
+            case "${_tls_answer:-yes}" in
+                y|Y|yes|YES|Yes)
+                    prompt_required ACME_EMAIL "Let's Encrypt email"
+                    ;;
+                n|N|no|NO|No)
+                    ACME_EMAIL=""
+                    ;;
+                *) err "Please answer yes or no"; exit 1 ;;
+            esac
         fi
         if [ -z "${DROPZONE_HOST:-}" ]; then
             err "DROPZONE_HOST is required for domain installs"
@@ -563,8 +577,7 @@ else
         fi
         N8N_HOST="$DROPZONE_HOST"
         if [ -z "${ACME_EMAIL:-}" ]; then
-            err "ACME_EMAIL is required for domain installs"
-            exit 1
+            info "No ACME_EMAIL set; Caddy will listen on HTTP only (TLS must be handled upstream)"
         fi
     fi
 
@@ -762,12 +775,19 @@ if [ "$INSTALL_MODE" = "local" ]; then
 fi
 
 if [ "$INSTALL_MODE" = "domain" ]; then
-    TEMPLATE_SERVER_NAME="$DROPZONE_HOST" \
-    TEMPLATE_TLS_DIRECTIVE="tls ${ACME_EMAIL}" \
+    _caddy_server_name="$DROPZONE_HOST"
+    _caddy_tls_directive="tls ${ACME_EMAIL}"
+    if [ -z "${ACME_EMAIL:-}" ]; then
+        _caddy_server_name="http://${DROPZONE_HOST}"
+        _caddy_tls_directive=""
+    fi
+
+    TEMPLATE_SERVER_NAME="$_caddy_server_name" \
+    TEMPLATE_TLS_DIRECTIVE="$_caddy_tls_directive" \
     TEMPLATE_CHUTES_V1_BLOCK="$(caddy_chutes_v1_block)" \
     TEMPLATE_ROOT_ENTRY_BLOCK="$(caddy_root_entry_block)" \
     render_template_file /opt/standalone/Caddyfile.template /tmp/Caddyfile
-    ok "Caddyfile rendered (domain mode)"
+    ok "Caddyfile rendered (domain mode${ACME_EMAIL:+, Let's Encrypt}${ACME_EMAIL:-; HTTP only})"
 
     if [ "$CHUTES_TRAFFIC_MODE" = "e2ee-proxy" ]; then
         TEMPLATE_SERVER_NAME="$DROPZONE_HOST" \
