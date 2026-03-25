@@ -5,6 +5,7 @@ coverage/
 test-output/
 conf/Caddyfile
 conf/local-proxy.nginx.conf
+landing/index.html
 
 # Python
 __pycache__/

@@ -26,25 +26,10 @@ docker run --rm -it \
   --pull always \
   --platform linux/amd64 \
   -p 443:443 \
-  -v dropzone_data:/data \
   ghcr.io/chutesai/chutes-dropzone:latest
 ```
 
-The `-v dropzone_data:/data` flag persists state across restarts (database, config, cached models).
-
-For domain mode behind a reverse proxy (no built-in TLS):
-
-```bash
-docker run --rm -it \
-  --platform linux/amd64 \
-  -p 80:80 \
-  -v dropzone_data:/data \
-  ghcr.io/chutesai/chutes-dropzone:latest
-```
-
-Choose `domain` when prompted, enter your hostname, and answer `n` to TLS management. Point your reverse proxy to the container's port 80.
-
-See [Standalone Image](#standalone-image) for non-interactive runs, runtime flags, persisted state layout, and building from source.
+See [Standalone Image](#standalone-image) for persisting state, domain mode, reverse proxy setups, and building from source.
 
 ### Kubernetes
 
