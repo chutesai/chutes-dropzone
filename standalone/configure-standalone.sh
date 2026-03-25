@@ -9,17 +9,21 @@
 #
 set -eu
 
-N8N_ADMIN_EMAIL="${STANDALONE_ADMIN_EMAIL:?STANDALONE_ADMIN_EMAIL must be set}"
-N8N_ADMIN_PASSWORD="$(cat /tmp/.owner-password 2>/dev/null)" || true
-if [ -z "$N8N_ADMIN_PASSWORD" ]; then
-    echo "  ERROR: owner password not found"
-    exit 1
-fi
+N8N_ENABLED="${DROPZONE_ENABLE_N8N:-true}"
 DATA_DIR="${STANDALONE_DATA_DIR:-/data}"
 CHUTES_API_KEY="${CHUTES_API_KEY:-}"
 DB_TYPE="${DB_TYPE:-sqlite}"
 SQLITE_DB="${N8N_USER_FOLDER:-$DATA_DIR}/.n8n/database.sqlite"
 WORKFLOW_DIR="/opt/workflows"
+
+if [ "$N8N_ENABLED" != "false" ]; then
+    N8N_ADMIN_EMAIL="${STANDALONE_ADMIN_EMAIL:?STANDALONE_ADMIN_EMAIL must be set}"
+    N8N_ADMIN_PASSWORD="$(cat /tmp/.owner-password 2>/dev/null)" || true
+    if [ -z "$N8N_ADMIN_PASSWORD" ]; then
+        echo "  ERROR: owner password not found"
+        exit 1
+    fi
+fi
 
 cleanup() {
     rm -f /tmp/.owner-password /tmp/creds.json /tmp/workflow.json /tmp/n8n-api.body /tmp/n8n-api.status
@@ -28,24 +32,26 @@ cleanup() {
 trap cleanup EXIT
 
 # ---------------------------------------------------------------------------
-# Wait for n8n and OpenWebUI to be healthy
+# Wait for services to be healthy
 # ---------------------------------------------------------------------------
-echo "  Waiting for n8n to be healthy ..."
-attempts=0
-max_attempts=60
-while [ "$attempts" -lt "$max_attempts" ]; do
-    if wget -q -O- http://127.0.0.1:5678/rest/settings >/dev/null 2>&1; then
-        break
-    fi
-    attempts=$((attempts + 1))
-    sleep 2
-done
+if [ "$N8N_ENABLED" != "false" ]; then
+    echo "  Waiting for n8n to be healthy ..."
+    attempts=0
+    max_attempts=60
+    while [ "$attempts" -lt "$max_attempts" ]; do
+        if wget -q -O- http://127.0.0.1:5678/rest/settings >/dev/null 2>&1; then
+            break
+        fi
+        attempts=$((attempts + 1))
+        sleep 2
+    done
 
-if [ "$attempts" -ge "$max_attempts" ]; then
-    echo "  ERROR: n8n did not become healthy"
-    exit 1
+    if [ "$attempts" -ge "$max_attempts" ]; then
+        echo "  ERROR: n8n did not become healthy"
+        exit 1
+    fi
+    echo "  n8n is healthy"
 fi
-echo "  n8n is healthy"
 
 echo "  Waiting for OpenWebUI to be healthy ..."
 attempts=0
@@ -155,6 +161,12 @@ generate_uuid() {
 json_field() {
     node -e "const d=JSON.parse(require('fs').readFileSync('$1','utf8')); console.log(d['$2']||'')"
 }
+
+if [ "$N8N_ENABLED" = "false" ]; then
+    echo "  n8n is disabled; skipping owner setup, credentials, and workflows."
+    echo "  Configuration complete."
+    exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # Owner setup

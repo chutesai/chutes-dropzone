@@ -213,6 +213,9 @@ replacements = {
     "__RESOLVERS__": os.environ.get("TEMPLATE_RESOLVERS", ""),
     "__CHUTES_V1_BLOCK__": os.environ.get("TEMPLATE_CHUTES_V1_BLOCK", ""),
     "__ROOT_ENTRY_BLOCK__": os.environ.get("TEMPLATE_ROOT_ENTRY_BLOCK", ""),
+    "__N8N_ROUTES_BLOCK__": os.environ.get("TEMPLATE_N8N_ROUTES_BLOCK", ""),
+    "__N8N_CARD_BLOCK__": os.environ.get("TEMPLATE_N8N_CARD_BLOCK", ""),
+    "__N8N_ENABLED__": os.environ.get("TEMPLATE_N8N_ENABLED", "true"),
 }
 
 for placeholder, value in replacements.items():
@@ -220,6 +223,126 @@ for placeholder, value in replacements.items():
 
 Path(os.environ["OUTPUT_PATH"]).write_text(template, encoding="utf-8")
 PY
+}
+
+nginx_n8n_routes_block() {
+    if [ "${DROPZONE_ENABLE_N8N:-true}" = "false" ]; then
+        cat <<'EOF'
+        location = /n8n {
+            return 404;
+        }
+
+        location /n8n/ {
+            return 404;
+        }
+
+        location /rest/sso/chutes/ {
+            return 404;
+        }
+EOF
+        return
+    fi
+
+    cat <<'EOF'
+        location = /n8n {
+            return 308 /n8n/;
+        }
+
+        location /n8n/ {
+            rewrite ^/n8n/(.*)$ /$1 break;
+            proxy_pass http://127.0.0.1:5678;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_buffering off;
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
+            client_max_body_size 50m;
+        }
+
+        location /rest/sso/chutes/ {
+            add_header Cache-Control "no-store" always;
+            proxy_pass http://127.0.0.1:5678;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_buffering off;
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
+            client_max_body_size 50m;
+        }
+
+        location = /n8n/static/chutes-custom.js {
+            add_header Cache-Control "no-store" always;
+            rewrite ^/n8n/(.*)$ /$1 break;
+            proxy_pass http://127.0.0.1:5678;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+        }
+
+        location = /n8n/static/chutes-custom.css {
+            add_header Cache-Control "no-store" always;
+            rewrite ^/n8n/(.*)$ /$1 break;
+            proxy_pass http://127.0.0.1:5678;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+        }
+EOF
+}
+
+caddy_n8n_routes_block() {
+    if [ "${DROPZONE_ENABLE_N8N:-true}" = "false" ]; then
+        cat <<'EOF'
+    handle_path /n8n/* {
+        respond 404
+    }
+
+    handle /rest/sso/chutes/* {
+        respond 404
+    }
+EOF
+        return
+    fi
+
+    cat <<'EOF'
+    handle_path /n8n/* {
+        reverse_proxy 127.0.0.1:5678 {
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    handle /rest/sso/chutes/* {
+        header Cache-Control "no-store"
+        reverse_proxy 127.0.0.1:5678 {
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    @n8nCustomSidebar path /n8n/static/chutes-custom.js /n8n/static/chutes-custom.css
+    header @n8nCustomSidebar Cache-Control "no-store"
+EOF
 }
 
 caddy_chutes_v1_block() {
@@ -405,6 +528,7 @@ write_env_file() {
         env_line INSTALL_MODE "$INSTALL_MODE"
         env_line CHUTES_TRAFFIC_MODE "$CHUTES_TRAFFIC_MODE"
         env_line DROPZONE_ENABLE_PUBLIC_LANDING "$DROPZONE_ENABLE_PUBLIC_LANDING"
+        env_line DROPZONE_ENABLE_N8N "${DROPZONE_ENABLE_N8N:-true}"
         env_line ALLOW_NON_CONFIDENTIAL "$ALLOW_NON_CONFIDENTIAL"
         env_line CHUTES_SSO_PROXY_BYPASS "$CHUTES_SSO_PROXY_BYPASS"
         env_line CHUTES_PROXY_BASE_URL "$CHUTES_PROXY_BASE_URL"
@@ -734,6 +858,7 @@ export OPENAI_API_KEYS="${OPENWEBUI_API_KEY:-}"
 export MODELS_CACHE_TTL="${OPENWEBUI_MODELS_CACHE_TTL:-300}"
 export OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL="${OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL:-300}"
 export OPENWEBUI_SYNC_BASE_URL="http://127.0.0.1:8080"
+export DROPZONE_ENABLE_N8N="${DROPZONE_ENABLE_N8N:-true}"
 export ENABLE_FORWARD_USER_INFO_HEADERS=true
 export AUDIO_TTS_ENGINE=openai
 export AUDIO_TTS_OPENAI_API_BASE_URL="http://127.0.0.1:8080/api/v1/dropzone"
@@ -770,6 +895,7 @@ if [ "$INSTALL_MODE" = "local" ]; then
     TEMPLATE_RESOLVERS="8.8.8.8 8.8.4.4" \
     TEMPLATE_CHUTES_V1_BLOCK="$(nginx_chutes_v1_block)" \
     TEMPLATE_ROOT_ENTRY_BLOCK="$(nginx_root_entry_block)" \
+    TEMPLATE_N8N_ROUTES_BLOCK="$(nginx_n8n_routes_block)" \
     render_template_file /opt/standalone/nginx-standalone.conf.template /tmp/nginx-standalone.conf
     ok "nginx config rendered (local mode)"
 fi
@@ -786,6 +912,7 @@ if [ "$INSTALL_MODE" = "domain" ]; then
     TEMPLATE_TLS_DIRECTIVE="$_caddy_tls_directive" \
     TEMPLATE_CHUTES_V1_BLOCK="$(caddy_chutes_v1_block)" \
     TEMPLATE_ROOT_ENTRY_BLOCK="$(caddy_root_entry_block)" \
+    TEMPLATE_N8N_ROUTES_BLOCK="$(caddy_n8n_routes_block)" \
     render_template_file /opt/standalone/Caddyfile.template /tmp/Caddyfile
     ok "Caddyfile rendered (domain mode${ACME_EMAIL:+, Let's Encrypt}${ACME_EMAIL:-; HTTP only})"
 

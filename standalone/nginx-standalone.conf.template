@@ -145,70 +145,10 @@ http {
             return 302 /c/new;
         }
 
-        location = /n8n {
-            return 308 /n8n/;
-        }
+__N8N_ROUTES_BLOCK__
 
         location /chat/ {
             rewrite ^/chat/([^/].*)$ /$1 permanent;
-        }
-
-        location /n8n/ {
-            rewrite ^/n8n/(.*)$ /$1 break;
-            proxy_pass http://127.0.0.1:5678;
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Host $host;
-            proxy_set_header X-Forwarded-Proto https;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection $connection_upgrade;
-            proxy_buffering off;
-            proxy_read_timeout 600s;
-            proxy_send_timeout 600s;
-            client_max_body_size 50m;
-        }
-
-        location /rest/sso/chutes/ {
-            add_header Cache-Control "no-store" always;
-            proxy_pass http://127.0.0.1:5678;
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Host $host;
-            proxy_set_header X-Forwarded-Proto https;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection $connection_upgrade;
-            proxy_buffering off;
-            proxy_read_timeout 600s;
-            proxy_send_timeout 600s;
-            client_max_body_size 50m;
-        }
-
-        location = /n8n/static/chutes-custom.js {
-            add_header Cache-Control "no-store" always;
-            rewrite ^/n8n/(.*)$ /$1 break;
-            proxy_pass http://127.0.0.1:5678;
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Host $host;
-            proxy_set_header X-Forwarded-Proto https;
-        }
-
-        location = /n8n/static/chutes-custom.css {
-            add_header Cache-Control "no-store" always;
-            rewrite ^/n8n/(.*)$ /$1 break;
-            proxy_pass http://127.0.0.1:5678;
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Host $host;
-            proxy_set_header X-Forwarded-Proto https;
         }
 
         location = /static/custom.css {
@@ -272,6 +212,11 @@ __ROOT_ENTRY_BLOCK__
             proxy_set_header X-Forwarded-Proto https;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection $connection_upgrade;
+            # Strip internal-only headers to prevent external spoofing
+            proxy_set_header X-OpenWebUI-User-Id "";
+            proxy_set_header X-OpenWebUI-User-Email "";
+            proxy_set_header X-OpenWebUI-User-Name "";
+            proxy_set_header X-OpenWebUI-User-Role "";
             proxy_buffering off;
             proxy_read_timeout 600s;
             proxy_send_timeout 600s;

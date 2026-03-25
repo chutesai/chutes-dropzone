@@ -23,25 +23,7 @@ __SERVER_NAME__ {
     @chatAlias path_regexp chatAlias ^/chat/([^/].*)$
     redir @chatAlias /{re.chatAlias.1} 308
 
-    handle_path /n8n/* {
-        reverse_proxy 127.0.0.1:5678 {
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Host {host}
-            header_up X-Forwarded-Proto {scheme}
-        }
-    }
-
-    handle /rest/sso/chutes/* {
-        header Cache-Control "no-store"
-        reverse_proxy 127.0.0.1:5678 {
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Host {host}
-            header_up X-Forwarded-Proto {scheme}
-        }
-    }
-
-    @n8nCustomSidebar path /n8n/static/chutes-custom.js /n8n/static/chutes-custom.css
-    header @n8nCustomSidebar Cache-Control "no-store"
+__N8N_ROUTES_BLOCK__
 
     @chatCustomAssets path /static/custom.css /static/loader.js /static/site.webmanifest /chat/static/custom.css /chat/static/loader.js /chat/static/site.webmanifest
     header @chatCustomAssets Cache-Control "no-store"

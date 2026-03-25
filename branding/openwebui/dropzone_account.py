@@ -16,6 +16,7 @@ CHUTES_API_BASE_URL = (
 )
 CHUTES_HOME_URL = "https://chutes.ai/"
 CHUTES_ACCOUNT_URL = "https://chutes.ai/app/api/billing-balance#daily-quota-usage"
+N8N_ENABLED = os.environ.get("DROPZONE_ENABLE_N8N", "true").lower() not in ("false", "0", "no")
 ADMIN_PERMISSION_BITMASK = 19
 FREE_PERMISSION_BITMASK = 0
 DEFAULT_TIMEOUT = 15
@@ -270,6 +271,6 @@ def get_chutes_account_summary(user: UserModel, db: Session) -> dict[str, Any]:
             "accountUrl": CHUTES_ACCOUNT_URL,
             "homeUrl": CHUTES_HOME_URL,
             "chatUrl": "/chat/",
-            "n8nUrl": "/n8n/",
+            **({"n8nUrl": "/n8n/"} if N8N_ENABLED else {}),
         },
     }

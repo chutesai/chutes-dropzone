@@ -7,7 +7,9 @@ stringData:
   INSTALL_MODE: "domain"
   CHUTES_TRAFFIC_MODE: "direct"
   DROPZONE_ENABLE_PUBLIC_LANDING: "false"
-  DROPZONE_HOST: "chat.chutes.ai"
+  # Set to "false" for chat-only mode (no n8n sidebar link or landing card).
+  DROPZONE_ENABLE_N8N: "false"
+  DROPZONE_HOST: "chat-beta.chutes.ai"
   # Caddy manages a Let's Encrypt certificate by default.
   # Clear ACME_EMAIL to disable TLS and listen on HTTP only
   # (useful when TLS is handled upstream by an ingress or load balancer).

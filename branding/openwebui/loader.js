@@ -13,6 +13,7 @@
   var accountSummaryPromise = null;
   var accountSummaryFailureCount = 0;
   var accountSummaryTimerId = null;
+  var n8nConfirmed = false;
   var tooltipLayer = null;
   var activeTooltipTarget = null;
 
@@ -194,6 +195,9 @@
         if (summary && summary.username) {
           accountSummary = summary;
           accountSummaryFailureCount = 0;
+          if (summary.links && summary.links.n8nUrl) {
+            n8nConfirmed = true;
+          }
         } else {
           accountSummary = null;
           accountSummaryFailureCount += 1;
@@ -419,15 +423,17 @@
     );
 
     var actions = createElement("div", "chutes-account-actions");
-    actions.appendChild(
-      buildActionLink(
-        (summary.links && summary.links.n8nUrl) || "/n8n/",
-        "Open n8n",
-        "is-accent",
-        N8N_LOGO_URL,
-        "n8n",
-      ),
-    );
+    if (summary.links && summary.links.n8nUrl) {
+      actions.appendChild(
+        buildActionLink(
+          summary.links.n8nUrl,
+          "Open n8n",
+          "is-accent",
+          N8N_LOGO_URL,
+          "n8n",
+        ),
+      );
+    }
     actions.appendChild(
       buildActionLink(
         (summary.links && summary.links.accountUrl) || "https://chutes.ai/app/api/billing-balance#daily-quota-usage",
@@ -446,6 +452,9 @@
   }
 
   function buildFallbackLink() {
+    // When n8n is disabled the account summary omits n8nUrl, so the
+    // fallback (which fires before any summary loads) is also suppressed.
+    // On next successful summary fetch the card will render without the link.
     var link = document.createElement("a");
     link.className = "chutes-crosslink";
     link.href = "/n8n/";
@@ -610,7 +619,7 @@
       slot.innerHTML = "";
       if (hasSummary) {
         slot.appendChild(buildSummaryCard(accountSummary));
-      } else if (shouldRenderAccountFallback()) {
+      } else if (shouldRenderAccountFallback() && n8nConfirmed) {
         slot.appendChild(buildFallbackLink());
       }
       slot.setAttribute("data-chutes-rendered", "true");

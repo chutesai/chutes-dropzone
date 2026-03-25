@@ -390,6 +390,8 @@ replacements = {
     "__INSTALL_MODE__": os.environ.get("TEMPLATE_INSTALL_MODE", ""),
     "__CHUTES_TRAFFIC_MODE__": os.environ.get("TEMPLATE_CHUTES_TRAFFIC_MODE", ""),
     "__DROPZONE_HOST__": os.environ.get("TEMPLATE_DROPZONE_HOST", ""),
+    "__N8N_CARD_BLOCK__": os.environ.get("TEMPLATE_N8N_CARD_BLOCK", ""),
+    "__N8N_ENABLED__": os.environ.get("TEMPLATE_N8N_ENABLED", "true"),
 }
 
 for placeholder, value in replacements.items():
@@ -499,6 +501,7 @@ write_env_file() {
         env_line INSTALL_MODE "$INSTALL_MODE"
         env_line CHUTES_TRAFFIC_MODE "$CHUTES_TRAFFIC_MODE"
         env_line DROPZONE_ENABLE_PUBLIC_LANDING "$DROPZONE_ENABLE_PUBLIC_LANDING"
+        env_line DROPZONE_ENABLE_N8N "$DROPZONE_ENABLE_N8N"
         env_line CHUTES_COMPOSE_FILES "$CHUTES_COMPOSE_FILES"
         env_line EDGE_SERVICE "$EDGE_SERVICE"
         env_line E2EE_PROXY_IMAGE "$E2EE_PROXY_IMAGE"
@@ -631,10 +634,40 @@ render_local_proxy_config() {
         "$SCRIPT_DIR/conf/local-proxy.nginx.conf"
 }
 
+landing_n8n_card_block() {
+    if [ "${DROPZONE_ENABLE_N8N:-true}" = "false" ]; then
+        return
+    fi
+
+    cat <<'EOF'
+          <a class="launch-card n8n-card" href="/n8n/">
+            <div class="card-topline">
+              <div>
+                <p class="card-kicker">Automation studio</p>
+                <h2 class="product-name product-name-n8n">n8n w/Chutes</h2>
+              </div>
+              <span class="route-pill">/n8n/</span>
+            </div>
+            <div class="card-art">
+              <img src="/_dropzone/assets/n8n-panel.svg?v=dropzone-20260322c" alt="" />
+            </div>
+            <div class="card-copy">
+              <p>Agents, automations, integrations, and durable workflows behind the same edge.</p>
+            </div>
+            <div class="card-footer">
+              <span>Launch Automations</span>
+              <span aria-hidden="true">→</span>
+            </div>
+          </a>
+EOF
+}
+
 render_landing_page() {
     TEMPLATE_INSTALL_MODE="$INSTALL_MODE" \
     TEMPLATE_CHUTES_TRAFFIC_MODE="$CHUTES_TRAFFIC_MODE" \
     TEMPLATE_DROPZONE_HOST="$DROPZONE_HOST" \
+    TEMPLATE_N8N_CARD_BLOCK="$(landing_n8n_card_block)" \
+    TEMPLATE_N8N_ENABLED="${DROPZONE_ENABLE_N8N:-true}" \
     render_template_file \
         "$SCRIPT_DIR/landing/index.template.html" \
         "$SCRIPT_DIR/landing/index.html"
@@ -1297,6 +1330,7 @@ for overridable_var in \
     INSTALL_MODE \
     CHUTES_TRAFFIC_MODE \
     DROPZONE_ENABLE_PUBLIC_LANDING \
+    DROPZONE_ENABLE_N8N \
     CHUTES_COMPOSE_FILES \
     EDGE_SERVICE \
     E2EE_PROXY_IMAGE \
@@ -1357,6 +1391,7 @@ for overridable_var in \
     INSTALL_MODE \
     CHUTES_TRAFFIC_MODE \
     DROPZONE_ENABLE_PUBLIC_LANDING \
+    DROPZONE_ENABLE_N8N \
     CHUTES_COMPOSE_FILES \
     EDGE_SERVICE \
     E2EE_PROXY_IMAGE \
@@ -1422,7 +1457,7 @@ POSTGRES_USER="${POSTGRES_USER:-dropzone}"
 POSTGRES_N8N_DB="${POSTGRES_N8N_DB:-${POSTGRES_DB:-n8n}}"
 POSTGRES_OPENWEBUI_DB="${POSTGRES_OPENWEBUI_DB:-openwebui}"
 POSTGRES_DB="${POSTGRES_DB:-$POSTGRES_N8N_DB}"
-N8N_ADMIN_EMAIL="${N8N_ADMIN_EMAIL:-admin@chutes.local}"
+N8N_ADMIN_EMAIL="${N8N_ADMIN_EMAIL:-svc-dropzone@internal.chutes.local}"
 N8N_EXPIRABLE_CREDENTIAL_REFRESH_WINDOW_SECONDS="${N8N_EXPIRABLE_CREDENTIAL_REFRESH_WINDOW_SECONDS:-300}"
 OPENWEBUI_NAME="${OPENWEBUI_NAME:-Chutes Chat}"
 OPENWEBUI_ADMIN_NAME="${OPENWEBUI_ADMIN_NAME:-Dropzone Service Account}"
@@ -1442,6 +1477,7 @@ CHUTES_ADMIN_USERNAMES="${CHUTES_ADMIN_USERNAMES:-}"
 CHUTES_API_KEY="${CHUTES_API_KEY:-}"
 CHUTES_TRAFFIC_MODE="${CHUTES_TRAFFIC_MODE:-direct}"
 DROPZONE_ENABLE_PUBLIC_LANDING="${DROPZONE_ENABLE_PUBLIC_LANDING:-true}"
+DROPZONE_ENABLE_N8N="${DROPZONE_ENABLE_N8N:-true}"
 E2EE_PROXY_IMAGE="${E2EE_PROXY_IMAGE:-$PROJECT_E2EE_PROXY_IMAGE}"
 CADDY_IMAGE="${CADDY_IMAGE:-$PROJECT_CADDY_IMAGE}"
 ALLOW_NON_CONFIDENTIAL="${ALLOW_NON_CONFIDENTIAL:-false}"

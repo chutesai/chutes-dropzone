@@ -4,10 +4,10 @@ Self-hosted Chutes workspace with:
 
 - an optional public landing page at `/`
 - OpenWebUI at `/chat/`
-- n8n at `/n8n/`
-- native Chutes SSO for both apps
-- Chutes quota/tier/account chrome inside both apps
-- one shared Postgres instance
+- n8n at `/n8n/` (optional — set `DROPZONE_ENABLE_N8N=false` for chat-only mode)
+- native Chutes SSO
+- Chutes quota/tier/account chrome inside the chat sidebar
+- per-service database isolation (compose mode)
 - optional shared `e2ee-proxy` routing for OpenAI-compatible traffic
 
 `chutes-dropzone` keeps the same local-vs-domain deployment model as `chutes-n8n-local`, but turns it into a single-host AI workspace instead of a single-app install.
@@ -26,10 +26,25 @@ docker run --rm -it \
   --pull always \
   --platform linux/amd64 \
   -p 443:443 \
+  -v dropzone_data:/data \
   ghcr.io/chutesai/chutes-dropzone:latest
 ```
 
-See [Standalone Image](#standalone-image) for non-interactive runs, domain mode, runtime flags, persisted state layout, and building from source.
+The `-v dropzone_data:/data` flag persists state across restarts (database, config, cached models).
+
+For domain mode behind a reverse proxy (no built-in TLS):
+
+```bash
+docker run --rm -it \
+  --platform linux/amd64 \
+  -p 80:80 \
+  -v dropzone_data:/data \
+  ghcr.io/chutesai/chutes-dropzone:latest
+```
+
+Choose `domain` when prompted, enter your hostname, and answer `n` to TLS management. Point your reverse proxy to the container's port 80.
+
+See [Standalone Image](#standalone-image) for non-interactive runs, runtime flags, persisted state layout, and building from source.
 
 ### Kubernetes
 
@@ -37,41 +52,31 @@ For Kubernetes, the easiest supported path is the standalone image with:
 
 - `INSTALL_MODE=domain`
 - `CHUTES_TRAFFIC_MODE=direct`
+- `DROPZONE_ENABLE_N8N=false` (chat-only — set to `true` to include n8n)
 - one persistent volume mounted at `/data`
-- a `LoadBalancer` service exposing ports `80` and `443`
 
-That lets the image keep its built-in Caddy/ACME flow for your real hostname instead of trying to split TLS ownership between the cluster ingress and the container.
+TLS can be handled two ways:
 
-The example manifest is intentionally cluster-neutral, so the same YAML can work on:
+- **Ingress/LB handles TLS**: leave `ACME_EMAIL` empty, expose port 80 only, point your ingress at the service
+- **Caddy manages TLS**: set `ACME_EMAIL`, expose ports 80 and 443, use a `LoadBalancer` service
 
-- standard Kubernetes clusters with a real `LoadBalancer` implementation
-- MicroK8s with `hostpath-storage` and `metallb` enabled
-
-Example manifest:
+Example manifest (defaults to chat-only with Caddy-managed TLS):
 
 - [examples/kubernetes/standalone-domain-direct.yaml](./examples/kubernetes/standalone-domain-direct.yaml)
 
 Typical flow:
 
 1. Replace the placeholder secrets and host values in that manifest.
-   The example defaults to `chat.chutes.ai` with `DROPZONE_ENABLE_PUBLIC_LANDING=false`, so `/` redirects straight to `/chat/`.
-   Also replace `ghcr.io/chutesai/chutes-dropzone:<release-tag>` with the release tag you want to pin.
+   The example defaults to `chat-beta.chutes.ai` with `DROPZONE_ENABLE_PUBLIC_LANDING=false` and `DROPZONE_ENABLE_N8N=false`.
+   Replace `ghcr.io/chutesai/chutes-dropzone:<release-tag>` with your release tag.
 2. Apply it: `kubectl apply -f examples/kubernetes/standalone-domain-direct.yaml`
-3. Point your DNS `A`/`AAAA` record for `DROPZONE_HOST` at the service's external IP or hostname.
-4. Wait for Caddy inside the pod to complete ACME issuance.
+3. Point your DNS `A`/`AAAA` record for `DROPZONE_HOST` at the service's external IP.
 
 Important notes:
 
 - Keep this as a single replica. The standalone image stores state under `/data`.
-- For the cleanest setup, expose the service directly with `LoadBalancer`. That is simpler than putting this image behind an ingress, because the image already owns HTTPS termination and ACME in `domain` mode.
-- In `direct` mode, OpenWebUI talks to `https://llm.chutes.ai/v1`, and n8n uses its native direct Chutes resolution path.
-- If you want proxy-mode or multi-pod patterns later, that is a different deployment shape than this simplest standalone example.
-
-MicroK8s notes:
-
-- Enable storage: `microk8s enable hostpath-storage`
-- Enable a load balancer IP pool: `microk8s enable metallb:<start-ip>-<end-ip>`
-- Then apply the same manifest and point DNS at the assigned external IP
+- When `ACME_EMAIL` is empty, Caddy listens on HTTP only (port 80). Your ingress or load balancer must handle TLS.
+- When `ACME_EMAIL` is set, Caddy handles Let's Encrypt automatically. Expose ports 80 and 443 and use a `LoadBalancer` service for the simplest setup.
 
 ### Repo-Based
 
@@ -139,19 +144,18 @@ SKIP_APP_BUILDS=true \
 Interactive deploy asks for:
 
 - `INSTALL_MODE`: `local` or `domain`
+- `DROPZONE_ENABLE_PUBLIC_LANDING`: show landing page at `/` or redirect to `/chat/`
 - `CHUTES_TRAFFIC_MODE`: `direct` or `e2ee-proxy`
-- `OPENWEBUI_API_KEY`: optional; leave empty for public Chutes model endpoints
-- `OPENWEBUI_MODELS_CACHE_TTL`: model-list cache TTL for OpenWebUI, default `300`
-- `OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL`: background model-order refresh interval, default `300`
-- `CHUTES_API_KEY`: optional n8n credential import key
+- `DROPZONE_HOST` for domain installs
+- TLS certificate management (yes for Let's Encrypt via Caddy, no for HTTP-only behind a reverse proxy)
+- `ACME_EMAIL` if TLS is managed
 - Chutes OAuth client ID and secret
-- `DROPZONE_HOST` and `ACME_EMAIL` for domain installs
 
 After deploy:
 
 - `https://<host>/` is either the landing page or a redirect to `/chat/`, depending on `DROPZONE_ENABLE_PUBLIC_LANDING`
 - `https://<host>/chat/` opens OpenWebUI
-- `https://<host>/n8n/` opens n8n
+- `https://<host>/n8n/` opens n8n (when `DROPZONE_ENABLE_N8N=true`)
 
 ### Required Chutes OAuth Callbacks
 
@@ -173,12 +177,12 @@ The public topology is fixed in v1:
 
 - `/` either serves a dark Chutes-branded landing page or redirects to `/chat/`
 - `/chat/` is the human-friendly OpenWebUI entrypoint and redirects into OpenWebUI's native home route
-- `/n8n/` reverse-proxies to n8n without stripping the prefix
+- `/n8n/` reverse-proxies to n8n (returns 404 when `DROPZONE_ENABLE_N8N=false`)
 - `/v1/*` is exposed only when `CHUTES_TRAFFIC_MODE=e2ee-proxy`
 
 `DROPZONE_ENABLE_PUBLIC_LANDING=true` preserves the launcher at `/`.
 
-`DROPZONE_ENABLE_PUBLIC_LANDING=false` makes `/` return a redirect to `/chat/`, which is the recommended standalone domain deployment shape for `chat.chutes.ai`.
+`DROPZONE_ENABLE_PUBLIC_LANDING=false` makes `/` return a redirect to `/chat/`, which is the recommended standalone domain deployment shape for `chat-beta.chutes.ai`.
 
 Local installs intentionally stay on a single exact-cert host instead of subdomains.
 
@@ -186,8 +190,8 @@ Local installs intentionally stay on a single exact-cert host instead of subdoma
 
 ### Install Mode
 
-- `local`: uses `https://e2ee-local-proxy.chutes.dev`
-- `domain`: uses your real `DROPZONE_HOST` and Caddy/ACME
+- `local`: uses `https://e2ee-local-proxy.chutes.dev` with an embedded certificate
+- `domain`: uses your real `DROPZONE_HOST`. TLS is managed by Caddy/ACME when `ACME_EMAIL` is set; otherwise Caddy listens on HTTP only for use behind a reverse proxy or ingress
 
 ### Traffic Mode
 
@@ -199,17 +203,14 @@ Local installs intentionally stay on a single exact-cert host instead of subdoma
 
 ## Key Env Vars
 
-See [.env.example](./.env.example) for the full set. The main public/operator-facing vars are:
+See [.env.example](./.env.example) for the full set. The main operator-facing vars are:
 
 - `DROPZONE_HOST`
-- `DROPZONE_ENABLE_PUBLIC_LANDING`
-- `POSTGRES_N8N_DB`
-- `POSTGRES_OPENWEBUI_DB`
-- `OPENWEBUI_VERSION`
-- `OPENWEBUI_IMAGE`
-- `OPENWEBUI_ADMIN_EMAIL`
-- `OPENWEBUI_ADMIN_PASSWORD`
-- `WEBUI_SECRET_KEY`
+- `DROPZONE_ENABLE_PUBLIC_LANDING` — show landing page at `/` (`true`) or redirect to `/chat/` (`false`)
+- `DROPZONE_ENABLE_N8N` — include n8n (`true`, default) or chat-only mode (`false`)
+- `ACME_EMAIL` — set for Let's Encrypt TLS; leave empty for HTTP-only (TLS handled upstream)
+- `POSTGRES_N8N_USER` / `POSTGRES_N8N_PASSWORD` — per-service database credentials (compose mode)
+- `POSTGRES_OPENWEBUI_USER` / `POSTGRES_OPENWEBUI_PASSWORD` — per-service database credentials (compose mode)
 
 Compatibility aliases still exist:
 
@@ -244,13 +245,13 @@ Chutes currently does not advertise an `email` scope or `email` claim in the liv
 
 Deploy also auto-promotes any existing OAuth-created OpenWebUI users stuck in `pending` to `user`, so earlier failed SSO attempts recover cleanly after a redeploy.
 
-Normal runtime is SSO-only. A local admin account is still seeded as break-glass recovery.
+Normal runtime is SSO-only. A service account (`svc-dropzone@internal.chutes.local`) is seeded for internal config sync; it is never exposed to users.
 
 ## Break-Glass Recovery
 
-n8n and OpenWebUI both get generated local admin credentials during deploy.
+n8n and OpenWebUI both get a generated service account (`svc-dropzone@internal.chutes.local`) during deploy. Password login is disabled — users authenticate exclusively via Chutes SSO.
 
-For OpenWebUI, normal runtime keeps password login disabled. To recover access temporarily, edit `.env`, set:
+To recover OpenWebUI access temporarily, edit `.env`, set:
 
 ```bash
 ENABLE_OAUTH_SIGNUP=false

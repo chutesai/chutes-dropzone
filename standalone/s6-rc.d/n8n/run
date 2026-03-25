@@ -2,9 +2,15 @@
 #
 # s6 longrun: n8n
 #
-# Always starts. DB_TYPE is set by entrypoint.sh (sqlite or postgresdb).
+# DB_TYPE is set by entrypoint.sh (sqlite or postgresdb).
+# Skipped entirely when DROPZONE_ENABLE_N8N is false.
 #
 set -eu
+
+if [ "${DROPZONE_ENABLE_N8N:-true}" = "false" ]; then
+    echo "n8n: disabled (DROPZONE_ENABLE_N8N=false)"
+    exec sleep infinity
+fi
 
 echo "n8n: starting (DB_TYPE=${DB_TYPE:-sqlite})"
 exec /docker-entrypoint.sh

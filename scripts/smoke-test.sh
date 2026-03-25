@@ -334,10 +334,10 @@ else
 fi
 
 if grep -q 'DROPZONE_ENABLE_PUBLIC_LANDING: "false"' "$PROJECT_DIR/examples/kubernetes/standalone-domain-direct.yaml" && \
-   grep -q 'DROPZONE_HOST: "chat.chutes.ai"' "$PROJECT_DIR/examples/kubernetes/standalone-domain-direct.yaml"; then
-    pass "kubernetes standalone example defaults to chat.chutes.ai with the landing page disabled"
+   grep -q 'DROPZONE_HOST: "chat-beta.chutes.ai"' "$PROJECT_DIR/examples/kubernetes/standalone-domain-direct.yaml"; then
+    pass "kubernetes standalone example defaults to chat-beta.chutes.ai with the landing page disabled"
 else
-    fail "kubernetes standalone example is missing the chat.chutes.ai private-entry defaults"
+    fail "kubernetes standalone example is missing the chat-beta.chutes.ai private-entry defaults"
 fi
 
 if grep -q '@sha256:' "$PROJECT_DIR/docker-compose.domain.yml"; then
