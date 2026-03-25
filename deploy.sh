@@ -1521,7 +1521,7 @@ else
     if [ "${BOOTSTRAP_OVERRIDE_SET_ACME_EMAIL:-false}" = "true" ]; then
         :  # honour explicit override
     elif [ "$INTERACTIVE" = true ]; then
-        local _tls_default="yes"
+        _tls_default="yes"
         if [ "$EXISTING_INSTALL" = true ] && [ -z "${ACME_EMAIL:-}" ]; then
             _tls_default="no"
         fi
