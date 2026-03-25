@@ -230,7 +230,7 @@ ENV NODE_ENV=production \
     N8N_CUSTOM_EXTENSIONS=/opt/custom-nodes \
     S6_KEEP_ENV=1 \
     S6_BEHAVIOUR_IF_STAGE2_FAILS=2 \
-    S6_CMD_WAIT_FOR_SERVICES_MAXTIME=120000
+    S6_CMD_WAIT_FOR_SERVICES_MAXTIME=600000
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
