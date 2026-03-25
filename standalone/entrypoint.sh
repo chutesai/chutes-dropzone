@@ -248,7 +248,7 @@ caddy_root_entry_block() {
     if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "false" ]; then
         cat <<'EOF'
     handle / {
-        redir /c/new 302
+        redir * /c/new 302
     }
 
 EOF
