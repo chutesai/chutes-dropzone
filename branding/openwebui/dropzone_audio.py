@@ -8,6 +8,7 @@ Mounted by patch-openwebui-runtime.py into the OpenWebUI app.
 """
 
 import base64
+import hmac
 import json
 import logging
 import os
@@ -40,16 +41,47 @@ def _is_loopback(request: Request) -> bool:
     return any(client_host.startswith(p) for p in _LOOPBACK_PREFIXES)
 
 
+def _expected_internal_audio_api_keys() -> tuple[str, ...]:
+    keys = []
+    for env_name in (
+        "DROPZONE_AUDIO_INTERNAL_API_KEY",
+        "AUDIO_TTS_OPENAI_API_KEY",
+        "AUDIO_STT_OPENAI_API_KEY",
+    ):
+        value = os.environ.get(env_name, "").strip()
+        if value and value != "unused":
+            keys.append(value)
+    return tuple(dict.fromkeys(keys))
+
+
+def _has_valid_internal_audio_auth(request: Request) -> bool:
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return False
+
+    token = auth_header[7:].strip()
+    if not token:
+        return False
+
+    for expected in _expected_internal_audio_api_keys():
+        if hmac.compare_digest(token, expected):
+            return True
+    return False
+
+
 def _resolve_user(request: Request) -> UserModel:
     """Resolve user from forwarded user-id header (internal OpenWebUI calls).
 
     OpenWebUI's audio router calls us with Authorization: Bearer <api-key>
     and X-OpenWebUI-User-Id: <user-id>. We trust the user-id header only
-    when the request arrives from loopback (i.e. OpenWebUI calling itself).
-    The edge proxy also strips this header from external requests.
+    when the request arrives from loopback with the configured internal
+    audio API key. The edge proxy also strips this header from external
+    requests.
     """
     if not _is_loopback(request):
         raise HTTPException(status_code=403, detail="This endpoint is internal-only")
+    if not _has_valid_internal_audio_auth(request):
+        raise HTTPException(status_code=403, detail="Invalid internal audio authentication")
     user_id = request.headers.get("X-OpenWebUI-User-Id", "")
     if user_id:
         found = Users.get_user_by_id(user_id)

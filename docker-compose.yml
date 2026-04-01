@@ -19,6 +19,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    security_opt:
+      - no-new-privileges:true
     networks: [dropzone-net]
     restart: unless-stopped
 
@@ -58,6 +60,13 @@ services:
       - N8N_DIAGNOSTICS_ENABLED=false
       - N8N_VERSION_NOTIFICATIONS_ENABLED=false
       - N8N_RUNNERS_ENABLED=true
+      - N8N_RUNNERS_MODE=${N8N_RUNNERS_MODE:-external}
+      - N8N_RUNNERS_AUTH_TOKEN=${N8N_RUNNERS_AUTH_TOKEN:-}
+      - N8N_RUNNERS_BROKER_LISTEN_ADDRESS=0.0.0.0
+      - N8N_COMMUNITY_PACKAGES_ENABLED=false
+      - N8N_VERIFIED_PACKAGES_ENABLED=false
+      - N8N_UNVERIFIED_PACKAGES_ENABLED=false
+      - NODES_EXCLUDE=["n8n-nodes-base.executeCommand","n8n-nodes-base.localFileTrigger","n8n-nodes-base.readWriteFile"]
       - EXECUTIONS_DATA_SAVE_ON_ERROR=all
       - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
       - GENERIC_TIMEZONE=${TZ:-UTC}
@@ -86,6 +95,24 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks: [dropzone-net]
+    restart: unless-stopped
+
+  n8n-runners:
+    image: n8nio/runners:${N8N_VERSION:-2.12.1}
+    environment:
+      - N8N_RUNNERS_TASK_BROKER_URI=http://n8n:5679
+      - N8N_RUNNERS_AUTH_TOKEN=${N8N_RUNNERS_AUTH_TOKEN:-}
+      - N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT=15
+    depends_on:
+      n8n:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    security_opt:
+      - no-new-privileges:true
     networks: [dropzone-net]
     restart: unless-stopped
 
@@ -139,13 +166,14 @@ services:
       - ENABLE_FORWARD_USER_INFO_HEADERS=true
       - AUDIO_TTS_ENGINE=openai
       - AUDIO_TTS_OPENAI_API_BASE_URL=http://127.0.0.1:8080/api/v1/dropzone
-      - AUDIO_TTS_OPENAI_API_KEY=unused
+      - AUDIO_TTS_OPENAI_API_KEY=${DROPZONE_AUDIO_INTERNAL_API_KEY:-}
       - AUDIO_TTS_MODEL=kokoro
       - AUDIO_TTS_VOICE=af_heart
       - AUDIO_STT_ENGINE=openai
       - AUDIO_STT_OPENAI_API_BASE_URL=http://127.0.0.1:8080/api/v1/dropzone
-      - AUDIO_STT_OPENAI_API_KEY=unused
+      - AUDIO_STT_OPENAI_API_KEY=${DROPZONE_AUDIO_INTERNAL_API_KEY:-}
       - AUDIO_STT_MODEL=whisper-large-v3
+      - DROPZONE_AUDIO_INTERNAL_API_KEY=${DROPZONE_AUDIO_INTERNAL_API_KEY:-}
       - PORT=8080
     volumes:
       - openwebui_data:/app/backend/data
@@ -164,6 +192,8 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+    security_opt:
+      - no-new-privileges:true
     networks: [dropzone-net]
     restart: unless-stopped
 
@@ -187,6 +217,8 @@ services:
         condition: service_healthy
     healthcheck:
       disable: true
+    security_opt:
+      - no-new-privileges:true
     networks: [dropzone-net]
     restart: unless-stopped
 

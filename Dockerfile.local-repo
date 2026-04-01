@@ -105,10 +105,10 @@ RUN NODE_ARCH="$(case "$(dpkg --print-architecture)" in \
     esac)" && \
     NODE_TAR="node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
     curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" -o /tmp/SHASUMS256.txt && \
-    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TAR}" -o /tmp/node.tar.xz && \
-    cd /tmp && grep "${NODE_TAR}" SHASUMS256.txt | sha256sum -c - && \
-    tar -xJ -C /usr/local --strip-components=1 -f /tmp/node.tar.xz && \
-    rm -f /tmp/node.tar.xz /tmp/SHASUMS256.txt
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TAR}" -o "/tmp/${NODE_TAR}" && \
+    cd /tmp && grep " ${NODE_TAR}\$" SHASUMS256.txt | sha256sum -c - && \
+    tar -xJ -C /usr/local --strip-components=1 -f "/tmp/${NODE_TAR}" && \
+    rm -f "/tmp/${NODE_TAR}" /tmp/SHASUMS256.txt
 
 COPY --from=n8n-builder /compiled /usr/local/lib/node_modules/n8n
 RUN cd /usr/local/lib/node_modules/n8n && \
@@ -260,10 +260,10 @@ RUN NODE_ARCH="$(case "$(dpkg --print-architecture)" in \
     esac)" && \
     NODE_TAR="node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
     curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" -o /tmp/SHASUMS256.txt && \
-    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TAR}" -o /tmp/node.tar.xz && \
-    cd /tmp && grep "${NODE_TAR}" SHASUMS256.txt | sha256sum -c - && \
-    tar -xJ -C /usr/local --strip-components=1 -f /tmp/node.tar.xz && \
-    rm -f /tmp/node.tar.xz /tmp/SHASUMS256.txt && \
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TAR}" -o "/tmp/${NODE_TAR}" && \
+    cd /tmp && grep " ${NODE_TAR}\$" SHASUMS256.txt | sha256sum -c - && \
+    tar -xJ -C /usr/local --strip-components=1 -f "/tmp/${NODE_TAR}" && \
+    rm -f "/tmp/${NODE_TAR}" /tmp/SHASUMS256.txt && \
     node --version
 
 # s6-overlay v3 — verified against upstream SHA-256 checksums

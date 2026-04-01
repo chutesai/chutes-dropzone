@@ -21,6 +21,8 @@ services:
       timeout: 10s
       retries: 5
       start_period: 10s
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       n8n:
         condition: service_healthy

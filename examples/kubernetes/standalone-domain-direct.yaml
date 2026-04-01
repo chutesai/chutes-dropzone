@@ -27,7 +27,10 @@ stringData:
   # Per-service secrets — generate unique values for each (e.g. openssl rand -hex 32)
   N8N_ENCRYPTION_KEY: "REPLACE_ME_64_HEX"
   N8N_JWT_SECRET: "REPLACE_ME_64_HEX"
+  N8N_RUNNERS_MODE: "external"
+  N8N_RUNNERS_AUTH_TOKEN: "REPLACE_ME_64_HEX"
   WEBUI_SECRET_KEY: "REPLACE_ME_64_HEX"
+  DROPZONE_AUDIO_INTERNAL_API_KEY: "REPLACE_ME_64_HEX"
 
   # Per-service database credentials — each service gets its own user
   POSTGRES_N8N_USER: "dropzone_n8n"
@@ -79,6 +82,8 @@ spec:
       labels:
         app: chutes-dropzone
     spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 60
       containers:
         - name: chutes-dropzone
@@ -92,6 +97,10 @@ spec:
               containerPort: 80
             - name: https
               containerPort: 443
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           readinessProbe:
             tcpSocket:
               port: https
@@ -115,6 +124,34 @@ spec:
             limits:
               cpu: "2"
               memory: "6Gi"
+        # n8n code-execution sandbox — runs user workflow code in isolation.
+        # Remove this container if DROPZONE_ENABLE_N8N is "false" (chat-only).
+        - name: n8n-runners
+          # Keep this image version aligned with the N8N_VERSION baked into the
+          # main Dropzone image.
+          image: "n8nio/runners:2.12.1"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: N8N_RUNNERS_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: chutes-dropzone-env
+                  key: N8N_RUNNERS_AUTH_TOKEN
+            - name: N8N_RUNNERS_TASK_BROKER_URI
+              value: "http://127.0.0.1:5679"
+            - name: N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT
+              value: "15"
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
       volumes:
         - name: data
           persistentVolumeClaim:
