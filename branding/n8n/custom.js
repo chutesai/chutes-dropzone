@@ -9,6 +9,7 @@
   var accountSummaryPromise = null;
   var accountSummaryFailureCount = 0;
   var accountSummaryTimerId = null;
+  var chatConfirmed = false;
   var tooltipLayer = null;
   var activeTooltipTarget = null;
 
@@ -188,6 +189,9 @@
         if (summary && summary.username) {
           accountSummary = summary;
           accountSummaryFailureCount = 0;
+          if (summary.links && summary.links.chatUrl) {
+            chatConfirmed = true;
+          }
         } else {
           accountSummary = null;
           accountSummaryFailureCount += 1;
@@ -296,15 +300,17 @@
     );
 
     var actions = createElement("div", "chutes-account-actions");
-    actions.appendChild(
-      buildActionLink(
-        (summary.links && summary.links.chatUrl) || "/chat/",
-        "Open Chat",
-        "is-accent",
-        CHUTES_LOGO_URL,
-        "Chutes",
-      ),
-    );
+    if (summary.links && summary.links.chatUrl) {
+      actions.appendChild(
+        buildActionLink(
+          summary.links.chatUrl,
+          "Open Chat",
+          "is-accent",
+          CHUTES_LOGO_URL,
+          "Chutes",
+        ),
+      );
+    }
     actions.appendChild(
       buildActionLink(
         (summary.links && summary.links.accountUrl) || "https://chutes.ai/app/api/billing-balance#daily-quota-usage",
@@ -323,6 +329,7 @@
   }
 
   function buildFallbackLink() {
+    if (!chatConfirmed) return null;
     var link = document.createElement("a");
     link.className = "chutes-crosslink";
     link.href = "/chat/";
@@ -370,7 +377,7 @@
     queueAccountSummaryFetch();
 
     var hasSummary = !!(accountSummary && accountSummary.username);
-    if (!hasSummary && !shouldRenderAccountFallback()) {
+    if (!hasSummary && !(shouldRenderAccountFallback() && chatConfirmed)) {
       Array.prototype.forEach.call(
         document.querySelectorAll('[data-chutes-nav-slot="chat"]'),
         function (slot) {
@@ -391,8 +398,11 @@
       slot.innerHTML = "";
       if (hasSummary) {
         slot.appendChild(buildSummaryCard(accountSummary));
-      } else if (shouldRenderAccountFallback()) {
-        slot.appendChild(buildFallbackLink());
+      } else if (shouldRenderAccountFallback() && chatConfirmed) {
+        var fallbackLink = buildFallbackLink();
+        if (fallbackLink) {
+          slot.appendChild(fallbackLink);
+        }
       }
       slot.setAttribute("data-chutes-rendered", "true");
     }

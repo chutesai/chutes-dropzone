@@ -26,6 +26,11 @@ compose() {
     docker compose "${args[@]}" "$@"
 }
 
+if [ "${DROPZONE_ENABLE_OPENWEBUI:-true}" = "false" ]; then
+    echo "  OpenWebUI is disabled; skipping OpenWebUI verification"
+    exit 0
+fi
+
 wait_for_openwebui() {
     local attempts="${1:-60}"
     while [ "$attempts" -gt 0 ]; do

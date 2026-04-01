@@ -117,6 +117,7 @@ prompt_required() {
 prompt_public_landing() {
     local _answer
     local _default="yes"
+    local _primary_path
 
     if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "false" ]; then
         _default="no"
@@ -131,10 +132,12 @@ prompt_public_landing() {
         return
     fi
 
+    _primary_path="$(primary_launcher_path)"
+
     echo
     echo "  Root entry behavior:"
     echo "    yes - keep the public launcher at /"
-    echo "    no  - redirect / straight to /chat/"
+    echo "    no  - redirect / straight to ${_primary_path}"
     if [ "$_default" = "yes" ]; then
         read_value _answer "  Enable the public landing page? [Y/n]: "
     else
@@ -146,6 +149,83 @@ prompt_public_landing() {
         n|N|no|NO|No) DROPZONE_ENABLE_PUBLIC_LANDING="false" ;;
         *) err "Please answer yes or no"; exit 1 ;;
     esac
+}
+
+prompt_service_mode() {
+    _chat_only_default="no"
+    _n8n_only_default="no"
+    _answer=""
+
+    if ! openwebui_enabled && ! n8n_enabled; then
+        if [ "$INTERACTIVE" = true ]; then
+            warn "Both apps were disabled in the current environment; defaulting the prompt to both enabled"
+            DROPZONE_ENABLE_OPENWEBUI="true"
+            DROPZONE_ENABLE_N8N="true"
+        else
+            err "DROPZONE_ENABLE_OPENWEBUI and DROPZONE_ENABLE_N8N cannot both be false"
+            exit 1
+        fi
+    fi
+
+    if openwebui_enabled && ! n8n_enabled; then
+        _chat_only_default="yes"
+    elif ! openwebui_enabled && n8n_enabled; then
+        _n8n_only_default="yes"
+    fi
+
+    if [ "$INTERACTIVE" != true ]; then
+        validate_enabled_apps
+        return
+    fi
+
+    echo
+    echo "  Application set:"
+    echo "    chat-only - OpenWebUI only"
+    echo "    n8n-only  - n8n only"
+    echo "    both      - OpenWebUI and n8n"
+
+    if [ "$_chat_only_default" = "yes" ]; then
+        read_value _answer "  Deploy chat-only? [Y/n]: "
+    else
+        read_value _answer "  Deploy chat-only? [y/N]: "
+    fi
+
+    case "${_answer:-$_chat_only_default}" in
+        y|Y|yes|YES|Yes)
+            DROPZONE_ENABLE_OPENWEBUI="true"
+            DROPZONE_ENABLE_N8N="false"
+            return
+            ;;
+        n|N|no|NO|No)
+            ;;
+        *)
+            err "Please answer yes or no"
+            exit 1
+            ;;
+    esac
+
+    if [ "$_n8n_only_default" = "yes" ]; then
+        read_value _answer "  Deploy n8n-only? [Y/n]: "
+    else
+        read_value _answer "  Deploy n8n-only? [y/N]: "
+    fi
+
+    case "${_answer:-$_n8n_only_default}" in
+        y|Y|yes|YES|Yes)
+            DROPZONE_ENABLE_OPENWEBUI="false"
+            DROPZONE_ENABLE_N8N="true"
+            ;;
+        n|N|no|NO|No)
+            DROPZONE_ENABLE_OPENWEBUI="true"
+            DROPZONE_ENABLE_N8N="true"
+            ;;
+        *)
+            err "Please answer yes or no"
+            exit 1
+            ;;
+    esac
+
+    validate_enabled_apps
 }
 
 # ---------------------------------------------------------------------------
@@ -213,8 +293,15 @@ replacements = {
     "__RESOLVERS__": os.environ.get("TEMPLATE_RESOLVERS", ""),
     "__CHUTES_V1_BLOCK__": os.environ.get("TEMPLATE_CHUTES_V1_BLOCK", ""),
     "__ROOT_ENTRY_BLOCK__": os.environ.get("TEMPLATE_ROOT_ENTRY_BLOCK", ""),
+    "__CHAT_ROUTES_BLOCK__": os.environ.get("TEMPLATE_CHAT_ROUTES_BLOCK", ""),
     "__N8N_ROUTES_BLOCK__": os.environ.get("TEMPLATE_N8N_ROUTES_BLOCK", ""),
+    "__APP_FALLBACK_BLOCK__": os.environ.get("TEMPLATE_APP_FALLBACK_BLOCK", ""),
+    "__INSTALL_MODE__": os.environ.get("TEMPLATE_INSTALL_MODE", ""),
+    "__CHUTES_TRAFFIC_MODE__": os.environ.get("TEMPLATE_CHUTES_TRAFFIC_MODE", ""),
+    "__DROPZONE_HOST__": os.environ.get("TEMPLATE_DROPZONE_HOST", ""),
+    "__CHAT_CARD_BLOCK__": os.environ.get("TEMPLATE_CHAT_CARD_BLOCK", ""),
     "__N8N_CARD_BLOCK__": os.environ.get("TEMPLATE_N8N_CARD_BLOCK", ""),
+    "__OPENWEBUI_ENABLED__": os.environ.get("TEMPLATE_OPENWEBUI_ENABLED", "true"),
     "__N8N_ENABLED__": os.environ.get("TEMPLATE_N8N_ENABLED", "true"),
 }
 
@@ -225,8 +312,202 @@ Path(os.environ["OUTPUT_PATH"]).write_text(template, encoding="utf-8")
 PY
 }
 
+openwebui_enabled() {
+    [ "${DROPZONE_ENABLE_OPENWEBUI:-true}" != "false" ]
+}
+
+n8n_enabled() {
+    [ "${DROPZONE_ENABLE_N8N:-true}" != "false" ]
+}
+
+validate_enabled_apps() {
+    if openwebui_enabled || n8n_enabled; then
+        return
+    fi
+
+    err "At least one application must be enabled"
+    exit 1
+}
+
+primary_redirect_target() {
+    if openwebui_enabled; then
+        printf '/chat/'
+        return
+    fi
+
+    if n8n_enabled; then
+        printf '/n8n/'
+        return
+    fi
+
+    err "Unable to determine a primary redirect target because both apps are disabled"
+    exit 1
+}
+
+primary_launcher_path() {
+    if openwebui_enabled; then
+        printf '/chat/'
+        return
+    fi
+
+    if n8n_enabled; then
+        printf '/n8n/'
+        return
+    fi
+
+    err "Unable to determine a primary launcher path because both apps are disabled"
+    exit 1
+}
+
+landing_chat_card_block() {
+    if ! openwebui_enabled; then
+        return
+    fi
+
+    cat <<'EOF'
+          <a class="launch-card chat-card" href="/chat/">
+            <div class="card-topline">
+              <div>
+                <p class="card-kicker">Chat workspace</p>
+                <h2 class="product-name product-name-chat">Chutes Chat</h2>
+              </div>
+              <span class="route-pill">/chat/</span>
+            </div>
+            <div class="card-art">
+              <img src="/_dropzone/assets/chat-panel.svg?v=dropzone-20260322c" alt="" />
+            </div>
+            <div class="card-copy">
+              <p>Private AI chat, models, files, and fast iteration in one surface.</p>
+            </div>
+            <div class="card-footer">
+              <span>Launch Chat</span>
+              <span aria-hidden="true">→</span>
+            </div>
+          </a>
+EOF
+}
+
+landing_n8n_card_block() {
+    if ! n8n_enabled; then
+        return
+    fi
+
+    cat <<'EOF'
+          <a class="launch-card n8n-card" href="/n8n/">
+            <div class="card-topline">
+              <div>
+                <p class="card-kicker">Automation studio</p>
+                <h2 class="product-name product-name-n8n">n8n w/Chutes</h2>
+              </div>
+              <span class="route-pill">/n8n/</span>
+            </div>
+            <div class="card-art">
+              <img src="/_dropzone/assets/n8n-panel.svg?v=dropzone-20260322c" alt="" />
+            </div>
+            <div class="card-copy">
+              <p>Agents, automations, integrations, and durable workflows behind the same edge.</p>
+            </div>
+            <div class="card-footer">
+              <span>Launch Automations</span>
+              <span aria-hidden="true">→</span>
+            </div>
+          </a>
+EOF
+}
+
+nginx_chat_routes_block() {
+    if ! openwebui_enabled; then
+        cat <<'EOF'
+        location = /chat {
+            return 404;
+        }
+
+        location /chat/ {
+            return 404;
+        }
+
+        location = /static/custom.css {
+            return 404;
+        }
+
+        location = /static/loader.js {
+            return 404;
+        }
+
+        location = /static/site.webmanifest {
+            return 404;
+        }
+
+        location /oauth/oidc/ {
+            return 404;
+        }
+EOF
+        return
+    fi
+
+    cat <<'EOF'
+        if ($request_uri ~ "^/chat//+") {
+            return 302 /c/new;
+        }
+
+        location = /chat {
+            return 308 /chat/;
+        }
+
+        location = /chat/ {
+            return 302 /c/new;
+        }
+
+        location /chat/ {
+            rewrite ^/chat/([^/].*)$ /$1 permanent;
+        }
+
+        location = /static/custom.css {
+            proxy_hide_header Cache-Control;
+            proxy_hide_header Expires;
+            proxy_hide_header ETag;
+            add_header Cache-Control "no-store" always;
+            proxy_pass http://127.0.0.1:8080;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+        }
+
+        location = /static/loader.js {
+            proxy_hide_header Cache-Control;
+            proxy_hide_header Expires;
+            proxy_hide_header ETag;
+            add_header Cache-Control "no-store" always;
+            proxy_pass http://127.0.0.1:8080;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+        }
+
+        location = /static/site.webmanifest {
+            proxy_hide_header Cache-Control;
+            proxy_hide_header Expires;
+            proxy_hide_header ETag;
+            add_header Cache-Control "no-store" always;
+            proxy_pass http://127.0.0.1:8080;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+        }
+EOF
+}
+
 nginx_n8n_routes_block() {
-    if [ "${DROPZONE_ENABLE_N8N:-true}" = "false" ]; then
+    if ! n8n_enabled; then
         cat <<'EOF'
         location = /n8n {
             return 404;
@@ -309,8 +590,12 @@ EOF
 }
 
 caddy_n8n_routes_block() {
-    if [ "${DROPZONE_ENABLE_N8N:-true}" = "false" ]; then
+    if ! n8n_enabled; then
         cat <<'EOF'
+    handle /n8n {
+        respond 404
+    }
+
     handle_path /n8n/* {
         respond 404
     }
@@ -323,6 +608,8 @@ EOF
     fi
 
     cat <<'EOF'
+    redir /n8n /n8n/ 308
+
     handle_path /n8n/* {
         reverse_proxy 127.0.0.1:5678 {
             header_up X-Forwarded-For {remote_host}
@@ -342,6 +629,30 @@ EOF
 
     @n8nCustomSidebar path /n8n/static/chutes-custom.js /n8n/static/chutes-custom.css
     header @n8nCustomSidebar Cache-Control "no-store"
+EOF
+}
+
+caddy_chat_routes_block() {
+    if ! openwebui_enabled; then
+        cat <<'EOF'
+    @chatDisabled path /chat /chat/* /static/custom.css /static/loader.js /static/site.webmanifest /chat/static/custom.css /chat/static/loader.js /chat/static/site.webmanifest /oauth/oidc/*
+    respond @chatDisabled 404
+EOF
+        return
+    fi
+
+    cat <<'EOF'
+    redir /chat /chat/ 308
+    redir /chat/ /c/new 302
+
+    @chatAliasBad path_regexp chatAliasBad ^/chat//+.*$
+    redir @chatAliasBad /c/new 302
+
+    @chatAlias path_regexp chatAlias ^/chat/([^/].*)$
+    redir @chatAlias /{re.chatAlias.1} 308
+
+    @chatCustomAssets path /static/custom.css /static/loader.js /static/site.webmanifest /chat/static/custom.css /chat/static/loader.js /chat/static/site.webmanifest
+    header @chatCustomAssets Cache-Control "no-store"
 EOF
 }
 
@@ -366,9 +677,9 @@ EOF
 
 caddy_root_entry_block() {
     if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "false" ]; then
-        cat <<'EOF'
+        cat <<EOF
     handle / {
-        redir * /c/new 302
+        redir * $(primary_redirect_target) 302
     }
 
 EOF
@@ -440,9 +751,9 @@ EOF
 
 nginx_root_entry_block() {
     if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "false" ]; then
-        cat <<'EOF'
+        cat <<EOF
         location = / {
-            return 302 /c/new;
+            return 302 $(primary_redirect_target);
         }
 
 EOF
@@ -456,6 +767,68 @@ EOF
             try_files /index.html =404;
         }
 
+EOF
+}
+
+caddy_app_fallback_block() {
+    if ! openwebui_enabled; then
+        cat <<'EOF'
+    handle {
+        respond 404
+    }
+
+EOF
+        return
+    fi
+
+    cat <<'EOF'
+    handle {
+        reverse_proxy 127.0.0.1:8080 {
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Proto {scheme}
+            # Strip internal-only headers to prevent external spoofing
+            header_up -X-OpenWebUI-User-Id
+            header_up -X-OpenWebUI-User-Email
+            header_up -X-OpenWebUI-User-Name
+            header_up -X-OpenWebUI-User-Role
+        }
+    }
+
+EOF
+}
+
+nginx_app_fallback_block() {
+    if ! openwebui_enabled; then
+        cat <<'EOF'
+        location / {
+            return 404;
+        }
+EOF
+        return
+    fi
+
+    cat <<'EOF'
+        location / {
+            proxy_pass http://127.0.0.1:8080;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            # Strip internal-only headers to prevent external spoofing
+            proxy_set_header X-OpenWebUI-User-Id "";
+            proxy_set_header X-OpenWebUI-User-Email "";
+            proxy_set_header X-OpenWebUI-User-Name "";
+            proxy_set_header X-OpenWebUI-User-Role "";
+            proxy_buffering off;
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
+            client_max_body_size 50m;
+        }
 EOF
 }
 
@@ -473,6 +846,7 @@ write_env_file() {
         env_line INSTALL_MODE "$INSTALL_MODE"
         env_line CHUTES_TRAFFIC_MODE "$CHUTES_TRAFFIC_MODE"
         env_line DROPZONE_ENABLE_PUBLIC_LANDING "$DROPZONE_ENABLE_PUBLIC_LANDING"
+        env_line DROPZONE_ENABLE_OPENWEBUI "${DROPZONE_ENABLE_OPENWEBUI:-true}"
         env_line DROPZONE_ENABLE_N8N "${DROPZONE_ENABLE_N8N:-true}"
         env_line ALLOW_NON_CONFIDENTIAL "$ALLOW_NON_CONFIDENTIAL"
         env_line CHUTES_SSO_PROXY_BYPASS "$CHUTES_SSO_PROXY_BYPASS"
@@ -543,6 +917,7 @@ else
     INSTALL_MODE="${INSTALL_MODE:-}"
     CHUTES_TRAFFIC_MODE="${CHUTES_TRAFFIC_MODE:-direct}"
     DROPZONE_ENABLE_PUBLIC_LANDING="${DROPZONE_ENABLE_PUBLIC_LANDING:-true}"
+    DROPZONE_ENABLE_OPENWEBUI="${DROPZONE_ENABLE_OPENWEBUI:-true}"
     ALLOW_NON_CONFIDENTIAL="${ALLOW_NON_CONFIDENTIAL:-false}"
     CHUTES_SSO_PROXY_BYPASS="${CHUTES_SSO_PROXY_BYPASS:-false}"
     CHUTES_OAUTH_CLIENT_ID="${CHUTES_OAUTH_CLIENT_ID:-}"
@@ -589,6 +964,8 @@ else
         fi
     fi
 
+    prompt_service_mode
+    validate_enabled_apps
     prompt_public_landing
 
     # --- Traffic mode ---
@@ -683,12 +1060,28 @@ else
     echo "    Description:  Sign in to your Chutes Dropzone workspace"
     echo "    Homepage URL: https://${DROPZONE_HOST}"
     if [ "$INSTALL_MODE" = "local" ]; then
-        echo "    Redirect URI: https://${LOCAL_HOSTNAME}/oauth/oidc/callback"
-        echo "                  https://${LOCAL_HOSTNAME}/rest/sso/chutes/callback"
-        echo "                  since you are using it locally, use this"
+        if n8n_enabled; then
+            echo "    Redirect URI: https://${LOCAL_HOSTNAME}/rest/sso/chutes/callback"
+        fi
+        if openwebui_enabled; then
+            if n8n_enabled; then
+                echo "                  https://${LOCAL_HOSTNAME}/oauth/oidc/callback"
+            else
+                echo "    Redirect URI: https://${LOCAL_HOSTNAME}/oauth/oidc/callback"
+            fi
+        fi
+        echo "                  since you are using it locally, use this exact host"
     else
-        echo "    Redirect URI: https://${DROPZONE_HOST}/oauth/oidc/callback"
-        echo "                  https://${DROPZONE_HOST}/rest/sso/chutes/callback"
+        if n8n_enabled; then
+            echo "    Redirect URI: https://${DROPZONE_HOST}/rest/sso/chutes/callback"
+        fi
+        if openwebui_enabled; then
+            if n8n_enabled; then
+                echo "                  https://${DROPZONE_HOST}/oauth/oidc/callback"
+            else
+                echo "    Redirect URI: https://${DROPZONE_HOST}/oauth/oidc/callback"
+            fi
+        fi
     fi
     echo
     echo "  Scopes to select:"
@@ -723,6 +1116,8 @@ fi
 # ---------------------------------------------------------------------------
 # Derive runtime settings
 # ---------------------------------------------------------------------------
+
+validate_enabled_apps
 
 DROPZONE_HOST="${DROPZONE_HOST:-${N8N_HOST:-$LOCAL_HOSTNAME}}"
 N8N_HOST="${N8N_HOST:-$DROPZONE_HOST}"
@@ -819,6 +1214,7 @@ export OPENAI_API_KEYS="${OPENWEBUI_API_KEY:-}"
 export MODELS_CACHE_TTL="${OPENWEBUI_MODELS_CACHE_TTL:-300}"
 export OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL="${OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL:-300}"
 export OPENWEBUI_SYNC_BASE_URL="http://127.0.0.1:8080"
+export DROPZONE_ENABLE_OPENWEBUI="${DROPZONE_ENABLE_OPENWEBUI:-true}"
 export DROPZONE_ENABLE_N8N="${DROPZONE_ENABLE_N8N:-true}"
 export ENABLE_FORWARD_USER_INFO_HEADERS=true
 export AUDIO_TTS_ENGINE=openai
@@ -857,12 +1253,24 @@ unset CHUTES_API_KEY
 # ---------------------------------------------------------------------------
 info "Rendering edge proxy configuration"
 
+TEMPLATE_INSTALL_MODE="$INSTALL_MODE" \
+TEMPLATE_CHUTES_TRAFFIC_MODE="$CHUTES_TRAFFIC_MODE" \
+TEMPLATE_DROPZONE_HOST="$DROPZONE_HOST" \
+TEMPLATE_CHAT_CARD_BLOCK="$(landing_chat_card_block)" \
+TEMPLATE_N8N_CARD_BLOCK="$(landing_n8n_card_block)" \
+TEMPLATE_OPENWEBUI_ENABLED="${DROPZONE_ENABLE_OPENWEBUI:-true}" \
+TEMPLATE_N8N_ENABLED="${DROPZONE_ENABLE_N8N:-true}" \
+render_template_file /opt/landing/index.template.html /opt/landing/index.html
+ok "landing page rendered"
+
 if [ "$INSTALL_MODE" = "local" ]; then
     TEMPLATE_SERVER_NAME="$DROPZONE_HOST" \
     TEMPLATE_RESOLVERS="8.8.8.8 8.8.4.4" \
     TEMPLATE_CHUTES_V1_BLOCK="$(nginx_chutes_v1_block)" \
     TEMPLATE_ROOT_ENTRY_BLOCK="$(nginx_root_entry_block)" \
+    TEMPLATE_CHAT_ROUTES_BLOCK="$(nginx_chat_routes_block)" \
     TEMPLATE_N8N_ROUTES_BLOCK="$(nginx_n8n_routes_block)" \
+    TEMPLATE_APP_FALLBACK_BLOCK="$(nginx_app_fallback_block)" \
     render_template_file /opt/standalone/nginx-standalone.conf.template /tmp/nginx-standalone.conf
     ok "nginx config rendered (local mode)"
 fi
@@ -879,7 +1287,9 @@ if [ "$INSTALL_MODE" = "domain" ]; then
     TEMPLATE_TLS_DIRECTIVE="$_caddy_tls_directive" \
     TEMPLATE_CHUTES_V1_BLOCK="$(caddy_chutes_v1_block)" \
     TEMPLATE_ROOT_ENTRY_BLOCK="$(caddy_root_entry_block)" \
+    TEMPLATE_CHAT_ROUTES_BLOCK="$(caddy_chat_routes_block)" \
     TEMPLATE_N8N_ROUTES_BLOCK="$(caddy_n8n_routes_block)" \
+    TEMPLATE_APP_FALLBACK_BLOCK="$(caddy_app_fallback_block)" \
     render_template_file /opt/standalone/Caddyfile.template /tmp/Caddyfile
     if [ -n "${ACME_EMAIL:-}" ]; then
         ok "Caddyfile rendered (domain mode, Let's Encrypt)"

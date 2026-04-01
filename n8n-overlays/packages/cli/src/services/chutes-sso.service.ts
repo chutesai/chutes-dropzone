@@ -558,6 +558,12 @@ export class ChutesSsoService {
 		quotas: ChutesQuotaItem[],
 		liveQuota: ChutesLiveQuota,
 	) {
+		const openWebUiEnabled = !['false', '0', 'no'].includes(
+			String(process.env.DROPZONE_ENABLE_OPENWEBUI ?? 'true').toLowerCase(),
+		);
+		const n8nEnabled = !['false', '0', 'no'].includes(
+			String(process.env.DROPZONE_ENABLE_N8N ?? 'true').toLowerCase(),
+		);
 		const permissionsBitmask = Number(account.permissions_bitmask ?? 0);
 		const dailyQuota = this.extractDailyQuota(quotas);
 		const quotaLimit = Number(liveQuota.quota ?? dailyQuota ?? 0);
@@ -590,8 +596,8 @@ export class ChutesSsoService {
 			links: {
 				accountUrl: 'https://chutes.ai/app/api/billing-balance#daily-quota-usage',
 				homeUrl: 'https://chutes.ai/',
-				chatUrl: '/chat/',
-				n8nUrl: '/n8n/',
+				...(openWebUiEnabled ? { chatUrl: '/chat/' } : {}),
+				...(n8nEnabled ? { n8nUrl: '/n8n/' } : {}),
 			},
 		};
 	}

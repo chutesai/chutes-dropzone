@@ -10,6 +10,7 @@
 set -eu
 
 N8N_ENABLED="${DROPZONE_ENABLE_N8N:-true}"
+OPENWEBUI_ENABLED="${DROPZONE_ENABLE_OPENWEBUI:-true}"
 DATA_DIR="${STANDALONE_DATA_DIR:-/data}"
 CHUTES_API_KEY="${CHUTES_API_KEY:-}"
 CHUTES_API_KEY_FILE="/tmp/.chutes-api-key"
@@ -66,37 +67,41 @@ if [ "$N8N_ENABLED" != "false" ]; then
     echo "  n8n is healthy"
 fi
 
-echo "  Waiting for OpenWebUI to be healthy ..."
-attempts=0
-max_attempts=60
-while [ "$attempts" -lt "$max_attempts" ]; do
-    if curl -fsS http://127.0.0.1:8080/ >/dev/null 2>&1; then
-        break
+if [ "$OPENWEBUI_ENABLED" != "false" ]; then
+    echo "  Waiting for OpenWebUI to be healthy ..."
+    attempts=0
+    max_attempts=60
+    while [ "$attempts" -lt "$max_attempts" ]; do
+        if curl -fsS http://127.0.0.1:8080/ >/dev/null 2>&1; then
+            break
+        fi
+        attempts=$((attempts + 1))
+        sleep 2
+    done
+
+    if [ "$attempts" -ge "$max_attempts" ]; then
+        echo "  ERROR: OpenWebUI did not become healthy"
+        exit 1
     fi
-    attempts=$((attempts + 1))
-    sleep 2
-done
+    echo "  OpenWebUI is healthy"
 
-if [ "$attempts" -ge "$max_attempts" ]; then
-    echo "  ERROR: OpenWebUI did not become healthy"
-    exit 1
+    echo "  Configuring OpenWebUI runtime ..."
+    openwebui_runtime_output="$(
+        cd /app/backend
+        PYTHONPATH="/app/backend${PYTHONPATH:+:${PYTHONPATH}}" \
+            python /opt/dropzone/openwebui-model-order-sync.py --configure-openai-auth
+    )" || {
+        echo "  ERROR: failed to configure OpenWebUI runtime"
+        echo "$openwebui_runtime_output" | head -5
+        exit 1
+    }
+
+    echo "$openwebui_runtime_output" | while IFS= read -r line; do
+        [ -n "$line" ] && echo "  $line"
+    done
+else
+    echo "  OpenWebUI is disabled; skipping OpenWebUI health and runtime configuration."
 fi
-echo "  OpenWebUI is healthy"
-
-echo "  Configuring OpenWebUI runtime ..."
-openwebui_runtime_output="$(
-    cd /app/backend
-    PYTHONPATH="/app/backend${PYTHONPATH:+:${PYTHONPATH}}" \
-        python /opt/dropzone/openwebui-model-order-sync.py --configure-openai-auth
-)" || {
-    echo "  ERROR: failed to configure OpenWebUI runtime"
-    echo "$openwebui_runtime_output" | head -5
-    exit 1
-}
-
-echo "$openwebui_runtime_output" | while IFS= read -r line; do
-    [ -n "$line" ] && echo "  $line"
-done
 
 # ---------------------------------------------------------------------------
 # Helpers

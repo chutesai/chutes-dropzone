@@ -9,9 +9,6 @@ services:
       - ./landing:/srv/landing:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on:
-      openwebui:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
       interval: 30s

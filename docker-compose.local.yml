@@ -23,9 +23,6 @@ services:
       start_period: 10s
     security_opt:
       - no-new-privileges:true
-    depends_on:
-      openwebui:
-        condition: service_healthy
     networks:
       dropzone-net:
         aliases:

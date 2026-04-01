@@ -223,9 +223,7 @@ compose_files_default() {
         direct|"")
             ;;
         e2ee-proxy)
-            if [ "$install_mode" = "domain" ]; then
-                files="${files}:docker-compose.traffic-proxy.yml"
-            fi
+            files="${files}:docker-compose.traffic-proxy.yml"
             ;;
         *)
             err "Unsupported Chutes traffic mode: $traffic_mode"
@@ -387,11 +385,15 @@ replacements = {
     "__RESOLVERS__": os.environ.get("TEMPLATE_RESOLVERS", ""),
     "__CHUTES_V1_BLOCK__": os.environ.get("TEMPLATE_CHUTES_V1_BLOCK", ""),
     "__ROOT_ENTRY_BLOCK__": os.environ.get("TEMPLATE_ROOT_ENTRY_BLOCK", ""),
+    "__CHAT_ROUTES_BLOCK__": os.environ.get("TEMPLATE_CHAT_ROUTES_BLOCK", ""),
     "__N8N_ROUTES_BLOCK__": os.environ.get("TEMPLATE_N8N_ROUTES_BLOCK", ""),
+    "__APP_FALLBACK_BLOCK__": os.environ.get("TEMPLATE_APP_FALLBACK_BLOCK", ""),
     "__INSTALL_MODE__": os.environ.get("TEMPLATE_INSTALL_MODE", ""),
     "__CHUTES_TRAFFIC_MODE__": os.environ.get("TEMPLATE_CHUTES_TRAFFIC_MODE", ""),
     "__DROPZONE_HOST__": os.environ.get("TEMPLATE_DROPZONE_HOST", ""),
+    "__CHAT_CARD_BLOCK__": os.environ.get("TEMPLATE_CHAT_CARD_BLOCK", ""),
     "__N8N_CARD_BLOCK__": os.environ.get("TEMPLATE_N8N_CARD_BLOCK", ""),
+    "__OPENWEBUI_ENABLED__": os.environ.get("TEMPLATE_OPENWEBUI_ENABLED", "true"),
     "__N8N_ENABLED__": os.environ.get("TEMPLATE_N8N_ENABLED", "true"),
 }
 
@@ -502,6 +504,7 @@ write_env_file() {
         env_line INSTALL_MODE "$INSTALL_MODE"
         env_line CHUTES_TRAFFIC_MODE "$CHUTES_TRAFFIC_MODE"
         env_line DROPZONE_ENABLE_PUBLIC_LANDING "$DROPZONE_ENABLE_PUBLIC_LANDING"
+        env_line DROPZONE_ENABLE_OPENWEBUI "$DROPZONE_ENABLE_OPENWEBUI"
         env_line DROPZONE_ENABLE_N8N "$DROPZONE_ENABLE_N8N"
         env_line CHUTES_COMPOSE_FILES "$CHUTES_COMPOSE_FILES"
         env_line EDGE_SERVICE "$EDGE_SERVICE"
@@ -568,9 +571,9 @@ write_env_file() {
 
 caddy_root_entry_block() {
     if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "false" ]; then
-        cat <<'EOF'
+        cat <<EOF
     handle / {
-        redir * /c/new 302
+        redir * $(primary_redirect_target) 302
     }
 
 EOF
@@ -590,9 +593,9 @@ EOF
 
 nginx_root_entry_block() {
     if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "false" ]; then
-        cat <<'EOF'
+        cat <<EOF
         location = / {
-            return 302 /c/new;
+            return 302 $(primary_redirect_target);
         }
 
 EOF
@@ -609,8 +612,294 @@ EOF
 EOF
 }
 
+openwebui_enabled() {
+    [ "${DROPZONE_ENABLE_OPENWEBUI:-true}" != "false" ]
+}
+
+n8n_enabled() {
+    [ "${DROPZONE_ENABLE_N8N:-true}" != "false" ]
+}
+
+validate_enabled_apps() {
+    if openwebui_enabled || n8n_enabled; then
+        return
+    fi
+
+    err "At least one application must be enabled"
+    exit 1
+}
+
+primary_redirect_target() {
+    if openwebui_enabled; then
+        printf '/chat/'
+        return
+    fi
+
+    if n8n_enabled; then
+        printf '/n8n/'
+        return
+    fi
+
+    err "Unable to determine a primary redirect target because both apps are disabled"
+    exit 1
+}
+
+primary_launcher_path() {
+    if openwebui_enabled; then
+        printf '/chat/'
+        return
+    fi
+
+    if n8n_enabled; then
+        printf '/n8n/'
+        return
+    fi
+
+    err "Unable to determine a primary launcher path because both apps are disabled"
+    exit 1
+}
+
+enabled_app_targets() {
+    if openwebui_enabled && n8n_enabled; then
+        printf 'OpenWebUI and n8n'
+        return
+    fi
+
+    if openwebui_enabled; then
+        printf 'OpenWebUI'
+        return
+    fi
+
+    if n8n_enabled; then
+        printf 'n8n'
+        return
+    fi
+
+    printf 'no applications'
+}
+
+caddy_chat_routes_block() {
+    if ! openwebui_enabled; then
+        cat <<'EOF'
+    @chatDisabled path /chat /chat/* /static/custom.css /static/loader.js /static/site.webmanifest /chat/static/custom.css /chat/static/loader.js /chat/static/site.webmanifest /oauth/oidc/*
+    respond @chatDisabled 404
+EOF
+        return
+    fi
+
+    cat <<'EOF'
+    redir /chat /chat/ 308
+    redir /chat/ /c/new 302
+
+    @chatAliasBad path_regexp chatAliasBad ^/chat//+.*$
+    redir @chatAliasBad /c/new 302
+
+    @chatAlias path_regexp chatAlias ^/chat/([^/].*)$
+    redir @chatAlias /{re.chatAlias.1} 308
+
+    @chatCustomAssets path /static/custom.css /static/loader.js /static/site.webmanifest /chat/static/custom.css /chat/static/loader.js /chat/static/site.webmanifest
+    header @chatCustomAssets Cache-Control "no-store"
+EOF
+}
+
+nginx_chat_routes_block() {
+    if ! openwebui_enabled; then
+        cat <<'EOF'
+        location = /chat {
+            return 404;
+        }
+
+        location /chat/ {
+            return 404;
+        }
+
+        location = /static/custom.css {
+            return 404;
+        }
+
+        location = /static/loader.js {
+            return 404;
+        }
+
+        location = /static/site.webmanifest {
+            return 404;
+        }
+
+        location /oauth/oidc/ {
+            return 404;
+        }
+EOF
+        return
+    fi
+
+    cat <<'EOF'
+        if ($request_uri ~ "^/chat//+") {
+            return 302 /c/new;
+        }
+
+        location = /chat {
+            return 308 /chat/;
+        }
+
+        location = /chat/ {
+            return 302 /c/new;
+        }
+
+        location /chat/ {
+            rewrite ^/chat/([^/].*)$ /$1 permanent;
+        }
+
+        location = /static/custom.css {
+            proxy_hide_header Cache-Control;
+            proxy_hide_header Expires;
+            proxy_hide_header ETag;
+            add_header Cache-Control "no-store" always;
+            proxy_pass http://openwebui:8080;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+        }
+
+        location = /static/loader.js {
+            proxy_hide_header Cache-Control;
+            proxy_hide_header Expires;
+            proxy_hide_header ETag;
+            add_header Cache-Control "no-store" always;
+            proxy_pass http://openwebui:8080;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+        }
+
+        location = /static/site.webmanifest {
+            proxy_hide_header Cache-Control;
+            proxy_hide_header Expires;
+            proxy_hide_header ETag;
+            add_header Cache-Control "no-store" always;
+            proxy_pass http://openwebui:8080;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+        }
+EOF
+}
+
+caddy_n8n_routes_block() {
+    if ! n8n_enabled; then
+        cat <<'EOF'
+    handle /n8n {
+        respond 404
+    }
+
+    handle_path /n8n/* {
+        respond 404
+    }
+
+    handle /rest/sso/chutes/* {
+        respond 404
+    }
+EOF
+        return
+    fi
+
+    cat <<'EOF'
+    redir /n8n /n8n/ 308
+
+    handle_path /n8n/* {
+        reverse_proxy n8n:5678 {
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    handle /rest/sso/chutes/* {
+        header Cache-Control "no-store"
+        reverse_proxy n8n:5678 {
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    @n8nCustomSidebar path /n8n/static/chutes-custom.js /n8n/static/chutes-custom.css
+    header @n8nCustomSidebar Cache-Control "no-store"
+EOF
+}
+
+caddy_app_fallback_block() {
+    if ! openwebui_enabled; then
+        cat <<'EOF'
+    handle {
+        respond 404
+    }
+
+EOF
+        return
+    fi
+
+    cat <<'EOF'
+    handle {
+        reverse_proxy openwebui:8080 {
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Proto {scheme}
+            # Strip internal-only headers to prevent external spoofing
+            header_up -X-OpenWebUI-User-Id
+            header_up -X-OpenWebUI-User-Email
+            header_up -X-OpenWebUI-User-Name
+            header_up -X-OpenWebUI-User-Role
+        }
+    }
+
+EOF
+}
+
+nginx_app_fallback_block() {
+    if ! openwebui_enabled; then
+        cat <<'EOF'
+        location / {
+            return 404;
+        }
+EOF
+        return
+    fi
+
+    cat <<'EOF'
+        location / {
+            proxy_pass http://openwebui:8080;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            # Strip internal-only headers to prevent external spoofing
+            proxy_set_header X-OpenWebUI-User-Id "";
+            proxy_set_header X-OpenWebUI-User-Email "";
+            proxy_set_header X-OpenWebUI-User-Name "";
+            proxy_set_header X-OpenWebUI-User-Role "";
+            proxy_buffering off;
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
+            client_max_body_size 50m;
+        }
+EOF
+}
+
 nginx_n8n_routes_block() {
-    if [ "${DROPZONE_ENABLE_N8N:-true}" = "false" ]; then
+    if ! n8n_enabled; then
         cat <<'EOF'
         location = /n8n {
             return 404;
@@ -717,6 +1006,9 @@ render_caddyfile() {
     TEMPLATE_TLS_DIRECTIVE="$tls_directive" \
     TEMPLATE_CHUTES_V1_BLOCK="$(caddy_chutes_v1_block)" \
     TEMPLATE_ROOT_ENTRY_BLOCK="$(caddy_root_entry_block)" \
+    TEMPLATE_CHAT_ROUTES_BLOCK="$(caddy_chat_routes_block)" \
+    TEMPLATE_N8N_ROUTES_BLOCK="$(caddy_n8n_routes_block)" \
+    TEMPLATE_APP_FALLBACK_BLOCK="$(caddy_app_fallback_block)" \
     render_template_file "$SCRIPT_DIR/conf/Caddyfile.template" "$SCRIPT_DIR/conf/Caddyfile"
 }
 
@@ -725,14 +1017,44 @@ render_local_proxy_config() {
     TEMPLATE_RESOLVERS="127.0.0.11 8.8.8.8 8.8.4.4" \
     TEMPLATE_CHUTES_V1_BLOCK="$(nginx_chutes_v1_block)" \
     TEMPLATE_ROOT_ENTRY_BLOCK="$(nginx_root_entry_block)" \
+    TEMPLATE_CHAT_ROUTES_BLOCK="$(nginx_chat_routes_block)" \
     TEMPLATE_N8N_ROUTES_BLOCK="$(nginx_n8n_routes_block)" \
+    TEMPLATE_APP_FALLBACK_BLOCK="$(nginx_app_fallback_block)" \
     render_template_file \
         "$SCRIPT_DIR/conf/local-proxy.nginx.template" \
         "$SCRIPT_DIR/conf/local-proxy.nginx.conf"
 }
 
+landing_chat_card_block() {
+    if ! openwebui_enabled; then
+        return
+    fi
+
+    cat <<'EOF'
+          <a class="launch-card chat-card" href="/chat/">
+            <div class="card-topline">
+              <div>
+                <p class="card-kicker">Chat workspace</p>
+                <h2 class="product-name product-name-chat">Chutes Chat</h2>
+              </div>
+              <span class="route-pill">/chat/</span>
+            </div>
+            <div class="card-art">
+              <img src="/_dropzone/assets/chat-panel.svg?v=dropzone-20260322c" alt="" />
+            </div>
+            <div class="card-copy">
+              <p>Private AI chat, models, files, and fast iteration in one surface.</p>
+            </div>
+            <div class="card-footer">
+              <span>Launch Chat</span>
+              <span aria-hidden="true">→</span>
+            </div>
+          </a>
+EOF
+}
+
 landing_n8n_card_block() {
-    if [ "${DROPZONE_ENABLE_N8N:-true}" = "false" ]; then
+    if ! n8n_enabled; then
         return
     fi
 
@@ -763,7 +1085,9 @@ render_landing_page() {
     TEMPLATE_INSTALL_MODE="$INSTALL_MODE" \
     TEMPLATE_CHUTES_TRAFFIC_MODE="$CHUTES_TRAFFIC_MODE" \
     TEMPLATE_DROPZONE_HOST="$DROPZONE_HOST" \
+    TEMPLATE_CHAT_CARD_BLOCK="$(landing_chat_card_block)" \
     TEMPLATE_N8N_CARD_BLOCK="$(landing_n8n_card_block)" \
+    TEMPLATE_OPENWEBUI_ENABLED="${DROPZONE_ENABLE_OPENWEBUI:-true}" \
     TEMPLATE_N8N_ENABLED="${DROPZONE_ENABLE_N8N:-true}" \
     render_template_file \
         "$SCRIPT_DIR/landing/index.template.html" \
@@ -837,10 +1161,6 @@ remove_stale_project_containers() {
     docker rm -f $container_ids >/dev/null 2>&1 || true
 }
 
-n8n_enabled() {
-    [ "${DROPZONE_ENABLE_N8N:-true}" != "false" ]
-}
-
 compose_services_to_start() {
     local service
 
@@ -849,8 +1169,37 @@ compose_services_to_start() {
         if ! n8n_enabled && { [ "$service" = "n8n" ] || [ "$service" = "n8n-runners" ]; }; then
             continue
         fi
+        if ! openwebui_enabled && { [ "$service" = "openwebui" ] || [ "$service" = "openwebui-order-sync" ]; }; then
+            continue
+        fi
         printf '%s\n' "$service"
     done < <(compose config --services)
+}
+
+compose_build_services() {
+    if n8n_enabled; then
+        printf '%s\n' "n8n"
+    fi
+    if openwebui_enabled; then
+        printf '%s\n' "openwebui"
+    fi
+    case "$INSTALL_MODE" in
+        local) printf '%s\n' "local-proxy" ;;
+        domain) ;;
+    esac
+    if [ "$CHUTES_TRAFFIC_MODE" = "e2ee-proxy" ]; then
+        printf '%s\n' "e2ee-proxy"
+    fi
+}
+
+compose_edge_build_services() {
+    case "$INSTALL_MODE" in
+        local) printf '%s\n' "local-proxy" ;;
+        domain) ;;
+    esac
+    if [ "$CHUTES_TRAFFIC_MODE" = "e2ee-proxy" ]; then
+        printf '%s\n' "e2ee-proxy"
+    fi
 }
 
 check_owner_login() {
@@ -1218,6 +1567,7 @@ prompt_traffic_mode() {
 prompt_public_landing() {
     local answer
     local default_answer="yes"
+    local primary_path
 
     if [ "${BOOTSTRAP_OVERRIDE_SET_DROPZONE_ENABLE_PUBLIC_LANDING:-false}" = "true" ]; then
         if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "false" ]; then
@@ -1238,10 +1588,12 @@ prompt_public_landing() {
         return
     fi
 
+    primary_path="$(primary_launcher_path)"
+
     echo
     echo "  Root entry behavior:"
     echo "    yes - keep the public launcher at /"
-    echo "    no  - redirect / straight to /chat/"
+    echo "    no  - redirect / straight to ${primary_path}"
     if [ "$default_answer" = "yes" ]; then
         read_interactive_value answer "  Enable the public landing page? [Y/n]: "
     else
@@ -1260,6 +1612,83 @@ prompt_public_landing() {
             exit 1
             ;;
     esac
+}
+
+prompt_service_mode() {
+    local chat_only_default="no"
+    local n8n_only_default="no"
+    local answer=""
+
+    if ! openwebui_enabled && ! n8n_enabled; then
+        if [ "$INTERACTIVE" = true ]; then
+            warn "Both apps were disabled in the current environment; defaulting the prompt to both enabled"
+            DROPZONE_ENABLE_OPENWEBUI="true"
+            DROPZONE_ENABLE_N8N="true"
+        else
+            err "DROPZONE_ENABLE_OPENWEBUI and DROPZONE_ENABLE_N8N cannot both be false"
+            exit 1
+        fi
+    fi
+
+    if openwebui_enabled && ! n8n_enabled; then
+        chat_only_default="yes"
+    elif ! openwebui_enabled && n8n_enabled; then
+        n8n_only_default="yes"
+    fi
+
+    if [ "$INTERACTIVE" != true ]; then
+        validate_enabled_apps
+        return
+    fi
+
+    echo
+    echo "  Application set:"
+    echo "    chat-only - OpenWebUI only"
+    echo "    n8n-only  - n8n only"
+    echo "    both      - OpenWebUI and n8n"
+
+    if [ "$chat_only_default" = "yes" ]; then
+        read_interactive_value answer "  Deploy chat-only? [Y/n]: "
+    else
+        read_interactive_value answer "  Deploy chat-only? [y/N]: "
+    fi
+
+    case "${answer:-$chat_only_default}" in
+        y|Y|yes|YES|Yes)
+            DROPZONE_ENABLE_OPENWEBUI="true"
+            DROPZONE_ENABLE_N8N="false"
+            return
+            ;;
+        n|N|no|NO|No)
+            ;;
+        *)
+            err "Please answer yes or no"
+            exit 1
+            ;;
+    esac
+
+    if [ "$n8n_only_default" = "yes" ]; then
+        read_interactive_value answer "  Deploy n8n-only? [Y/n]: "
+    else
+        read_interactive_value answer "  Deploy n8n-only? [y/N]: "
+    fi
+
+    case "${answer:-$n8n_only_default}" in
+        y|Y|yes|YES|Yes)
+            DROPZONE_ENABLE_OPENWEBUI="false"
+            DROPZONE_ENABLE_N8N="true"
+            ;;
+        n|N|no|NO|No)
+            DROPZONE_ENABLE_OPENWEBUI="true"
+            DROPZONE_ENABLE_N8N="true"
+            ;;
+        *)
+            err "Please answer yes or no"
+            exit 1
+            ;;
+    esac
+
+    validate_enabled_apps
 }
 
 prompt_e2ee_proxy_confidential_mode() {
@@ -1414,12 +1843,28 @@ ensure_real_chutes_oauth_credentials() {
     echo "    Description:  Sign in to your Chutes Dropzone workspace"
     echo "    Homepage URL: https://${DROPZONE_HOST}"
     if [ "$INSTALL_MODE" = "local" ]; then
-        echo "    Redirect URI: https://${LOCAL_HOSTNAME}/rest/sso/chutes/callback"
-        echo "                  https://${LOCAL_HOSTNAME}/oauth/oidc/callback"
+        if n8n_enabled; then
+            echo "    Redirect URI: https://${LOCAL_HOSTNAME}/rest/sso/chutes/callback"
+        fi
+        if openwebui_enabled; then
+            if n8n_enabled; then
+                echo "                  https://${LOCAL_HOSTNAME}/oauth/oidc/callback"
+            else
+                echo "    Redirect URI: https://${LOCAL_HOSTNAME}/oauth/oidc/callback"
+            fi
+        fi
         echo "                  since you are using it locally, use this exact host"
     else
-        echo "    Redirect URI: https://${DROPZONE_HOST}/rest/sso/chutes/callback"
-        echo "                  https://${DROPZONE_HOST}/oauth/oidc/callback"
+        if n8n_enabled; then
+            echo "    Redirect URI: https://${DROPZONE_HOST}/rest/sso/chutes/callback"
+        fi
+        if openwebui_enabled; then
+            if n8n_enabled; then
+                echo "                  https://${DROPZONE_HOST}/oauth/oidc/callback"
+            else
+                echo "    Redirect URI: https://${DROPZONE_HOST}/oauth/oidc/callback"
+            fi
+        fi
     fi
     echo
     echo "  Scopes to select:"
@@ -1441,7 +1886,7 @@ ensure_real_chutes_oauth_credentials() {
     if [ "$INTERACTIVE" = true ]; then
         echo
         echo "  Admin usernames (comma-separated Chutes usernames to grant admin role"
-        echo "  in both n8n and OpenWebUI). Leave blank to skip admin promotion."
+        echo "  in ${enabled_app_targets}). Leave blank to skip admin promotion."
     fi
     if [ "$INTERACTIVE" = true ] && [ -n "${CHUTES_ADMIN_USERNAMES:-}" ]; then
         local admin_value=""
@@ -1460,6 +1905,7 @@ for overridable_var in \
     INSTALL_MODE \
     CHUTES_TRAFFIC_MODE \
     DROPZONE_ENABLE_PUBLIC_LANDING \
+    DROPZONE_ENABLE_OPENWEBUI \
     DROPZONE_ENABLE_N8N \
     CHUTES_COMPOSE_FILES \
     EDGE_SERVICE \
@@ -1524,6 +1970,7 @@ for overridable_var in \
     INSTALL_MODE \
     CHUTES_TRAFFIC_MODE \
     DROPZONE_ENABLE_PUBLIC_LANDING \
+    DROPZONE_ENABLE_OPENWEBUI \
     DROPZONE_ENABLE_N8N \
     CHUTES_COMPOSE_FILES \
     EDGE_SERVICE \
@@ -1616,6 +2063,7 @@ CHUTES_ADMIN_USERNAMES="${CHUTES_ADMIN_USERNAMES:-}"
 CHUTES_API_KEY="${CHUTES_API_KEY:-}"
 CHUTES_TRAFFIC_MODE="${CHUTES_TRAFFIC_MODE:-direct}"
 DROPZONE_ENABLE_PUBLIC_LANDING="${DROPZONE_ENABLE_PUBLIC_LANDING:-true}"
+DROPZONE_ENABLE_OPENWEBUI="${DROPZONE_ENABLE_OPENWEBUI:-true}"
 DROPZONE_ENABLE_N8N="${DROPZONE_ENABLE_N8N:-true}"
 E2EE_PROXY_IMAGE="${E2EE_PROXY_IMAGE:-$PROJECT_E2EE_PROXY_IMAGE}"
 CADDY_IMAGE="${CADDY_IMAGE:-$PROJECT_CADDY_IMAGE}"
@@ -1644,8 +2092,10 @@ prompt_install_mode
 if existing_install_detected; then
     EXISTING_INSTALL=true
 fi
-prompt_public_landing
 prompt_install_action
+prompt_service_mode
+validate_enabled_apps
+prompt_public_landing
 prompt_traffic_mode
 prompt_e2ee_proxy_confidential_mode
 normalize_sso_proxy_bypass
@@ -1864,26 +2314,30 @@ else
     ok "local-proxy nginx config rendered"
 fi
 
-NODES_SRC="$SCRIPT_DIR/../n8n-nodes-chutes"
-BUILD_DIR="$SCRIPT_DIR/build/n8n-nodes-chutes"
+if n8n_enabled; then
+    NODES_SRC="$SCRIPT_DIR/../n8n-nodes-chutes"
+    BUILD_DIR="$SCRIPT_DIR/build/n8n-nodes-chutes"
 
-ensure_dependency_checkout \
-    "$NODES_SRC" \
-    "${CHUTES_N8N_NODES_GIT_URL:-$PROJECT_NODES_REPO}" \
-    "${CHUTES_N8N_NODES_GIT_REF:-$PROJECT_NODES_REF}"
+    ensure_dependency_checkout \
+        "$NODES_SRC" \
+        "${CHUTES_N8N_NODES_GIT_URL:-$PROJECT_NODES_REPO}" \
+        "${CHUTES_N8N_NODES_GIT_REF:-$PROJECT_NODES_REF}"
 
-refresh_local_dependency_checkout "$NODES_SRC"
+    refresh_local_dependency_checkout "$NODES_SRC"
 
-info "Syncing n8n-nodes-chutes into Docker build context ..."
-mkdir -p "$BUILD_DIR"
-rsync -a --delete \
-    --exclude node_modules \
-    --exclude .git \
-    --exclude tests \
-    --exclude coverage \
-    "$NODES_SRC/" "$BUILD_DIR/"
-node "$SCRIPT_DIR/scripts/patch-n8n-nodes-chutes.mjs" "$BUILD_DIR"
-ok "Custom node build context is ready"
+    info "Syncing n8n-nodes-chutes into Docker build context ..."
+    mkdir -p "$BUILD_DIR"
+    rsync -a --delete \
+        --exclude node_modules \
+        --exclude .git \
+        --exclude tests \
+        --exclude coverage \
+        "$NODES_SRC/" "$BUILD_DIR/"
+    node "$SCRIPT_DIR/scripts/patch-n8n-nodes-chutes.mjs" "$BUILD_DIR"
+    ok "Custom node build context is ready"
+else
+    info "n8n is disabled; skipping n8n custom-node build context sync"
+fi
 
 if [ "$FORCE_ALL" = true ]; then
     info "Removing existing docker volumes for a clean redeploy ..."
@@ -1900,13 +2354,10 @@ if [ "$SKIP_BUILD" = true ]; then
 elif [ "$SKIP_APP_BUILDS" = true ]; then
     info "Building edge/helper images only ..."
     build_services=()
-    case "$INSTALL_MODE" in
-        local) build_services+=(local-proxy) ;;
-        domain) ;;
-    esac
-    if [ "$CHUTES_TRAFFIC_MODE" = "e2ee-proxy" ]; then
-        build_services+=(e2ee-proxy)
-    fi
+    while IFS= read -r service; do
+        [ -n "$service" ] || continue
+        build_services+=("$service")
+    done < <(compose_edge_build_services)
     if [ "${#build_services[@]}" -gt 0 ]; then
         compose build "${build_services[@]}"
     else
@@ -1914,18 +2365,16 @@ elif [ "$SKIP_APP_BUILDS" = true ]; then
     fi
 else
     info "Building images ..."
-    if n8n_enabled; then
-        compose build
-    else
-        build_services=(openwebui)
-        case "$INSTALL_MODE" in
-            local) build_services+=(local-proxy) ;;
-            domain) ;;
-        esac
-        if [ "$CHUTES_TRAFFIC_MODE" = "e2ee-proxy" ]; then
-            build_services+=(e2ee-proxy)
-        fi
+    build_services=()
+    while IFS= read -r service; do
+        [ -n "$service" ] || continue
+        build_services+=("$service")
+    done < <(compose_build_services)
+    if [ "${#build_services[@]}" -gt 0 ]; then
         compose build "${build_services[@]}"
+    else
+        err "No services are enabled to build"
+        exit 1
     fi
 fi
 
@@ -1970,28 +2419,32 @@ else
     info "n8n is disabled; skipping n8n startup and health checks"
 fi
 
-info "Waiting for OpenWebUI to become healthy ..."
-attempts=0
-max_attempts=80
-status="starting"
-while [ "$attempts" -lt "$max_attempts" ]; do
-    status="$(container_runtime_status "$(compose_container_id openwebui)")"
-    if [ "$status" = "healthy" ]; then
-        break
-    fi
-    attempts=$((attempts + 1))
-    if [ $((attempts % 5)) -eq 0 ]; then
-        echo "    still waiting... ($status)"
-    fi
-    sleep 3
-done
+if openwebui_enabled; then
+    info "Waiting for OpenWebUI to become healthy ..."
+    attempts=0
+    max_attempts=80
+    status="starting"
+    while [ "$attempts" -lt "$max_attempts" ]; do
+        status="$(container_runtime_status "$(compose_container_id openwebui)")"
+        if [ "$status" = "healthy" ]; then
+            break
+        fi
+        attempts=$((attempts + 1))
+        if [ $((attempts % 5)) -eq 0 ]; then
+            echo "    still waiting... ($status)"
+        fi
+        sleep 3
+    done
 
-if [ "$status" != "healthy" ]; then
-    err "OpenWebUI did not become healthy"
-    err "Check logs with: $(compose_command_hint) logs openwebui ${EDGE_SERVICE}"
-    exit 1
+    if [ "$status" != "healthy" ]; then
+        err "OpenWebUI did not become healthy"
+        err "Check logs with: $(compose_command_hint) logs openwebui ${EDGE_SERVICE}"
+        exit 1
+    fi
+    ok "OpenWebUI is healthy"
+else
+    info "OpenWebUI is disabled; skipping OpenWebUI startup and health checks"
 fi
-ok "OpenWebUI is healthy"
 
 info "Waiting for ${EDGE_SERVICE} to become ready ..."
 edge_status="$(wait_for_service_ready "$EDGE_SERVICE" 30 || true)"
@@ -2009,8 +2462,12 @@ else
     info "n8n is disabled; skipping n8n bootstrap"
 fi
 
-info "Verifying OpenWebUI ..."
-"$SCRIPT_DIR/scripts/configure-openwebui.sh"
+if openwebui_enabled; then
+    info "Verifying OpenWebUI ..."
+    "$SCRIPT_DIR/scripts/configure-openwebui.sh"
+else
+    info "OpenWebUI is disabled; skipping OpenWebUI bootstrap"
+fi
 
 OWNER_PASSWORD_VALID=false
 if n8n_enabled && check_owner_login; then
@@ -2026,9 +2483,13 @@ echo -e "  Mode: ${BOLD}${INSTALL_MODE}${NC}"
 if [ "${DROPZONE_ENABLE_PUBLIC_LANDING:-true}" = "true" ]; then
     echo -e "  Landing: ${BOLD}https://${DROPZONE_HOST}/${NC}"
 else
-    echo -e "  Root:    ${BOLD}https://${DROPZONE_HOST}/${NC} ${CYAN}(redirects to /chat/)${NC}"
+    echo -e "  Root:    ${BOLD}https://${DROPZONE_HOST}/${NC} ${CYAN}(redirects to $(primary_launcher_path))${NC}"
 fi
-echo -e "  Chat:    ${BOLD}https://${DROPZONE_HOST}/chat/${NC}"
+if openwebui_enabled; then
+    echo -e "  Chat:    ${BOLD}https://${DROPZONE_HOST}/chat/${NC}"
+else
+    echo -e "  Chat:    ${CYAN}disabled (n8n-only mode)${NC}"
+fi
 if n8n_enabled; then
     echo -e "  n8n:     ${BOLD}https://${DROPZONE_HOST}/n8n/${NC}"
 else
@@ -2036,8 +2497,16 @@ else
 fi
 echo
 echo "  Chutes OAuth app settings:"
-echo "    Redirect URI: https://${DROPZONE_HOST}/oauth/oidc/callback"
-echo "                  https://${DROPZONE_HOST}/rest/sso/chutes/callback"
+if openwebui_enabled; then
+    echo "    Redirect URI: https://${DROPZONE_HOST}/oauth/oidc/callback"
+fi
+if n8n_enabled; then
+    if openwebui_enabled; then
+        echo "                  https://${DROPZONE_HOST}/rest/sso/chutes/callback"
+    else
+        echo "    Redirect URI: https://${DROPZONE_HOST}/rest/sso/chutes/callback"
+    fi
+fi
 if [ "$INSTALL_MODE" = "local" ]; then
     echo "    TLS: embedded e2ee-proxy certificate for ${LOCAL_HOSTNAME}"
 else
@@ -2048,7 +2517,13 @@ else
     fi
 fi
 echo
-echo "  Chutes SSO is enabled on OpenWebUI and the native n8n sign-in page."
+if openwebui_enabled && n8n_enabled; then
+    echo "  Chutes SSO is enabled on OpenWebUI and the native n8n sign-in page."
+elif openwebui_enabled; then
+    echo "  Chutes SSO is enabled on OpenWebUI."
+else
+    echo "  Chutes SSO is enabled on the native n8n sign-in page."
+fi
 echo "  Chutes traffic mode:"
 if [ "$CHUTES_TRAFFIC_MODE" = "e2ee-proxy" ]; then
     echo "    e2ee-proxy - OpenAI-compatible LLM text traffic is routed through the existing e2ee-proxy path"
@@ -2061,7 +2536,7 @@ if [ "$CHUTES_TRAFFIC_MODE" = "e2ee-proxy" ]; then
 else
     echo "    direct - native Chutes endpoints are used so Chutes routing/failover behavior stays intact"
     if [ "$INSTALL_MODE" = "local" ]; then
-        echo "    local e2ee-proxy is still used for the embedded local certificate and serving n8n"
+        echo "    local e2ee-proxy is still used for the embedded local certificate and local edge"
     fi
 fi
 echo
@@ -2073,16 +2548,27 @@ if n8n_enabled && [ "$OWNER_PASSWORD_VALID" = true ]; then
     else
         echo "    Password: (stored in .env — run interactively to display)"
     fi
-    echo "    OpenWebUI email:    ${OPENWEBUI_ADMIN_EMAIL}"
-    if [ "$INTERACTIVE" = true ]; then
-        echo -e "    OpenWebUI password: ${BOLD}${OPENWEBUI_ADMIN_PASSWORD}${NC}"
-    else
-        echo "    OpenWebUI password: (stored in .env — run interactively to display)"
+    if openwebui_enabled; then
+        echo "    OpenWebUI email:    ${OPENWEBUI_ADMIN_EMAIL}"
+        if [ "$INTERACTIVE" = true ]; then
+            echo -e "    OpenWebUI password: ${BOLD}${OPENWEBUI_ADMIN_PASSWORD}${NC}"
+        else
+            echo "    OpenWebUI password: (stored in .env — run interactively to display)"
+        fi
     fi
 elif n8n_enabled; then
     warn "Stored owner credentials could not be verified."
     warn "Run ./deploy.sh --reset-owner-password to rotate the break-glass owner password."
-else
+    if openwebui_enabled; then
+        echo "  OpenWebUI break-glass admin:"
+        echo "    Email:    ${OPENWEBUI_ADMIN_EMAIL}"
+        if [ "$INTERACTIVE" = true ]; then
+            echo -e "    Password: ${BOLD}${OPENWEBUI_ADMIN_PASSWORD}${NC}"
+        else
+            echo "    Password: (stored in .env — run interactively to display)"
+        fi
+    fi
+elif openwebui_enabled; then
     echo "  OpenWebUI break-glass admin:"
     echo "    Email:    ${OPENWEBUI_ADMIN_EMAIL}"
     if [ "$INTERACTIVE" = true ]; then

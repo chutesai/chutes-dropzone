@@ -7,7 +7,8 @@ stringData:
   INSTALL_MODE: "domain"
   CHUTES_TRAFFIC_MODE: "direct"
   DROPZONE_ENABLE_PUBLIC_LANDING: "false"
-  # Set to "false" for chat-only mode (no n8n sidebar link or landing card).
+  # Chat-only example: OpenWebUI enabled, n8n disabled.
+  DROPZONE_ENABLE_OPENWEBUI: "true"
   DROPZONE_ENABLE_N8N: "false"
   DROPZONE_HOST: "chat-beta.chutes.ai"
   # Caddy manages a Let's Encrypt certificate by default.
@@ -20,28 +21,16 @@ stringData:
   CHUTES_OAUTH_CLIENT_SECRET: "REPLACE_ME"
   CHUTES_SSO_SCOPES: "openid profile chutes:read chutes:invoke"
 
-  # Comma-separated Chutes usernames to promote to admin in both n8n and
-  # OpenWebUI on SSO login. Leave empty to skip admin promotion.
+  # Comma-separated Chutes usernames to promote to OpenWebUI admin on SSO login.
+  # Leave empty to skip admin promotion.
   CHUTES_ADMIN_USERNAMES: ""
 
-  # Per-service secrets — generate unique values for each (e.g. openssl rand -hex 32)
-  N8N_ENCRYPTION_KEY: "REPLACE_ME_64_HEX"
-  N8N_JWT_SECRET: "REPLACE_ME_64_HEX"
-  N8N_RUNNERS_MODE: "external"
-  N8N_RUNNERS_AUTH_TOKEN: "REPLACE_ME_64_HEX"
+  # OpenWebUI secrets — generate unique values for each (e.g. openssl rand -hex 32)
   WEBUI_SECRET_KEY: "REPLACE_ME_64_HEX"
   DROPZONE_AUDIO_INTERNAL_API_KEY: "REPLACE_ME_64_HEX"
 
-  # Per-service database credentials — each service gets its own user
-  POSTGRES_N8N_USER: "dropzone_n8n"
-  POSTGRES_N8N_PASSWORD: "REPLACE_ME_32_HEX"
-  POSTGRES_OPENWEBUI_USER: "dropzone_owui"
-  POSTGRES_OPENWEBUI_PASSWORD: "REPLACE_ME_32_HEX"
-
-  # Internal service account — password auth is disabled; this admin is only
-  # used by background sync scripts and is never exposed via the SSO login flow.
-  N8N_ADMIN_EMAIL: "svc-dropzone@internal.chutes.local"
-  N8N_ADMIN_PASSWORD: "REPLACE_ME"
+  # Internal OpenWebUI service account — password auth is disabled; this admin
+  # is only used by background sync scripts and is never exposed via SSO login.
   OPENWEBUI_ADMIN_NAME: "Dropzone Service Account"
   OPENWEBUI_ADMIN_EMAIL: "svc-dropzone@internal.chutes.local"
   OPENWEBUI_ADMIN_PASSWORD: "REPLACE_ME"
@@ -124,34 +113,6 @@ spec:
             limits:
               cpu: "2"
               memory: "6Gi"
-        # n8n code-execution sandbox — runs user workflow code in isolation.
-        # Remove this container if DROPZONE_ENABLE_N8N is "false" (chat-only).
-        - name: n8n-runners
-          # Keep this image version aligned with the N8N_VERSION baked into the
-          # main Dropzone image.
-          image: "n8nio/runners:2.12.1"
-          imagePullPolicy: IfNotPresent
-          env:
-            - name: N8N_RUNNERS_AUTH_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: chutes-dropzone-env
-                  key: N8N_RUNNERS_AUTH_TOKEN
-            - name: N8N_RUNNERS_TASK_BROKER_URI
-              value: "http://127.0.0.1:5679"
-            - name: N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT
-              value: "15"
-          securityContext:
-            allowPrivilegeEscalation: false
-            seccompProfile:
-              type: RuntimeDefault
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "256Mi"
-            limits:
-              cpu: "1"
-              memory: "1Gi"
       volumes:
         - name: data
           persistentVolumeClaim:

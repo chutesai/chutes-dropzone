@@ -4,6 +4,11 @@
 #
 set -eu
 
+if [ "${DROPZONE_ENABLE_OPENWEBUI:-true}" = "false" ]; then
+    echo "openwebui-order-sync: disabled (DROPZONE_ENABLE_OPENWEBUI=false)"
+    exec sleep infinity
+fi
+
 export HOME=/home/node
 
 echo "openwebui-order-sync: starting"

@@ -131,67 +131,11 @@ http {
         more_set_headers 'Strict-Transport-Security: max-age=63072000; includeSubDomains';
         more_set_headers 'Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()';
 
-        if ($request_uri ~ "^/chat//+") {
-            return 302 /c/new;
-        }
-
         __CHUTES_V1_BLOCK__
 
-        location = /chat {
-            return 308 /chat/;
-        }
-
-        location = /chat/ {
-            return 302 /c/new;
-        }
+        __CHAT_ROUTES_BLOCK__
 
 __N8N_ROUTES_BLOCK__
-
-        location /chat/ {
-            rewrite ^/chat/([^/].*)$ /$1 permanent;
-        }
-
-        location = /static/custom.css {
-            proxy_hide_header Cache-Control;
-            proxy_hide_header Expires;
-            proxy_hide_header ETag;
-            add_header Cache-Control "no-store" always;
-            proxy_pass http://127.0.0.1:8080;
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Host $host;
-            proxy_set_header X-Forwarded-Proto https;
-        }
-
-        location = /static/loader.js {
-            proxy_hide_header Cache-Control;
-            proxy_hide_header Expires;
-            proxy_hide_header ETag;
-            add_header Cache-Control "no-store" always;
-            proxy_pass http://127.0.0.1:8080;
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Host $host;
-            proxy_set_header X-Forwarded-Proto https;
-        }
-
-        location = /static/site.webmanifest {
-            proxy_hide_header Cache-Control;
-            proxy_hide_header Expires;
-            proxy_hide_header ETag;
-            add_header Cache-Control "no-store" always;
-            proxy_pass http://127.0.0.1:8080;
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Host $host;
-            proxy_set_header X-Forwarded-Proto https;
-        }
 
         location /_dropzone/ {
             add_header Cache-Control "public, max-age=31536000, immutable" always;
@@ -202,26 +146,7 @@ __N8N_ROUTES_BLOCK__
 
 __ROOT_ENTRY_BLOCK__
 
-        location / {
-            proxy_pass http://127.0.0.1:8080;
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Host $host;
-            proxy_set_header X-Forwarded-Proto https;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection $connection_upgrade;
-            # Strip internal-only headers to prevent external spoofing
-            proxy_set_header X-OpenWebUI-User-Id "";
-            proxy_set_header X-OpenWebUI-User-Email "";
-            proxy_set_header X-OpenWebUI-User-Name "";
-            proxy_set_header X-OpenWebUI-User-Role "";
-            proxy_buffering off;
-            proxy_read_timeout 600s;
-            proxy_send_timeout 600s;
-            client_max_body_size 50m;
-        }
+        __APP_FALLBACK_BLOCK__
     }
 
     server {

@@ -387,9 +387,28 @@ set +a
 
 DROPZONE_HOST="${DROPZONE_HOST:-${N8N_HOST:-e2ee-local-proxy.chutes.dev}}"
 DROPZONE_ENABLE_PUBLIC_LANDING="${DROPZONE_ENABLE_PUBLIC_LANDING:-true}"
+DROPZONE_ENABLE_OPENWEBUI="${DROPZONE_ENABLE_OPENWEBUI:-true}"
+DROPZONE_ENABLE_N8N="${DROPZONE_ENABLE_N8N:-true}"
 N8N_EDGE_URL="https://${DROPZONE_HOST}/n8n"
 CHAT_EDGE_URL="https://${DROPZONE_HOST}/chat"
 LANDING_EDGE_URL="https://${DROPZONE_HOST}/"
+
+openwebui_enabled() {
+    [ "${DROPZONE_ENABLE_OPENWEBUI:-true}" != "false" ]
+}
+
+n8n_enabled() {
+    [ "${DROPZONE_ENABLE_N8N:-true}" != "false" ]
+}
+
+primary_launcher_path() {
+    if openwebui_enabled; then
+        printf '/chat/'
+        return
+    fi
+
+    printf '/n8n/'
+}
 
 EDGE_SERVICE="${EDGE_SERVICE:-}"
 if [ -z "$EDGE_SERVICE" ]; then
@@ -399,7 +418,13 @@ if [ -z "$EDGE_SERVICE" ]; then
     esac
 fi
 
-WAIT_SERVICES="postgres n8n openwebui $EDGE_SERVICE"
+WAIT_SERVICES="postgres $EDGE_SERVICE"
+if n8n_enabled; then
+    WAIT_SERVICES="$WAIT_SERVICES n8n"
+fi
+if openwebui_enabled; then
+    WAIT_SERVICES="$WAIT_SERVICES openwebui"
+fi
 if [ "${CHUTES_TRAFFIC_MODE:-direct}" = "e2ee-proxy" ]; then
     WAIT_SERVICES="$WAIT_SERVICES e2ee-proxy"
 fi
@@ -427,19 +452,27 @@ else
     fi
 fi
 
-healthz="$(compose exec -T n8n wget -q -O- http://127.0.0.1:5678/rest/settings 2>/dev/null || echo '')"
-if echo "$healthz" | grep -q '"settingsMode"'; then
-    pass "n8n /rest/settings responds"
+if n8n_enabled; then
+    healthz="$(compose exec -T n8n wget -q -O- http://127.0.0.1:5678/rest/settings 2>/dev/null || echo '')"
+    if echo "$healthz" | grep -q '"settingsMode"'; then
+        pass "n8n /rest/settings responds"
+    else
+        fail "n8n /rest/settings unreachable"
+    fi
 else
-    fail "n8n /rest/settings unreachable"
+    skip "n8n is disabled - skipping n8n health probe"
 fi
 
-if compose exec -T openwebui python -c \
-    "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=5).read()" \
-    >/dev/null 2>&1; then
-    pass "OpenWebUI responds on port 8080"
+if openwebui_enabled; then
+    if compose exec -T openwebui python -c \
+        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=5).read()" \
+        >/dev/null 2>&1; then
+        pass "OpenWebUI responds on port 8080"
+    else
+        fail "OpenWebUI is unreachable on port 8080"
+    fi
 else
-    fail "OpenWebUI is unreachable on port 8080"
+    skip "OpenWebUI is disabled - skipping OpenWebUI health probe"
 fi
 
 landing_headers="$(curl_edge -skI "$LANDING_EDGE_URL" 2>/dev/null | tr -d '\r' || true)"
@@ -461,8 +494,15 @@ fi
 
 if [ "$DROPZONE_ENABLE_PUBLIC_LANDING" = "true" ]; then
     landing_html="$(curl_edge -sk "$LANDING_EDGE_URL" 2>/dev/null || true)"
-    if echo "$landing_html" | grep -q '/chat/' && echo "$landing_html" | grep -q '/n8n/'; then
-        pass "landing page is reachable and links to /chat/ and /n8n/"
+    landing_missing=0
+    if openwebui_enabled && ! echo "$landing_html" | grep -q '/chat/'; then
+        landing_missing=1
+    fi
+    if n8n_enabled && ! echo "$landing_html" | grep -q '/n8n/'; then
+        landing_missing=1
+    fi
+    if [ "$landing_missing" -eq 0 ]; then
+        pass "landing page is reachable and links only to enabled applications"
     else
         fail "landing page is missing launch links"
     fi
@@ -481,99 +521,107 @@ if [ "$DROPZONE_ENABLE_PUBLIC_LANDING" = "true" ]; then
     fi
 else
     if echo "$landing_headers" | grep -qi '^HTTP/.* 302' && \
-       { echo "$landing_headers" | grep -qi '^location: /chat/$' || \
-         echo "$landing_headers" | grep -qi "^location: https\\?://${DROPZONE_HOST}/chat/$"; }; then
-        pass "root entry redirects straight to /chat/ when public landing is disabled"
+       { echo "$landing_headers" | grep -qi "^location: $(primary_launcher_path)$" || \
+         echo "$landing_headers" | grep -qi "^location: https\\?://${DROPZONE_HOST}$(primary_launcher_path)$"; }; then
+        pass "root entry redirects straight to the enabled primary app when public landing is disabled"
     else
-        fail "root entry did not redirect to /chat/ with DROPZONE_ENABLE_PUBLIC_LANDING=false"
+        fail "root entry did not redirect to the enabled primary app with DROPZONE_ENABLE_PUBLIC_LANDING=false"
     fi
 fi
 
-auth_headers="$(curl_edge -skI "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F" 2>/dev/null || true)"
-if echo "$auth_headers" | grep -qi '^HTTP/.* 200'; then
-    pass "root OpenWebUI auth alias is served directly"
+if openwebui_enabled; then
+    auth_headers="$(curl_edge -skI "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F" 2>/dev/null || true)"
+    if echo "$auth_headers" | grep -qi '^HTTP/.* 200'; then
+        pass "root OpenWebUI auth alias is served directly"
+    else
+        fail "root OpenWebUI auth alias did not return a login page"
+    fi
+
+    openwebui_account_status="$(curl_edge -sk -o /tmp/chutes-dropzone.openwebui-account.out -w '%{http_code}' \
+        "https://${DROPZONE_HOST}/api/v1/dropzone/account-summary" 2>/dev/null || echo 000)"
+    case "$openwebui_account_status" in
+        401|403)
+            pass "OpenWebUI account-summary endpoint rejects anonymous requests"
+            ;;
+        *)
+            fail "OpenWebUI account-summary endpoint returned unexpected anonymous status $openwebui_account_status"
+            ;;
+    esac
+
+    chat_status="$(curl_edge -sk -o /tmp/chutes-dropzone.chat.out -w '%{http_code}' "$CHAT_EDGE_URL/" 2>/dev/null || echo 000)"
+    case "$chat_status" in
+        302)
+            if curl_edge -skI "$CHAT_EDGE_URL/" 2>/dev/null | grep -qi "^location: .*/c/new\\|^location: /c/new"; then
+                pass "OpenWebUI /chat/ entrypoint redirects to new chat"
+            else
+                fail "OpenWebUI /chat/ entrypoint did not redirect to /c/new"
+            fi
+            ;;
+        *)
+            fail "OpenWebUI /chat/ route returned status $chat_status"
+            ;;
+    esac
+
+    chat_alias_bad_headers="$(curl_edge -skI "https://${DROPZONE_HOST}/chat//evil.example" 2>/dev/null | tr -d '\r' || true)"
+    if echo "$chat_alias_bad_headers" | grep -qi '^location: /c/new$' || \
+       echo "$chat_alias_bad_headers" | grep -qi "^location: https\\?://${DROPZONE_HOST}/c/new$"; then
+        pass "OpenWebUI chat alias sends malformed double-slash paths to /c/new"
+    else
+        fail "OpenWebUI chat alias did not safely normalize malformed double-slash paths"
+    fi
+
+    chat_native_html="$(curl_edge -sk "https://${DROPZONE_HOST}/home" 2>/dev/null || true)"
+    if echo "$chat_native_html" | grep -q 'href="/_app/' &&
+       echo "$chat_native_html" | grep -q 'src="/static/' &&
+       ! echo "$chat_native_html" | grep -q 'base: "/chat"'; then
+        pass "OpenWebUI frontend HTML uses native root routes"
+    else
+        fail "OpenWebUI frontend HTML is not using the native root route layout"
+    fi
+
+    oauth_login_headers="$(curl_edge -skD- "https://${DROPZONE_HOST}/oauth/oidc/login" -o /dev/null 2>/dev/null || true)"
+    if echo "$oauth_login_headers" | grep -qi '^HTTP/.* 30[27]' &&
+       echo "$oauth_login_headers" | grep -qi "redirect_uri=https%3A%2F%2F${DROPZONE_HOST}%2Foauth%2Foidc%2Fcallback"; then
+        pass "OpenWebUI OIDC login uses the root OAuth callback alias"
+    else
+        fail "OpenWebUI OIDC login is not requesting the root OAuth callback alias"
+    fi
 else
-    fail "root OpenWebUI auth alias did not return a login page"
+    skip "OpenWebUI is disabled - skipping OpenWebUI route and auth checks"
 fi
 
-openwebui_account_status="$(curl_edge -sk -o /tmp/chutes-dropzone.openwebui-account.out -w '%{http_code}' \
-    "https://${DROPZONE_HOST}/api/v1/dropzone/account-summary" 2>/dev/null || echo 000)"
-case "$openwebui_account_status" in
-    401|403)
-        pass "OpenWebUI account-summary endpoint rejects anonymous requests"
-        ;;
-    *)
-        fail "OpenWebUI account-summary endpoint returned unexpected anonymous status $openwebui_account_status"
-        ;;
-esac
+if n8n_enabled; then
+    signin_html="$(curl_edge -sk "${N8N_EDGE_URL}/signin" 2>/dev/null || true)"
+    if [ -n "$signin_html" ]; then
+        pass "n8n sign-in page reachable at /n8n/"
+    else
+        fail "n8n sign-in page unreachable at /n8n/"
+    fi
 
-chat_status="$(curl_edge -sk -o /tmp/chutes-dropzone.chat.out -w '%{http_code}' "$CHAT_EDGE_URL/" 2>/dev/null || echo 000)"
-case "$chat_status" in
-    302)
-        if curl_edge -skI "$CHAT_EDGE_URL/" 2>/dev/null | grep -qi "^location: .*/c/new\\|^location: /c/new"; then
-            pass "OpenWebUI /chat/ entrypoint redirects to new chat"
-        else
-            fail "OpenWebUI /chat/ entrypoint did not redirect to /c/new"
-        fi
-        ;;
-    *)
-        fail "OpenWebUI /chat/ route returned status $chat_status"
-        ;;
-esac
+    n8n_account_status="$(curl_edge -sk -o /tmp/chutes-dropzone.n8n-account.out -w '%{http_code}' \
+        "https://${DROPZONE_HOST}/n8n/rest/sso/chutes/account-summary" 2>/dev/null || echo 000)"
+    case "$n8n_account_status" in
+        401|403)
+            pass "n8n account-summary endpoint rejects anonymous requests"
+            ;;
+        *)
+            fail "n8n account-summary endpoint returned unexpected anonymous status $n8n_account_status"
+            ;;
+    esac
 
-chat_alias_bad_headers="$(curl_edge -skI "https://${DROPZONE_HOST}/chat//evil.example" 2>/dev/null | tr -d '\r' || true)"
-if echo "$chat_alias_bad_headers" | grep -qi '^location: /c/new$' || \
-   echo "$chat_alias_bad_headers" | grep -qi "^location: https\\?://${DROPZONE_HOST}/c/new$"; then
-    pass "OpenWebUI chat alias sends malformed double-slash paths to /c/new"
+    settings_json="$(curl_edge -sk "${N8N_EDGE_URL}/rest/settings" 2>/dev/null || true)"
+    sso_enabled="$(printf '%s' "$settings_json" | json_query '.data.sso.chutes.loginEnabled' 2>/dev/null || true)"
+    sso_label="$(printf '%s' "$settings_json" | json_query '.data.sso.chutes.loginLabel' 2>/dev/null || true)"
+    if [ "$sso_enabled" = "true" ] && [ "$sso_label" = "${CHUTES_SSO_LOGIN_LABEL:-Login with Chutes}" ]; then
+        pass "frontend settings expose Chutes SSO"
+    else
+        fail "frontend settings are missing Chutes SSO"
+    fi
 else
-    fail "OpenWebUI chat alias did not safely normalize malformed double-slash paths"
+    skip "n8n is disabled - skipping n8n route and auth checks"
 fi
 
-chat_native_html="$(curl_edge -sk "https://${DROPZONE_HOST}/home" 2>/dev/null || true)"
-if echo "$chat_native_html" | grep -q 'href="/_app/' &&
-   echo "$chat_native_html" | grep -q 'src="/static/' &&
-   ! echo "$chat_native_html" | grep -q 'base: "/chat"'; then
-    pass "OpenWebUI frontend HTML uses native root routes"
-else
-    fail "OpenWebUI frontend HTML is not using the native root route layout"
-fi
-
-oauth_login_headers="$(curl_edge -skD- "https://${DROPZONE_HOST}/oauth/oidc/login" -o /dev/null 2>/dev/null || true)"
-if echo "$oauth_login_headers" | grep -qi '^HTTP/.* 30[27]' &&
-   echo "$oauth_login_headers" | grep -qi "redirect_uri=https%3A%2F%2F${DROPZONE_HOST}%2Foauth%2Foidc%2Fcallback"; then
-    pass "OpenWebUI OIDC login uses the root OAuth callback alias"
-else
-    fail "OpenWebUI OIDC login is not requesting the root OAuth callback alias"
-fi
-
-signin_html="$(curl_edge -sk "${N8N_EDGE_URL}/signin" 2>/dev/null || true)"
-if [ -n "$signin_html" ]; then
-    pass "n8n sign-in page reachable at /n8n/"
-else
-    fail "n8n sign-in page unreachable at /n8n/"
-fi
-
-n8n_account_status="$(curl_edge -sk -o /tmp/chutes-dropzone.n8n-account.out -w '%{http_code}' \
-    "https://${DROPZONE_HOST}/n8n/rest/sso/chutes/account-summary" 2>/dev/null || echo 000)"
-case "$n8n_account_status" in
-    401|403)
-        pass "n8n account-summary endpoint rejects anonymous requests"
-        ;;
-    *)
-        fail "n8n account-summary endpoint returned unexpected anonymous status $n8n_account_status"
-        ;;
-esac
-
-settings_json="$(curl_edge -sk "${N8N_EDGE_URL}/rest/settings" 2>/dev/null || true)"
-sso_enabled="$(printf '%s' "$settings_json" | json_query '.data.sso.chutes.loginEnabled' 2>/dev/null || true)"
-sso_label="$(printf '%s' "$settings_json" | json_query '.data.sso.chutes.loginLabel' 2>/dev/null || true)"
-if [ "$sso_enabled" = "true" ] && [ "$sso_label" = "${CHUTES_SSO_LOGIN_LABEL:-Login with Chutes}" ]; then
-    pass "frontend settings expose Chutes SSO"
-else
-    fail "frontend settings are missing Chutes SSO"
-fi
-
-if compose exec -T n8n node - <<'NODE' >/dev/null 2>&1
+if n8n_enabled && compose exec -T n8n node - <<'NODE' >/dev/null 2>&1
 const { CredentialsHelper } = require('/usr/local/lib/node_modules/n8n/dist/credentials-helper.js');
 
 (async () => {
@@ -634,22 +682,28 @@ const { CredentialsHelper } = require('/usr/local/lib/node_modules/n8n/dist/cred
 NODE
 then
     pass "expirable credentials refresh before token expiry"
-else
+elif n8n_enabled; then
     fail "expirable credentials did not refresh before token expiry"
+else
+    skip "n8n is disabled - skipping expirable credential refresh check"
 fi
 
-sso_headers="$(curl_edge -skI "${N8N_EDGE_URL}/rest/sso/chutes/login" 2>/dev/null || true)"
-encoded_n8n_callback="https%3A%2F%2F${DROPZONE_HOST}%2Frest%2Fsso%2Fchutes%2Fcallback"
-if echo "$sso_headers" | grep -qi '^location: .*idp/authorize' && \
-   echo "$sso_headers" | grep -q "redirect_uri=${encoded_n8n_callback}" && \
-   ! echo "$sso_headers" | grep -q 'scope=.*email'; then
-    pass "native Chutes SSO endpoint redirects to the IDP with the root callback alias and current Chutes scopes"
+if n8n_enabled; then
+    sso_headers="$(curl_edge -skI "${N8N_EDGE_URL}/rest/sso/chutes/login" 2>/dev/null || true)"
+    encoded_n8n_callback="https%3A%2F%2F${DROPZONE_HOST}%2Frest%2Fsso%2Fchutes%2Fcallback"
+    if echo "$sso_headers" | grep -qi '^location: .*idp/authorize' && \
+       echo "$sso_headers" | grep -q "redirect_uri=${encoded_n8n_callback}" && \
+       ! echo "$sso_headers" | grep -q 'scope=.*email'; then
+        pass "native Chutes SSO endpoint redirects to the IDP with the root callback alias and current Chutes scopes"
+    else
+        fail "native Chutes SSO endpoint did not use the root callback alias and current Chutes scopes"
+    fi
 else
-    fail "native Chutes SSO endpoint did not use the root callback alias and current Chutes scopes"
+    skip "n8n is disabled - skipping n8n SSO redirect checks"
 fi
 
 # shellcheck disable=SC2016
-if compose exec -T openwebui sh -lc '
+if openwebui_enabled && compose exec -T openwebui sh -lc '
     case "${WEBUI_URL:-}" in https://*/chat) ;; *) exit 1 ;; esac
     case "${OPENID_REDIRECT_URI:-}" in https://*/oauth/oidc/callback|https://*/chat/oauth/oidc/callback) ;; *) exit 1 ;; esac
     test "${OAUTH_SCOPES:-}" = "openid profile chutes:read chutes:invoke" &&
@@ -665,42 +719,54 @@ if compose exec -T openwebui sh -lc '
     test "${MODELS_CACHE_TTL:-}" = "300"
 ' >/dev/null 2>&1; then
     pass "OpenWebUI env is pinned to /chat and SSO-only mode"
-else
+elif openwebui_enabled; then
     fail "OpenWebUI env is missing the expected /chat SSO-only settings"
+else
+    skip "OpenWebUI is disabled - skipping OpenWebUI env checks"
 fi
 
 # shellcheck disable=SC2016
-if compose exec -T openwebui-order-sync sh -lc '
+if openwebui_enabled && compose exec -T openwebui-order-sync sh -lc '
     test "${OPENWEBUI_SYNC_BASE_URL:-}" = "http://openwebui:8080" &&
     test "${OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL:-}" = "300"
 ' >/dev/null 2>&1; then
     pass "OpenWebUI background model-order sync worker is configured for 5-minute refreshes"
-else
+elif openwebui_enabled; then
     fail "OpenWebUI background model-order sync worker is missing the expected settings"
-fi
-
-openwebui_oauth_headers="$(curl_edge -sk -o /dev/null -D - "https://${DROPZONE_HOST}/oauth/oidc/login" 2>/dev/null || true)"
-if echo "$openwebui_oauth_headers" | grep -qi '^location: .*idp/authorize' && \
-   ! echo "$openwebui_oauth_headers" | grep -q 'scope=.*email'; then
-    pass "OpenWebUI OIDC login uses the current Chutes-supported scopes"
 else
-    fail "OpenWebUI OIDC login is still requesting unsupported Chutes scopes"
+    skip "OpenWebUI is disabled - skipping OpenWebUI sync worker checks"
 fi
 
-if compose exec -T n8n sh -lc \
+if openwebui_enabled; then
+    openwebui_oauth_headers="$(curl_edge -sk -o /dev/null -D - "https://${DROPZONE_HOST}/oauth/oidc/login" 2>/dev/null || true)"
+    if echo "$openwebui_oauth_headers" | grep -qi '^location: .*idp/authorize' && \
+       ! echo "$openwebui_oauth_headers" | grep -q 'scope=.*email'; then
+        pass "OpenWebUI OIDC login uses the current Chutes-supported scopes"
+    else
+        fail "OpenWebUI OIDC login is still requesting unsupported Chutes scopes"
+    fi
+else
+    skip "OpenWebUI is disabled - skipping OpenWebUI scope checks"
+fi
+
+if n8n_enabled && compose exec -T n8n sh -lc \
     "grep -R 'restApiContext.baseUrl}/sso/chutes/login' /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist/assets >/dev/null"; then
     pass "editor bundle uses REST base URL for Chutes login"
-else
+elif n8n_enabled; then
     fail "editor bundle is missing the REST base URL Chutes login fix"
+else
+    skip "n8n is disabled - skipping editor bundle SSO checks"
 fi
 
-if compose exec -T n8n sh -lc \
+if n8n_enabled && compose exec -T n8n sh -lc \
     "grep -R 'toggle-password-login' /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist/assets >/dev/null" && \
    compose exec -T n8n sh -lc \
     "grep -R 'Login using other credentials' /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist/assets >/dev/null"; then
     pass "editor bundle includes the local-login reveal flow"
-else
+elif n8n_enabled; then
     fail "editor bundle is missing the local-login reveal flow"
+else
+    skip "n8n is disabled - skipping editor bundle local-login checks"
 fi
 
 http_status="$(curl_edge -s -o /dev/null -w '%{http_code}' "http://${DROPZONE_HOST}/" 2>/dev/null || echo 000)"
@@ -710,6 +776,7 @@ else
     fail "HTTP did not redirect to HTTPS (status $http_status)"
 fi
 
+if n8n_enabled; then
 owner_login="$(curl_edge -sk -c /tmp/chutes-n8n-local.cookies \
     -H 'Content-Type: application/json' \
     -H 'browser-id: smoke-test-browser' \
@@ -720,8 +787,11 @@ if echo "$owner_login" | grep -q '"id"'; then
 else
     fail "break-glass owner login failed"
 fi
+else
+    skip "n8n is disabled - skipping break-glass owner login"
+fi
 
-if compose exec -T n8n n8n export:nodes --output=/tmp/nodes.json >/dev/null 2>&1 && \
+if n8n_enabled && compose exec -T n8n n8n export:nodes --output=/tmp/nodes.json >/dev/null 2>&1 && \
     compose exec -T n8n node - <<'NODE' >/dev/null 2>&1
 const fs = require('fs');
 
@@ -736,8 +806,10 @@ if (missing.length > 0) {
 NODE
 then
     pass "custom nodes are registered in n8n"
-else
+elif n8n_enabled; then
     fail "custom nodes are not registered in n8n"
+else
+    skip "n8n is disabled - skipping custom node registration checks"
 fi
 
 if [ "${CHUTES_TRAFFIC_MODE:-direct}" = "e2ee-proxy" ]; then
