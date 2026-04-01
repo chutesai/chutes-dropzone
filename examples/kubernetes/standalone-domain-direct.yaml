@@ -20,6 +20,10 @@ stringData:
   CHUTES_OAUTH_CLIENT_SECRET: "REPLACE_ME"
   CHUTES_SSO_SCOPES: "openid profile chutes:read chutes:invoke"
 
+  # Comma-separated Chutes usernames to promote to admin in both n8n and
+  # OpenWebUI on SSO login. Leave empty to skip admin promotion.
+  CHUTES_ADMIN_USERNAMES: ""
+
   # Per-service secrets — generate unique values for each (e.g. openssl rand -hex 32)
   N8N_ENCRYPTION_KEY: "REPLACE_ME_64_HEX"
   N8N_JWT_SECRET: "REPLACE_ME_64_HEX"

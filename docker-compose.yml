@@ -135,7 +135,6 @@ services:
       - OPENAI_API_KEYS=${OPENWEBUI_API_KEY:-}
       - MODELS_CACHE_TTL=${OPENWEBUI_MODELS_CACHE_TTL:-300}
       - CHUTES_IDP_BASE_URL=${CHUTES_IDP_BASE_URL:-https://api.chutes.ai}
-      - CHUTES_API_KEY=${CHUTES_API_KEY:-}
       - DROPZONE_ENABLE_N8N=${DROPZONE_ENABLE_N8N:-true}
       - ENABLE_FORWARD_USER_INFO_HEADERS=true
       - AUDIO_TTS_ENGINE=openai
@@ -179,6 +178,8 @@ services:
       - PYTHONPATH=/app/backend
       - OPENWEBUI_SYNC_BASE_URL=http://openwebui:8080
       - OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL=${OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL:-300}
+      - CHUTES_ADMIN_USERNAMES=${CHUTES_ADMIN_USERNAMES:-}
+      - CHUTES_IDP_BASE_URL=${CHUTES_IDP_BASE_URL:-https://api.chutes.ai}
     depends_on:
       postgres:
         condition: service_healthy

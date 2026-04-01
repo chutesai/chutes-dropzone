@@ -103,8 +103,12 @@ RUN NODE_ARCH="$(case "$(dpkg --print-architecture)" in \
         ppc64el) echo "ppc64le";; \
         *) echo "$(dpkg --print-architecture)";; \
     esac)" && \
-    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
-        | tar -xJ -C /usr/local --strip-components=1
+    NODE_TAR="node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" -o /tmp/SHASUMS256.txt && \
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TAR}" -o /tmp/node.tar.xz && \
+    cd /tmp && grep "${NODE_TAR}" SHASUMS256.txt | sha256sum -c - && \
+    tar -xJ -C /usr/local --strip-components=1 -f /tmp/node.tar.xz && \
+    rm -f /tmp/node.tar.xz /tmp/SHASUMS256.txt
 
 COPY --from=n8n-builder /compiled /usr/local/lib/node_modules/n8n
 RUN cd /usr/local/lib/node_modules/n8n && \
@@ -237,6 +241,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         git \
         graphicsmagick \
+        gosu \
         libatomic1 \
         openssl \
         sqlite3 \
@@ -245,7 +250,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Node.js (same version used to build n8n)
+# Node.js (same version used to build n8n) — verified against upstream SHASUMS256
 RUN NODE_ARCH="$(case "$(dpkg --print-architecture)" in \
         amd64) echo "x64";; \
         arm64) echo "arm64";; \
@@ -253,20 +258,32 @@ RUN NODE_ARCH="$(case "$(dpkg --print-architecture)" in \
         ppc64el) echo "ppc64le";; \
         *) echo "$(dpkg --print-architecture)";; \
     esac)" && \
-    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
-        | tar -xJ -C /usr/local --strip-components=1 && \
+    NODE_TAR="node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" -o /tmp/SHASUMS256.txt && \
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TAR}" -o /tmp/node.tar.xz && \
+    cd /tmp && grep "${NODE_TAR}" SHASUMS256.txt | sha256sum -c - && \
+    tar -xJ -C /usr/local --strip-components=1 -f /tmp/node.tar.xz && \
+    rm -f /tmp/node.tar.xz /tmp/SHASUMS256.txt && \
     node --version
 
-# s6-overlay v3
+# s6-overlay v3 — verified against upstream SHA-256 checksums
 RUN ARCH_S6=$(case "$(dpkg --print-architecture)" in \
         amd64) echo "x86_64";; \
         arm64) echo "aarch64";; \
         *) echo "$(dpkg --print-architecture)";; \
     esac) && \
-    curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz" \
-        | tar -xJp -C / && \
-    curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${ARCH_S6}.tar.xz" \
-        | tar -xJp -C /
+    S6_BASE="https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}" && \
+    cd /tmp && \
+    curl -fsSL "${S6_BASE}/s6-overlay-noarch.tar.xz" -o s6-overlay-noarch.tar.xz && \
+    curl -fsSL "${S6_BASE}/s6-overlay-noarch.tar.xz.sha256" -o s6-overlay-noarch.tar.xz.sha256 && \
+    sha256sum -c s6-overlay-noarch.tar.xz.sha256 && \
+    tar -xJp -C / -f s6-overlay-noarch.tar.xz && \
+    curl -fsSL "${S6_BASE}/s6-overlay-${ARCH_S6}.tar.xz" -o "s6-overlay-${ARCH_S6}.tar.xz" && \
+    curl -fsSL "${S6_BASE}/s6-overlay-${ARCH_S6}.tar.xz.sha256" -o "s6-overlay-${ARCH_S6}.tar.xz.sha256" && \
+    sha256sum -c "s6-overlay-${ARCH_S6}.tar.xz.sha256" && \
+    tar -xJp -C / -f "s6-overlay-${ARCH_S6}.tar.xz" && \
+    rm -f s6-overlay-noarch.tar.xz s6-overlay-noarch.tar.xz.sha256 \
+          "s6-overlay-${ARCH_S6}.tar.xz" "s6-overlay-${ARCH_S6}.tar.xz.sha256"
 
 RUN groupadd -r node && useradd -r -g node -m -d /home/node node
 

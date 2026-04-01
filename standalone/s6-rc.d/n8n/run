@@ -12,5 +12,12 @@ if [ "${DROPZONE_ENABLE_N8N:-true}" = "false" ]; then
     exec sleep infinity
 fi
 
+DATA_DIR="${STANDALONE_DATA_DIR:-/data}"
+
+mkdir -p "$DATA_DIR/.n8n"
+chown -R node:node "$DATA_DIR/.n8n"
+
+export HOME=/home/node
+
 echo "n8n: starting (DB_TYPE=${DB_TYPE:-sqlite})"
-exec /docker-entrypoint.sh
+exec gosu node /docker-entrypoint.sh

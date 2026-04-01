@@ -8,6 +8,7 @@ DATA_DIR="${STANDALONE_OPENWEBUI_DATA_DIR:-/data/openwebui}"
 APP_DATA_DIR="/app/backend/data"
 
 mkdir -p "$DATA_DIR"
+chown -R node:node "$DATA_DIR"
 
 if [ -L "$APP_DATA_DIR" ]; then
     :
@@ -22,5 +23,6 @@ else
 fi
 
 cd /app/backend
+export HOME=/home/node
 echo "openwebui: starting"
-exec ./start.sh
+exec gosu node ./start.sh

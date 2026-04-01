@@ -357,11 +357,8 @@ EOF
 
     cat <<'EOF'
     @chutes_v1 path /v1/*
-    reverse_proxy @chutes_v1 https://127.0.0.1:8443 {
+    reverse_proxy @chutes_v1 http://127.0.0.1:8081 {
         header_up Host 127.0.0.1
-        transport http {
-            tls_insecure_skip_verify
-        }
     }
 
 EOF
@@ -402,19 +399,6 @@ EOF
 
     cat <<'EOF'
         location = /v1/models {
-            if ($request_method = 'OPTIONS') {
-                more_set_headers 'Access-Control-Allow-Origin: *';
-                more_set_headers 'Access-Control-Allow-Methods: GET, HEAD, OPTIONS';
-                more_set_headers 'Access-Control-Allow-Headers: *';
-                more_set_headers 'Access-Control-Max-Age: 86400';
-                more_set_headers 'Content-Length: 0';
-                return 204;
-            }
-
-            more_set_headers 'Access-Control-Allow-Origin: *';
-            more_set_headers 'Access-Control-Allow-Methods: GET, HEAD, OPTIONS';
-            more_set_headers 'Access-Control-Allow-Headers: *';
-            more_set_headers 'Access-Control-Expose-Headers: *';
             content_by_lua_block {
                 local handler = require("model_catalog")
                 handler.handle()
@@ -423,19 +407,6 @@ EOF
 
         location = /v1/messages {
             client_max_body_size 10m;
-            if ($request_method = 'OPTIONS') {
-                more_set_headers 'Access-Control-Allow-Origin: *';
-                more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
-                more_set_headers 'Access-Control-Allow-Headers: *';
-                more_set_headers 'Access-Control-Max-Age: 86400';
-                more_set_headers 'Content-Length: 0';
-                return 204;
-            }
-
-            more_set_headers 'Access-Control-Allow-Origin: *';
-            more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
-            more_set_headers 'Access-Control-Allow-Headers: *';
-            more_set_headers 'Access-Control-Expose-Headers: *';
             more_set_headers 'X-Dropzone-Proxy: e2ee-proxy';
 
             content_by_lua_block {
@@ -446,19 +417,6 @@ EOF
 
         location = /v1/responses {
             client_max_body_size 10m;
-            if ($request_method = 'OPTIONS') {
-                more_set_headers 'Access-Control-Allow-Origin: *';
-                more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
-                more_set_headers 'Access-Control-Allow-Headers: *';
-                more_set_headers 'Access-Control-Max-Age: 86400';
-                more_set_headers 'Content-Length: 0';
-                return 204;
-            }
-
-            more_set_headers 'Access-Control-Allow-Origin: *';
-            more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
-            more_set_headers 'Access-Control-Allow-Headers: *';
-            more_set_headers 'Access-Control-Expose-Headers: *';
             more_set_headers 'X-Dropzone-Proxy: e2ee-proxy';
 
             content_by_lua_block {
@@ -469,19 +427,6 @@ EOF
 
         location /v1/ {
             client_max_body_size 10m;
-            if ($request_method = 'OPTIONS') {
-                more_set_headers 'Access-Control-Allow-Origin: *';
-                more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
-                more_set_headers 'Access-Control-Allow-Headers: *';
-                more_set_headers 'Access-Control-Max-Age: 86400';
-                more_set_headers 'Content-Length: 0';
-                return 204;
-            }
-
-            more_set_headers 'Access-Control-Allow-Origin: *';
-            more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
-            more_set_headers 'Access-Control-Allow-Headers: *';
-            more_set_headers 'Access-Control-Expose-Headers: *';
             more_set_headers 'X-Dropzone-Proxy: e2ee-proxy';
 
             content_by_lua_block {
@@ -823,7 +768,6 @@ export CHUTES_PROXY_BASE_URL
 export CHUTES_CREDENTIAL_TEST_BASE_URL
 export CHUTES_SSO_PROXY_BYPASS
 export ALLOW_NON_CONFIDENTIAL
-export CHUTES_API_KEY
 
 # OpenWebUI env vars
 export HOST=127.0.0.1
@@ -885,6 +829,11 @@ export STANDALONE_OPENWEBUI_DATA_DIR="$OPENWEBUI_STATE_DIR"
 printf '%s' "$N8N_ADMIN_PASSWORD" > /tmp/.owner-password
 chmod 600 /tmp/.owner-password
 
+# Optional deploy-time n8n credential import should not leak into every service.
+printf '%s' "${CHUTES_API_KEY:-}" > /tmp/.chutes-api-key
+chmod 600 /tmp/.chutes-api-key
+unset CHUTES_API_KEY
+
 # ---------------------------------------------------------------------------
 # Render edge proxy configs
 # ---------------------------------------------------------------------------
@@ -914,7 +863,11 @@ if [ "$INSTALL_MODE" = "domain" ]; then
     TEMPLATE_ROOT_ENTRY_BLOCK="$(caddy_root_entry_block)" \
     TEMPLATE_N8N_ROUTES_BLOCK="$(caddy_n8n_routes_block)" \
     render_template_file /opt/standalone/Caddyfile.template /tmp/Caddyfile
-    ok "Caddyfile rendered (domain mode${ACME_EMAIL:+, Let's Encrypt}${ACME_EMAIL:-; HTTP only})"
+    if [ -n "${ACME_EMAIL:-}" ]; then
+        ok "Caddyfile rendered (domain mode, Let's Encrypt)"
+    else
+        ok "Caddyfile rendered (domain mode; HTTP only)"
+    fi
 
     if [ "$CHUTES_TRAFFIC_MODE" = "e2ee-proxy" ]; then
         TEMPLATE_SERVER_NAME="$DROPZONE_HOST" \

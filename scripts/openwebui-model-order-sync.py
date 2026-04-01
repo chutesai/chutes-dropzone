@@ -381,6 +381,116 @@ def admin_token() -> str:
     return create_token({"id": admin_user.id}, expires_delta=timedelta(minutes=10))
 
 
+def admin_allowlist() -> list[str]:
+    """Parse CHUTES_ADMIN_USERNAMES into a lowercase list of usernames."""
+    raw = os.environ.get("CHUTES_ADMIN_USERNAMES", "")
+    return [u.strip().lower() for u in raw.split(",") if u.strip()]
+
+
+_userinfo_endpoint: str = ""
+
+
+def _resolve_oidc_username(access_token: str) -> str:
+    """Resolve the immutable OIDC username via the IDP userinfo endpoint.
+
+    The userinfo username is authoritative — unlike user.name, which can be
+    changed by the user through OpenWebUI's profile settings.
+    """
+    global _userinfo_endpoint
+
+    if not _userinfo_endpoint:
+        idp_base = os.environ.get(
+            "CHUTES_IDP_BASE_URL", "https://api.chutes.ai"
+        ).rstrip("/")
+        try:
+            oidc_req = urllib.request.Request(
+                f"{idp_base}/.well-known/openid-configuration",
+                headers={"Accept": "application/json"},
+            )
+            with urllib.request.urlopen(oidc_req, timeout=10) as resp:
+                config = json.loads(resp.read().decode("utf-8"))
+            _userinfo_endpoint = config.get(
+                "userinfo_endpoint", f"{idp_base}/idp/userinfo"
+            )
+        except Exception:
+            _userinfo_endpoint = f"{idp_base}/idp/userinfo"
+
+    req = urllib.request.Request(
+        _userinfo_endpoint,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return data.get("username", "")
+    except Exception:
+        return ""
+
+
+def sync_admin_roles(token: str) -> int:
+    """Promote SSO users whose Chutes OIDC username is in CHUTES_ADMIN_USERNAMES.
+
+    Identity is resolved from the IDP userinfo endpoint using each user's
+    stored OAuth access token — NOT from user.name, which OpenWebUI lets
+    users change via profile settings.
+    """
+    allowlist = admin_allowlist()
+    if not allowlist:
+        return 0
+
+    from open_webui.models.oauth_sessions import OAuthSessions
+
+    promoted = 0
+    svc_email = admin_email().lower()
+
+    with get_db() as db:
+        result = Users.get_users(db=db)
+        user_list = result.get("users", []) if isinstance(result, dict) else result
+
+        for user in user_list:
+            if not user:
+                continue
+            if user.email and user.email.lower() == svc_email:
+                continue
+            if user.role == "admin":
+                continue
+
+            session = OAuthSessions.get_session_by_provider_and_user_id(
+                "oidc", user.id, db=db
+            )
+            if not session or not isinstance(session.token, dict):
+                continue
+            access_token = session.token.get("access_token", "")
+            if not access_token:
+                continue
+
+            oidc_username = _resolve_oidc_username(access_token)
+            if not oidc_username:
+                continue
+            if oidc_username.strip().lower() in allowlist:
+                try:
+                    request_json(
+                        "POST",
+                        f"/api/v1/users/{user.id}/update",
+                        token,
+                        {
+                            "role": "admin",
+                            "name": user.name,
+                            "email": user.email,
+                            "profile_image_url": user.profile_image_url or "",
+                        },
+                    )
+                    promoted += 1
+                    print(f"promoted {oidc_username} to admin")
+                except Exception as exc:
+                    print(f"warning: admin promotion failed for user {user.id}: {exc}")
+
+    return promoted
+
+
 def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool]:
     token = admin_token()
     updates = []
@@ -446,6 +556,10 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
     if warmup_count:
         updates.append(f"AUDIO_WARMUP({warmup_count})")
 
+    admin_count = sync_admin_roles(token)
+    if admin_count:
+        updates.append(f"ADMIN_PROMOTE({admin_count})")
+
     return len(api_urls), updates, len(ordered_ids), used_backend_fallback
 
 
@@ -456,7 +570,13 @@ AUDIO_CHUTE_NAMES = [
 
 
 def _get_chutes_oauth_token() -> str:
-    """Get any user's Chutes OAuth token from stored SSO sessions."""
+    """Get the admin's Chutes OAuth token from stored SSO sessions.
+
+    The warmup API requires an OAuth token (API keys return 401).
+    We reuse the admin's stored SSO session — no fingerprint or manual
+    setup needed.  If nobody has logged in via SSO yet, returns empty
+    and warmup is silently skipped (chutes cold-start on first request).
+    """
     try:
         from open_webui.models.oauth_sessions import OAuthSessions
 

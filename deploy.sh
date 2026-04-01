@@ -1324,6 +1324,21 @@ ensure_real_chutes_oauth_credentials() {
 
     prompt_required_value CHUTES_OAUTH_CLIENT_ID "Chutes OAuth Client ID" false "$prompt_existing_oauth"
     prompt_required_value CHUTES_OAUTH_CLIENT_SECRET "Chutes OAuth Client Secret" true "$prompt_existing_oauth"
+
+    echo
+    echo "  Admin usernames (comma-separated Chutes usernames to grant admin role"
+    echo "  in both n8n and OpenWebUI). Leave blank to skip admin promotion."
+    if [ -n "${CHUTES_ADMIN_USERNAMES:-}" ]; then
+        local admin_value=""
+        read_interactive_value admin_value "  Admin usernames [${CHUTES_ADMIN_USERNAMES}]: " false
+        if [ -n "$admin_value" ]; then
+            CHUTES_ADMIN_USERNAMES="$admin_value"
+        fi
+    elif [ "$INTERACTIVE" = true ]; then
+        local admin_value=""
+        read_interactive_value admin_value "  Admin usernames (e.g. alice,bob): " false
+        CHUTES_ADMIN_USERNAMES="${admin_value:-}"
+    fi
 }
 
 for overridable_var in \

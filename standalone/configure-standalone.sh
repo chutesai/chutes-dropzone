@@ -12,9 +12,22 @@ set -eu
 N8N_ENABLED="${DROPZONE_ENABLE_N8N:-true}"
 DATA_DIR="${STANDALONE_DATA_DIR:-/data}"
 CHUTES_API_KEY="${CHUTES_API_KEY:-}"
+CHUTES_API_KEY_FILE="/tmp/.chutes-api-key"
 DB_TYPE="${DB_TYPE:-sqlite}"
 SQLITE_DB="${N8N_USER_FOLDER:-$DATA_DIR}/.n8n/database.sqlite"
 WORKFLOW_DIR="/opt/workflows"
+
+if [ -z "$CHUTES_API_KEY" ] && [ -f "$CHUTES_API_KEY_FILE" ]; then
+    CHUTES_API_KEY="$(cat "$CHUTES_API_KEY_FILE" 2>/dev/null)" || true
+fi
+
+if [ -z "$CHUTES_API_KEY" ] && [ -f "$DATA_DIR/.env" ]; then
+    set -a
+    # shellcheck source=/dev/null
+    . "$DATA_DIR/.env"
+    set +a
+    CHUTES_API_KEY="${CHUTES_API_KEY:-}"
+fi
 
 if [ "$N8N_ENABLED" != "false" ]; then
     N8N_ADMIN_EMAIL="${STANDALONE_ADMIN_EMAIL:?STANDALONE_ADMIN_EMAIL must be set}"
@@ -26,7 +39,7 @@ if [ "$N8N_ENABLED" != "false" ]; then
 fi
 
 cleanup() {
-    rm -f /tmp/.owner-password /tmp/creds.json /tmp/workflow.json /tmp/n8n-api.body /tmp/n8n-api.status
+    rm -f /tmp/.owner-password /tmp/.chutes-api-key /tmp/creds.json /tmp/workflow.json /tmp/n8n-api.body /tmp/n8n-api.status
 }
 
 trap cleanup EXIT

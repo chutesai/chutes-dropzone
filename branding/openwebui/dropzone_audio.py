@@ -73,8 +73,10 @@ STT_CORD = "/transcribe"
 CHUTES_API_BASE = os.environ.get("CHUTES_IDP_BASE_URL", "https://api.chutes.ai").rstrip("/")
 
 CACHE_TTL = 300  # 5 minutes
+WARMUP_COOLDOWN_SECONDS = 60
 
 _cache: dict = {}
+_warmup_cache: dict[str, float] = {}
 
 
 def _fetch_json(url: str, timeout: int = 15):
@@ -86,33 +88,20 @@ def _fetch_json(url: str, timeout: int = 15):
         return None
 
 
-def _get_any_oauth_token() -> str:
-    """Get any valid OAuth token from stored SSO sessions for service-level calls."""
-    try:
-        from open_webui.models.oauth_sessions import OAuthSessions
-        from open_webui.internal.db import get_db
+def _warmup_chute(name: str, token: str) -> None:
+    """Fire-and-forget warmup for a cold chute using the caller's own OAuth token.
 
-        with get_db() as db:
-            from open_webui.models.users import Users
-            result = Users.get_users(db=db)
-            user_list = result.get("users", []) if isinstance(result, dict) else result
-
-            # Try admin users first, then any user with a session
-            for user in sorted(user_list, key=lambda u: 0 if u.role == "admin" else 1):
-                session = OAuthSessions.get_session_by_provider_and_user_id("oidc", user.id, db=db)
-                if session and isinstance(session.token, dict) and session.token.get("access_token"):
-                    return session.token["access_token"]
-    except Exception:
-        pass
-    return ""
-
-
-def _warmup_chute(name: str) -> None:
-    """Call the Chutes warmup endpoint to spin up cold instances."""
-    token = _get_any_oauth_token()
-    if not token:
-        log.debug("warmup skipped for %s: no OAuth session available", name)
+    Background warmup runs every 5 min via openwebui-model-order-sync.py using the
+    admin's stored OAuth session.  This on-demand path covers the gap when a user
+    hits a cold chute between sync cycles — their own SSO token is already available
+    from the request context, so no service-account token is needed.
+    """
+    now = time.time()
+    last_attempt = _warmup_cache.get(name, 0)
+    if now - last_attempt < WARMUP_COOLDOWN_SECONDS:
         return
+    _warmup_cache[name] = now
+
     url = f"{CHUTES_API_BASE}/chutes/warmup/{urllib.parse.quote(name, safe='')}"
     req = urllib.request.Request(
         url,
@@ -218,6 +207,7 @@ def _invoke_chute(slug: str, cord: str, payload: dict, token: str, timeout: int 
 
 MAX_TTS_INPUT_LENGTH = 10_000  # characters
 MAX_STT_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
+UPLOAD_READ_CHUNK_BYTES = 1024 * 1024  # 1 MB
 
 
 class TTSRequest(BaseModel):
@@ -225,6 +215,25 @@ class TTSRequest(BaseModel):
     input: str
     voice: Optional[str] = "af_heart"
     response_format: Optional[str] = "wav"
+
+
+async def _read_upload_limited(file: UploadFile, max_bytes: int) -> bytes:
+    chunks = []
+    total = 0
+
+    while True:
+        chunk = await file.read(UPLOAD_READ_CHUNK_BYTES)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Audio upload exceeds {max_bytes // (1024 * 1024)} MB",
+            )
+        chunks.append(chunk)
+
+    return b"".join(chunks)
 
 
 @router.post("/audio/speech")
@@ -240,6 +249,10 @@ async def text_to_speech(request: Request, body: TTSRequest, user=Depends(_resol
     token = _get_oauth_token(user, db)
     if not token:
         raise HTTPException(status_code=401, detail="No Chutes session — sign in with Chutes SSO")
+
+    # On-demand warmup: if the chute looks cold, nudge it with the user's own token
+    if tts.get("score", 0) < 0.01:
+        _warmup_chute(tts["name"], token)
 
     try:
         raw = _invoke_chute(tts["slug"], TTS_CORD, {
@@ -290,9 +303,14 @@ async def speech_to_text(
     if not token:
         raise HTTPException(status_code=401, detail="No Chutes session — sign in with Chutes SSO")
 
-    audio_data = await file.read()
-    if len(audio_data) > MAX_STT_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail=f"Audio upload exceeds {MAX_STT_UPLOAD_BYTES // (1024 * 1024)} MB")
+    if stt.get("score", 0) < 0.01:
+        _warmup_chute(stt["name"], token)
+
+    try:
+        audio_data = await _read_upload_limited(file, MAX_STT_UPLOAD_BYTES)
+    finally:
+        await file.close()
+
     audio_b64 = base64.b64encode(audio_data).decode("ascii")
 
     try:

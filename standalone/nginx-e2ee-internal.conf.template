@@ -27,36 +27,12 @@ http {
     }
 
     server {
-        listen 8443 ssl;
+        # Loopback-only HTTP is enough here because Caddy is the only client.
+        # Dropping TLS avoids an internal cert and eliminates verify-skip proxying.
+        listen 127.0.0.1:8081;
         server_name __SERVER_NAME__;
 
-        ssl_certificate /tmp/e2ee-self-signed.crt;
-        ssl_certificate_key /tmp/e2ee-self-signed.key;
-
-        ssl_protocols TLSv1.2 TLSv1.3;
-        ssl_ciphers HIGH:!aNULL:!MD5;
-        ssl_prefer_server_ciphers on;
-
-        location = /health {
-            default_type text/plain;
-            return 200 "ok\n";
-        }
-
-        more_set_headers 'Access-Control-Allow-Origin: *';
-        more_set_headers 'Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS';
-        more_set_headers 'Access-Control-Allow-Headers: *';
-        more_set_headers 'Access-Control-Expose-Headers: *';
-
         location = /v1/models {
-            if ($request_method = 'OPTIONS') {
-                more_set_headers 'Access-Control-Allow-Origin: *';
-                more_set_headers 'Access-Control-Allow-Methods: GET, HEAD, OPTIONS';
-                more_set_headers 'Access-Control-Allow-Headers: *';
-                more_set_headers 'Access-Control-Max-Age: 86400';
-                more_set_headers 'Content-Length: 0';
-                return 204;
-            }
-
             content_by_lua_block {
                 local handler = require("model_catalog")
                 handler.handle()
@@ -64,15 +40,6 @@ http {
         }
 
         location = /v1/messages {
-            if ($request_method = 'OPTIONS') {
-                more_set_headers 'Access-Control-Allow-Origin: *';
-                more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
-                more_set_headers 'Access-Control-Allow-Headers: *';
-                more_set_headers 'Access-Control-Max-Age: 86400';
-                more_set_headers 'Content-Length: 0';
-                return 204;
-            }
-
             more_set_headers 'X-Dropzone-Proxy: e2ee-proxy';
 
             content_by_lua_block {
@@ -82,15 +49,6 @@ http {
         }
 
         location = /v1/responses {
-            if ($request_method = 'OPTIONS') {
-                more_set_headers 'Access-Control-Allow-Origin: *';
-                more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
-                more_set_headers 'Access-Control-Allow-Headers: *';
-                more_set_headers 'Access-Control-Max-Age: 86400';
-                more_set_headers 'Content-Length: 0';
-                return 204;
-            }
-
             more_set_headers 'X-Dropzone-Proxy: e2ee-proxy';
 
             content_by_lua_block {
@@ -100,21 +58,17 @@ http {
         }
 
         location /v1/ {
-            if ($request_method = 'OPTIONS') {
-                more_set_headers 'Access-Control-Allow-Origin: *';
-                more_set_headers 'Access-Control-Allow-Methods: GET, POST, OPTIONS';
-                more_set_headers 'Access-Control-Allow-Headers: *';
-                more_set_headers 'Access-Control-Max-Age: 86400';
-                more_set_headers 'Content-Length: 0';
-                return 204;
-            }
-
             more_set_headers 'X-Dropzone-Proxy: e2ee-proxy';
 
             content_by_lua_block {
                 local handler = require("e2ee_handler")
                 handler.handle()
             }
+        }
+
+        location = /health {
+            default_type text/plain;
+            return 200 "ok\n";
         }
     }
 }

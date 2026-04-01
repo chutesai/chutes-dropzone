@@ -4,5 +4,7 @@
 #
 set -eu
 
+export HOME=/home/node
+
 echo "openwebui-order-sync: starting"
-exec /opt/dropzone/openwebui-model-order-sync-loop.sh
+exec gosu node /opt/dropzone/openwebui-model-order-sync-loop.sh
