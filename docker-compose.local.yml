@@ -24,8 +24,6 @@ services:
     security_opt:
       - no-new-privileges:true
     depends_on:
-      n8n:
-        condition: service_healthy
       openwebui:
         condition: service_healthy
     networks:

@@ -244,12 +244,15 @@ PY
 }
 
 landing_page_links() {
-    python3 - "$1" <<'PY'
+    python3 - "$1" "${DROPZONE_ENABLE_N8N:-true}" <<'PY'
 import sys
 from pathlib import Path
 
 html = Path(sys.argv[1]).read_text(encoding="utf-8")
-required = ["/chat/", "/n8n/"]
+n8n_enabled = sys.argv[2].lower() not in {"false", "0", "no"}
+required = ["/chat/"]
+if n8n_enabled:
+    required.append("/n8n/")
 missing = [item for item in required if item not in html]
 if missing:
     raise SystemExit(f"missing landing links: {', '.join(missing)}")
@@ -298,7 +301,11 @@ fi
 echo "  OpenWebUI background model-order sync is configured for 5-minute refreshes"
 
 if ! landing_page_links "$PROJECT_DIR/landing/index.html" >/dev/null 2>&1; then
-    echo "  ERROR: landing page is missing the /chat or /n8n launcher links" >&2
+    if [ "${DROPZONE_ENABLE_N8N:-true}" = "false" ]; then
+        echo "  ERROR: landing page is missing the /chat launcher link" >&2
+    else
+        echo "  ERROR: landing page is missing the /chat or /n8n launcher links" >&2
+    fi
     exit 1
 fi
 echo "  Landing page launcher links are present"

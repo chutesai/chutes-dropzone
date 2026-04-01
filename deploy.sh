@@ -387,6 +387,7 @@ replacements = {
     "__RESOLVERS__": os.environ.get("TEMPLATE_RESOLVERS", ""),
     "__CHUTES_V1_BLOCK__": os.environ.get("TEMPLATE_CHUTES_V1_BLOCK", ""),
     "__ROOT_ENTRY_BLOCK__": os.environ.get("TEMPLATE_ROOT_ENTRY_BLOCK", ""),
+    "__N8N_ROUTES_BLOCK__": os.environ.get("TEMPLATE_N8N_ROUTES_BLOCK", ""),
     "__INSTALL_MODE__": os.environ.get("TEMPLATE_INSTALL_MODE", ""),
     "__CHUTES_TRAFFIC_MODE__": os.environ.get("TEMPLATE_CHUTES_TRAFFIC_MODE", ""),
     "__DROPZONE_HOST__": os.environ.get("TEMPLATE_DROPZONE_HOST", ""),
@@ -608,6 +609,98 @@ EOF
 EOF
 }
 
+nginx_n8n_routes_block() {
+    if [ "${DROPZONE_ENABLE_N8N:-true}" = "false" ]; then
+        cat <<'EOF'
+        location = /n8n {
+            return 404;
+        }
+
+        location /n8n/ {
+            return 404;
+        }
+
+        location /rest/sso/chutes/ {
+            return 404;
+        }
+EOF
+        return
+    fi
+
+    cat <<'EOF'
+        location = /n8n {
+            return 308 /n8n/;
+        }
+
+        location /n8n/ {
+            rewrite ^/n8n/(.*)$ /$1 break;
+            proxy_pass http://n8n:5678;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_buffering off;
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
+            client_max_body_size 50m;
+        }
+
+        location /rest/sso/chutes/ {
+            proxy_hide_header Cache-Control;
+            proxy_hide_header Expires;
+            proxy_hide_header ETag;
+            add_header Cache-Control "no-store" always;
+            proxy_pass http://n8n:5678;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_buffering off;
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
+            client_max_body_size 50m;
+        }
+
+        location = /n8n/static/chutes-custom.js {
+            proxy_hide_header Cache-Control;
+            proxy_hide_header Expires;
+            proxy_hide_header ETag;
+            add_header Cache-Control "no-store" always;
+            rewrite ^/n8n/(.*)$ /$1 break;
+            proxy_pass http://n8n:5678;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+        }
+
+        location = /n8n/static/chutes-custom.css {
+            proxy_hide_header Cache-Control;
+            proxy_hide_header Expires;
+            proxy_hide_header ETag;
+            add_header Cache-Control "no-store" always;
+            rewrite ^/n8n/(.*)$ /$1 break;
+            proxy_pass http://n8n:5678;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+        }
+EOF
+}
+
 render_caddyfile() {
     local tls_directive
     local server_name
@@ -632,6 +725,7 @@ render_local_proxy_config() {
     TEMPLATE_RESOLVERS="127.0.0.11 8.8.8.8 8.8.4.4" \
     TEMPLATE_CHUTES_V1_BLOCK="$(nginx_chutes_v1_block)" \
     TEMPLATE_ROOT_ENTRY_BLOCK="$(nginx_root_entry_block)" \
+    TEMPLATE_N8N_ROUTES_BLOCK="$(nginx_n8n_routes_block)" \
     render_template_file \
         "$SCRIPT_DIR/conf/local-proxy.nginx.template" \
         "$SCRIPT_DIR/conf/local-proxy.nginx.conf"
@@ -741,6 +835,22 @@ remove_stale_project_containers() {
     info "Removing stale ${compose_project} containers left behind by earlier runs ..."
     # shellcheck disable=SC2086
     docker rm -f $container_ids >/dev/null 2>&1 || true
+}
+
+n8n_enabled() {
+    [ "${DROPZONE_ENABLE_N8N:-true}" != "false" ]
+}
+
+compose_services_to_start() {
+    local service
+
+    while IFS= read -r service; do
+        [ -n "$service" ] || continue
+        if ! n8n_enabled && { [ "$service" = "n8n" ] || [ "$service" = "n8n-runners" ]; }; then
+            continue
+        fi
+        printf '%s\n' "$service"
+    done < <(compose config --services)
 }
 
 check_owner_login() {
@@ -1804,40 +1914,61 @@ elif [ "$SKIP_APP_BUILDS" = true ]; then
     fi
 else
     info "Building images ..."
-    compose build
+    if n8n_enabled; then
+        compose build
+    else
+        build_services=(openwebui)
+        case "$INSTALL_MODE" in
+            local) build_services+=(local-proxy) ;;
+            domain) ;;
+        esac
+        if [ "$CHUTES_TRAFFIC_MODE" = "e2ee-proxy" ]; then
+            build_services+=(e2ee-proxy)
+        fi
+        compose build "${build_services[@]}"
+    fi
 fi
 
 remove_stale_edge_container
 
 info "Starting services ..."
+start_services=()
+while IFS= read -r service; do
+    [ -n "$service" ] || continue
+    start_services+=("$service")
+done < <(compose_services_to_start)
 if [ "$SKIP_BUILD" = true ] || [ "$SKIP_APP_BUILDS" = true ]; then
-    compose up -d --no-build
+    compose up -d --no-build "${start_services[@]}"
 else
-    compose up -d
+    compose up -d "${start_services[@]}"
 fi
 
-info "Waiting for n8n to become healthy ..."
-attempts=0
-max_attempts=80
-status="starting"
-while [ "$attempts" -lt "$max_attempts" ]; do
-    status="$(container_runtime_status "$(compose_container_id n8n)")"
-    if [ "$status" = "healthy" ]; then
-        break
-    fi
-    attempts=$((attempts + 1))
-    if [ $((attempts % 5)) -eq 0 ]; then
-        echo "    still waiting... ($status)"
-    fi
-    sleep 3
-done
+if n8n_enabled; then
+    info "Waiting for n8n to become healthy ..."
+    attempts=0
+    max_attempts=80
+    status="starting"
+    while [ "$attempts" -lt "$max_attempts" ]; do
+        status="$(container_runtime_status "$(compose_container_id n8n)")"
+        if [ "$status" = "healthy" ]; then
+            break
+        fi
+        attempts=$((attempts + 1))
+        if [ $((attempts % 5)) -eq 0 ]; then
+            echo "    still waiting... ($status)"
+        fi
+        sleep 3
+    done
 
-if [ "$status" != "healthy" ]; then
-    err "n8n did not become healthy"
-    err "Check logs with: $(compose_command_hint) logs n8n ${EDGE_SERVICE}"
-    exit 1
+    if [ "$status" != "healthy" ]; then
+        err "n8n did not become healthy"
+        err "Check logs with: $(compose_command_hint) logs n8n ${EDGE_SERVICE}"
+        exit 1
+    fi
+    ok "n8n is healthy"
+else
+    info "n8n is disabled; skipping n8n startup and health checks"
 fi
-ok "n8n is healthy"
 
 info "Waiting for OpenWebUI to become healthy ..."
 attempts=0
@@ -1871,14 +2002,18 @@ if [ "$edge_status" != "healthy" ] && [ "$edge_status" != "running" ]; then
 fi
 ok "${EDGE_SERVICE} is ${edge_status}"
 
-info "Configuring n8n ..."
-RESET_OWNER_PASSWORD="$RESET_OWNER_PASSWORD" "$SCRIPT_DIR/scripts/configure-n8n.sh"
+if n8n_enabled; then
+    info "Configuring n8n ..."
+    RESET_OWNER_PASSWORD="$RESET_OWNER_PASSWORD" "$SCRIPT_DIR/scripts/configure-n8n.sh"
+else
+    info "n8n is disabled; skipping n8n bootstrap"
+fi
 
 info "Verifying OpenWebUI ..."
 "$SCRIPT_DIR/scripts/configure-openwebui.sh"
 
 OWNER_PASSWORD_VALID=false
-if check_owner_login; then
+if n8n_enabled && check_owner_login; then
     OWNER_PASSWORD_VALID=true
 fi
 
@@ -1894,7 +2029,11 @@ else
     echo -e "  Root:    ${BOLD}https://${DROPZONE_HOST}/${NC} ${CYAN}(redirects to /chat/)${NC}"
 fi
 echo -e "  Chat:    ${BOLD}https://${DROPZONE_HOST}/chat/${NC}"
-echo -e "  n8n:     ${BOLD}https://${DROPZONE_HOST}/n8n/${NC}"
+if n8n_enabled; then
+    echo -e "  n8n:     ${BOLD}https://${DROPZONE_HOST}/n8n/${NC}"
+else
+    echo -e "  n8n:     ${CYAN}disabled (chat-only mode)${NC}"
+fi
 echo
 echo "  Chutes OAuth app settings:"
 echo "    Redirect URI: https://${DROPZONE_HOST}/oauth/oidc/callback"
@@ -1926,7 +2065,7 @@ else
     fi
 fi
 echo
-if [ "$OWNER_PASSWORD_VALID" = true ]; then
+if n8n_enabled && [ "$OWNER_PASSWORD_VALID" = true ]; then
     echo "  Break-glass admins:"
     echo "    Email:    ${N8N_ADMIN_EMAIL}"
     if [ "$INTERACTIVE" = true ]; then
@@ -1940,9 +2079,17 @@ if [ "$OWNER_PASSWORD_VALID" = true ]; then
     else
         echo "    OpenWebUI password: (stored in .env — run interactively to display)"
     fi
-else
+elif n8n_enabled; then
     warn "Stored owner credentials could not be verified."
     warn "Run ./deploy.sh --reset-owner-password to rotate the break-glass owner password."
+else
+    echo "  OpenWebUI break-glass admin:"
+    echo "    Email:    ${OPENWEBUI_ADMIN_EMAIL}"
+    if [ "$INTERACTIVE" = true ]; then
+        echo -e "    Password: ${BOLD}${OPENWEBUI_ADMIN_PASSWORD}${NC}"
+    else
+        echo "    Password: (stored in .env — run interactively to display)"
+    fi
 fi
 echo
 echo "  Commands:"
