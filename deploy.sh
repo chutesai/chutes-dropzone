@@ -1886,7 +1886,7 @@ ensure_real_chutes_oauth_credentials() {
     if [ "$INTERACTIVE" = true ]; then
         echo
         echo "  Admin usernames (comma-separated Chutes usernames to grant admin role"
-        echo "  in ${enabled_app_targets}). Leave blank to skip admin promotion."
+        echo "  in $(enabled_app_targets)). Leave blank to skip admin promotion."
     fi
     if [ "$INTERACTIVE" = true ] && [ -n "${CHUTES_ADMIN_USERNAMES:-}" ]; then
         local admin_value=""

@@ -274,10 +274,16 @@ else
     fail "local proxy still resolves e2ee-proxy too early at startup"
 fi
 
-if grep -q '@chatCustomAssets path /static/custom.css /static/loader.js /static/site.webmanifest' "$PROJECT_DIR/conf/Caddyfile.template" && \
-   grep -q 'location = /static/custom.css {' "$PROJECT_DIR/conf/local-proxy.nginx.template" && \
-   grep -q 'location = /static/loader.js {' "$PROJECT_DIR/conf/local-proxy.nginx.template" && \
-   grep -q 'location = /static/site.webmanifest {' "$PROJECT_DIR/conf/local-proxy.nginx.template"; then
+if grep -q '@chatCustomAssets path /static/custom.css /static/loader.js /static/site.webmanifest' "$PROJECT_DIR/deploy.sh" && \
+   grep -q 'header @chatCustomAssets Cache-Control "no-store"' "$PROJECT_DIR/deploy.sh" && \
+   grep -q 'location = /static/custom.css {' "$PROJECT_DIR/deploy.sh" && \
+   grep -q 'location = /static/loader.js {' "$PROJECT_DIR/deploy.sh" && \
+   grep -q 'location = /static/site.webmanifest {' "$PROJECT_DIR/deploy.sh" && \
+   grep -q '@chatCustomAssets path /static/custom.css /static/loader.js /static/site.webmanifest' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -q 'header @chatCustomAssets Cache-Control "no-store"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -q 'location = /static/custom.css {' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -q 'location = /static/loader.js {' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -q 'location = /static/site.webmanifest {' "$PROJECT_DIR/standalone/entrypoint.sh"; then
     pass "chat custom assets are served no-store through the edge"
 else
     fail "chat custom assets are missing edge no-store protection"
