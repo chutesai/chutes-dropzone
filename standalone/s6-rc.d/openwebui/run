@@ -27,6 +27,13 @@ else
     ln -s "$DATA_DIR" "$APP_DATA_DIR"
 fi
 
+# The bundled OpenWebUI image may ship a seeded SQLite database and related
+# state files owned by root. After copying that data into the persistent
+# directory, fix ownership and mode so the runtime node user can update config,
+# create WAL/journal files, and write uploads on first boot.
+chown -R node:node "$DATA_DIR"
+chmod -R u+rwX "$DATA_DIR"
+
 cd /app/backend
 export HOME=/home/node
 echo "openwebui: starting"

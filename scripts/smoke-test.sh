@@ -292,6 +292,14 @@ else
     fail "standalone HTTP-only domain mode is not wired to nginx correctly"
 fi
 
+if grep -q 'cp -a "\$APP_DATA_DIR"/. "\$DATA_DIR"/' "$PROJECT_DIR/standalone/s6-rc.d/openwebui/run" && \
+   grep -q 'chown -R node:node "\$DATA_DIR"' "$PROJECT_DIR/standalone/s6-rc.d/openwebui/run" && \
+   grep -q 'chmod -R u+rwX "\$DATA_DIR"' "$PROJECT_DIR/standalone/s6-rc.d/openwebui/run"; then
+    pass "standalone OpenWebUI fixes ownership after copying seeded data"
+else
+    fail "standalone OpenWebUI may leave copied seeded data read-only"
+fi
+
 if grep -q 'OPENWEBUI_API_BASE_URL="https://127.0.0.1:8443/v1"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -q 'OPENWEBUI_API_BASE_URL="http://127.0.0.1/v1"' "$PROJECT_DIR/standalone/entrypoint.sh"; then
     pass "domain e2ee-proxy switches the internal OpenWebUI upstream with ACME on/off"
