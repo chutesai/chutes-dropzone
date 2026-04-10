@@ -292,9 +292,9 @@ else
     fail "standalone HTTP-only domain mode is not wired to nginx correctly"
 fi
 
-if grep -q 'cp -a "\$APP_DATA_DIR"/. "\$DATA_DIR"/' "$PROJECT_DIR/standalone/s6-rc.d/openwebui/run" && \
-   grep -q 'chown -R node:node "\$DATA_DIR"' "$PROJECT_DIR/standalone/s6-rc.d/openwebui/run" && \
-   grep -q 'chmod -R u+rwX "\$DATA_DIR"' "$PROJECT_DIR/standalone/s6-rc.d/openwebui/run"; then
+if grep -Fq "cp -a \"\$APP_DATA_DIR\"/. \"\$DATA_DIR\"/" "$PROJECT_DIR/standalone/s6-rc.d/openwebui/run" && \
+   grep -Fq "chown -R node:node \"\$DATA_DIR\"" "$PROJECT_DIR/standalone/s6-rc.d/openwebui/run" && \
+   grep -Fq "chmod -R u+rwX \"\$DATA_DIR\"" "$PROJECT_DIR/standalone/s6-rc.d/openwebui/run"; then
     pass "standalone OpenWebUI fixes ownership after copying seeded data"
 else
     fail "standalone OpenWebUI may leave copied seeded data read-only"
