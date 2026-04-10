@@ -170,6 +170,7 @@ COPY scripts/patch-openwebui-runtime.py /opt/dropzone/patch-openwebui-runtime.py
 COPY scripts/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync.py
 COPY scripts/openwebui-model-order-sync-loop.sh /opt/dropzone/openwebui-model-order-sync-loop.sh
 RUN python3 /opt/dropzone/patch-openwebui-runtime.py /app && \
+    chmod -R a+rwX /app/build/static /app/backend/open_webui/static && \
     chmod +x /opt/dropzone/patch-openwebui-runtime.py /opt/dropzone/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync-loop.sh
 
 # ---------------------------------------------------------------------------
@@ -242,6 +243,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         graphicsmagick \
         gosu \
+        libcap2-bin \
         libatomic1 \
         openssl \
         sqlite3 \
@@ -344,6 +346,7 @@ COPY scripts/patch-openwebui-runtime.py /opt/dropzone/patch-openwebui-runtime.py
 COPY scripts/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync.py
 COPY scripts/openwebui-model-order-sync-loop.sh /opt/dropzone/openwebui-model-order-sync-loop.sh
 RUN python3 /opt/dropzone/patch-openwebui-runtime.py /app && \
+    chmod -R a+rwX /app/build/static /app/backend/open_webui/static && \
     chmod +x /opt/dropzone/patch-openwebui-runtime.py /opt/dropzone/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync-loop.sh
 
 # Custom Chutes nodes
@@ -359,11 +362,13 @@ COPY n8n-overlays/e2ee-proxy/lua/model_catalog.lua /usr/local/openresty/lua/mode
 
 # Caddy
 COPY --from=caddy-binary /usr/bin/caddy /usr/bin/caddy
+RUN setcap -r /usr/bin/caddy
 
 # Standalone scripts and configs
 COPY standalone/entrypoint.sh /opt/standalone/entrypoint.sh
 COPY standalone/configure-standalone.sh /opt/standalone/configure-standalone.sh
 COPY standalone/nginx-standalone.conf.template /opt/standalone/nginx-standalone.conf.template
+COPY standalone/nginx-domain-http.conf.template /opt/standalone/nginx-domain-http.conf.template
 COPY standalone/nginx-e2ee-internal.conf.template /opt/standalone/nginx-e2ee-internal.conf.template
 COPY standalone/Caddyfile.template /opt/standalone/Caddyfile.template
 COPY landing/ /opt/landing/

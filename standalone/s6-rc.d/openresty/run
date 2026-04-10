@@ -4,23 +4,26 @@
 #
 # Starts when:
 #   INSTALL_MODE=local (edge proxy + e2ee Lua handlers)
-#   INSTALL_MODE=domain AND CHUTES_TRAFFIC_MODE=e2ee-proxy (internal e2ee on 8443)
+#   INSTALL_MODE=domain AND ACME_EMAIL is empty (HTTP-only public edge)
+#   INSTALL_MODE=domain AND CHUTES_TRAFFIC_MODE=e2ee-proxy AND ACME_EMAIL is set
+#     (internal e2ee handler behind Caddy)
 # Idles when:
-#   INSTALL_MODE=domain AND CHUTES_TRAFFIC_MODE=direct
+#   INSTALL_MODE=domain AND CHUTES_TRAFFIC_MODE=direct AND ACME_EMAIL is set
 #
 set -eu
 
 MODE="${STANDALONE_INSTALL_MODE:-local}"
 TRAFFIC="${STANDALONE_TRAFFIC_MODE:-direct}"
-
-if [ "$MODE" = "domain" ] && [ "$TRAFFIC" != "e2ee-proxy" ]; then
-    exec sleep infinity
-fi
+ACME_EMAIL="${STANDALONE_ACME_EMAIL:-}"
 
 if [ "$MODE" = "local" ]; then
     CONF="/tmp/nginx-standalone.conf"
-else
+elif [ "$MODE" = "domain" ] && [ -z "$ACME_EMAIL" ]; then
+    CONF="/tmp/nginx-domain-http.conf"
+elif [ "$MODE" = "domain" ] && [ "$TRAFFIC" = "e2ee-proxy" ]; then
     CONF="/tmp/nginx-e2ee-internal.conf"
+else
+    exec sleep infinity
 fi
 
 if [ ! -f "$CONF" ]; then

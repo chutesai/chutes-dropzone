@@ -1029,7 +1029,7 @@ else
         fi
         N8N_HOST="$DROPZONE_HOST"
         if [ -z "${ACME_EMAIL:-}" ]; then
-            info "No ACME_EMAIL set; Caddy will listen on HTTP only (TLS must be handled upstream)"
+            info "No ACME_EMAIL set; the standalone edge will listen on HTTP only (TLS must be handled upstream)"
         fi
     fi
 
@@ -1038,7 +1038,11 @@ else
         CHUTES_PROXY_BASE_URL="https://${DROPZONE_HOST}"
         CHUTES_CREDENTIAL_TEST_BASE_URL="https://${DROPZONE_HOST}"
         if [ "$INSTALL_MODE" = "domain" ]; then
-            OPENWEBUI_API_BASE_URL="https://127.0.0.1:8443/v1"
+            if [ -n "${ACME_EMAIL:-}" ]; then
+                OPENWEBUI_API_BASE_URL="https://127.0.0.1:8443/v1"
+            else
+                OPENWEBUI_API_BASE_URL="http://127.0.0.1/v1"
+            fi
         else
             OPENWEBUI_API_BASE_URL="https://${DROPZONE_HOST}/v1"
         fi
@@ -1276,28 +1280,29 @@ if [ "$INSTALL_MODE" = "local" ]; then
 fi
 
 if [ "$INSTALL_MODE" = "domain" ]; then
-    _caddy_server_name="$DROPZONE_HOST"
-    _caddy_tls_directive="tls ${ACME_EMAIL}"
-    if [ -z "${ACME_EMAIL:-}" ]; then
-        _caddy_server_name="http://${DROPZONE_HOST}"
-        _caddy_tls_directive=""
-    fi
-
-    TEMPLATE_SERVER_NAME="$_caddy_server_name" \
-    TEMPLATE_TLS_DIRECTIVE="$_caddy_tls_directive" \
-    TEMPLATE_CHUTES_V1_BLOCK="$(caddy_chutes_v1_block)" \
-    TEMPLATE_ROOT_ENTRY_BLOCK="$(caddy_root_entry_block)" \
-    TEMPLATE_CHAT_ROUTES_BLOCK="$(caddy_chat_routes_block)" \
-    TEMPLATE_N8N_ROUTES_BLOCK="$(caddy_n8n_routes_block)" \
-    TEMPLATE_APP_FALLBACK_BLOCK="$(caddy_app_fallback_block)" \
-    render_template_file /opt/standalone/Caddyfile.template /tmp/Caddyfile
     if [ -n "${ACME_EMAIL:-}" ]; then
+        TEMPLATE_SERVER_NAME="$DROPZONE_HOST" \
+        TEMPLATE_TLS_DIRECTIVE="tls ${ACME_EMAIL}" \
+        TEMPLATE_CHUTES_V1_BLOCK="$(caddy_chutes_v1_block)" \
+        TEMPLATE_ROOT_ENTRY_BLOCK="$(caddy_root_entry_block)" \
+        TEMPLATE_CHAT_ROUTES_BLOCK="$(caddy_chat_routes_block)" \
+        TEMPLATE_N8N_ROUTES_BLOCK="$(caddy_n8n_routes_block)" \
+        TEMPLATE_APP_FALLBACK_BLOCK="$(caddy_app_fallback_block)" \
+        render_template_file /opt/standalone/Caddyfile.template /tmp/Caddyfile
         ok "Caddyfile rendered (domain mode, Let's Encrypt)"
     else
-        ok "Caddyfile rendered (domain mode; HTTP only)"
+        TEMPLATE_SERVER_NAME="$DROPZONE_HOST" \
+        TEMPLATE_RESOLVERS="8.8.8.8 8.8.4.4" \
+        TEMPLATE_CHUTES_V1_BLOCK="$(nginx_chutes_v1_block)" \
+        TEMPLATE_ROOT_ENTRY_BLOCK="$(nginx_root_entry_block)" \
+        TEMPLATE_CHAT_ROUTES_BLOCK="$(nginx_chat_routes_block)" \
+        TEMPLATE_N8N_ROUTES_BLOCK="$(nginx_n8n_routes_block)" \
+        TEMPLATE_APP_FALLBACK_BLOCK="$(nginx_app_fallback_block)" \
+        render_template_file /opt/standalone/nginx-domain-http.conf.template /tmp/nginx-domain-http.conf
+        ok "nginx config rendered (domain mode; HTTP only)"
     fi
 
-    if [ "$CHUTES_TRAFFIC_MODE" = "e2ee-proxy" ]; then
+    if [ -n "${ACME_EMAIL:-}" ] && [ "$CHUTES_TRAFFIC_MODE" = "e2ee-proxy" ]; then
         TEMPLATE_SERVER_NAME="$DROPZONE_HOST" \
         TEMPLATE_RESOLVERS="8.8.8.8 8.8.4.4" \
         render_template_file /opt/standalone/nginx-e2ee-internal.conf.template /tmp/nginx-e2ee-internal.conf

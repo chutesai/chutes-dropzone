@@ -1,0 +1,69 @@
+worker_processes 1;
+error_log /dev/stderr info;
+pid /tmp/nginx.pid;
+
+env ALLOW_NON_CONFIDENTIAL;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /usr/local/openresty/nginx/conf/mime.types;
+    default_type application/octet-stream;
+
+    resolver __RESOLVERS__ valid=60s ipv6=off;
+    resolver_timeout 5s;
+
+    lua_package_path "/usr/local/openresty/lua/?.lua;;";
+    lua_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+    lua_ssl_verify_depth 5;
+
+    init_worker_by_lua_block {
+        local crypto = require("e2ee_crypto")
+        local ok, err = crypto.init()
+        if not ok then
+            ngx.log(ngx.ERR, "FATAL: e2ee_init failed: ", err)
+        else
+            ngx.log(ngx.INFO, "e2ee proxy library initialized for domain HTTP edge")
+        end
+    }
+
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        '' close;
+    }
+
+    server {
+        listen 80;
+        server_name __SERVER_NAME__;
+
+        location = /health {
+            default_type text/plain;
+            return 200 "ok\n";
+        }
+
+        more_set_headers 'X-Content-Type-Options: nosniff';
+        more_set_headers 'X-Frame-Options: SAMEORIGIN';
+        more_set_headers 'Referrer-Policy: strict-origin-when-cross-origin';
+        more_set_headers 'Strict-Transport-Security: max-age=63072000; includeSubDomains';
+        more_set_headers 'Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()';
+
+        __CHUTES_V1_BLOCK__
+
+        __CHAT_ROUTES_BLOCK__
+
+__N8N_ROUTES_BLOCK__
+
+        location /_dropzone/ {
+            add_header Cache-Control "public, max-age=31536000, immutable" always;
+            rewrite ^/_dropzone/(.*)$ /$1 break;
+            root /opt/landing;
+            try_files $uri =404;
+        }
+
+__ROOT_ENTRY_BLOCK__
+
+        __APP_FALLBACK_BLOCK__
+    }
+}

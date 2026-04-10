@@ -2,15 +2,16 @@
 #
 # s6 longrun: caddy
 #
-# Starts when: INSTALL_MODE=domain
-# Idles when:  INSTALL_MODE=local
+# Starts when: INSTALL_MODE=domain AND ACME_EMAIL is set
+# Idles when:  INSTALL_MODE=local OR INSTALL_MODE=domain with HTTP-only upstream TLS
 #
 set -eu
 
 MODE="${STANDALONE_INSTALL_MODE:-local}"
 DATA_DIR="${STANDALONE_DATA_DIR:-/data}"
+ACME_EMAIL="${STANDALONE_ACME_EMAIL:-}"
 
-if [ "$MODE" != "domain" ]; then
+if [ "$MODE" != "domain" ] || [ -z "$ACME_EMAIL" ]; then
     exec sleep infinity
 fi
 

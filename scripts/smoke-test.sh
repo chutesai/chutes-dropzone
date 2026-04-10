@@ -116,6 +116,15 @@ for file in "$PROJECT_DIR/deploy.sh" "$PROJECT_DIR/scripts/"*.sh; do
     fi
 done
 
+for file in "$PROJECT_DIR/standalone/entrypoint.sh" "$PROJECT_DIR/standalone/configure-standalone.sh" "$PROJECT_DIR/standalone/s6-rc.d/"*/run; do
+    rel_file="${file#"$PROJECT_DIR"/}"
+    if sh -n "$file" >/dev/null 2>&1; then
+        pass "sh -n $rel_file"
+    else
+        fail "sh -n $rel_file"
+    fi
+done
+
 if command -v shellcheck >/dev/null 2>&1; then
     shellcheck_out="$(shellcheck -x "$PROJECT_DIR/deploy.sh" "$PROJECT_DIR/scripts/"*.sh 2>&1)" || true
     if [ -z "$shellcheck_out" ]; then
@@ -265,6 +274,30 @@ for placeholder in __SERVER_NAME__ __RESOLVERS__ __CHUTES_V1_BLOCK__ __ROOT_ENTR
         fail "local proxy template missing $placeholder"
     fi
 done
+
+for placeholder in __SERVER_NAME__ __RESOLVERS__ __CHUTES_V1_BLOCK__ __ROOT_ENTRY_BLOCK__; do
+    if grep -q "$placeholder" "$PROJECT_DIR/standalone/nginx-domain-http.conf.template"; then
+        pass "standalone domain HTTP template has $placeholder"
+    else
+        fail "standalone domain HTTP template missing $placeholder"
+    fi
+done
+
+if grep -q '/tmp/nginx-domain-http.conf' "$PROJECT_DIR/standalone/s6-rc.d/openresty/run" && \
+   grep -q 'STANDALONE_ACME_EMAIL' "$PROJECT_DIR/standalone/s6-rc.d/openresty/run" && \
+   grep -q 'STANDALONE_ACME_EMAIL' "$PROJECT_DIR/standalone/s6-rc.d/caddy/run" && \
+   grep -q 'nginx-domain-http.conf.template' "$PROJECT_DIR/standalone/entrypoint.sh"; then
+    pass "standalone HTTP-only domain mode routes through nginx instead of Caddy"
+else
+    fail "standalone HTTP-only domain mode is not wired to nginx correctly"
+fi
+
+if grep -q 'OPENWEBUI_API_BASE_URL="https://127.0.0.1:8443/v1"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -q 'OPENWEBUI_API_BASE_URL="http://127.0.0.1/v1"' "$PROJECT_DIR/standalone/entrypoint.sh"; then
+    pass "domain e2ee-proxy switches the internal OpenWebUI upstream with ACME on/off"
+else
+    fail "domain e2ee-proxy is missing the HTTP-only internal OpenWebUI upstream"
+fi
 
 # shellcheck disable=SC2016
 if grep -q 'set \$chutes_v1_host e2ee-proxy;' "$PROJECT_DIR/deploy.sh" && \

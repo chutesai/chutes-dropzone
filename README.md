@@ -60,7 +60,7 @@ Typical flow:
 Important notes:
 
 - Keep this as a single replica. The standalone image stores state under `/data`.
-- When `ACME_EMAIL` is empty, Caddy listens on HTTP only (port 80). Your ingress or load balancer must handle TLS.
+- When `ACME_EMAIL` is empty, the standalone edge listens on HTTP only (port 80). Your ingress or load balancer must handle TLS.
 - When `ACME_EMAIL` is set, Caddy handles Let's Encrypt automatically. Expose ports 80 and 443 and use a `LoadBalancer` service for the simplest setup.
 
 ### Repo-Based
@@ -176,7 +176,7 @@ Local installs intentionally stay on a single exact-cert host instead of subdoma
 ### Install Mode
 
 - `local`: uses `https://e2ee-local-proxy.chutes.dev` with an embedded certificate
-- `domain`: uses your real `DROPZONE_HOST`. TLS is managed by Caddy/ACME when `ACME_EMAIL` is set; otherwise Caddy listens on HTTP only for use behind a reverse proxy or ingress
+- `domain`: uses your real `DROPZONE_HOST`. TLS is managed by Caddy/ACME when `ACME_EMAIL` is set; otherwise the built-in edge listens on HTTP only for use behind a reverse proxy or ingress
 
 ### Traffic Mode
 
