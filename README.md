@@ -306,6 +306,27 @@ It:
 - requires a clean worktree before publishing
 - uses `gh` to create the GitHub release that triggers `.github/workflows/release.yml`
 
+## Update PRs
+
+`update.sh` is the interactive helper for testing upstream app bumps on a throwaway branch and PR before they land on `main`.
+
+```bash
+./update.sh --dry-run
+./update.sh n8n
+./update.sh openwebui --yes
+./update.sh --all --yes
+```
+
+It:
+
+- checks the latest supported upstream pins for `n8n` and `openwebui`
+- updates the matching checked-in refs, versions, and image digests in the repo
+- creates a `test-update-<abbr>-<YYYY-MM-DD>` branch from the repo default branch
+- runs `./scripts/smoke-test.sh --syntax` and `./release.sh --dry-run`
+- commits the pin refresh, pushes the branch, and opens a draft PR to trigger CI
+
+Use `--no-push` to keep the branch local or `--no-pr` to stop after pushing.
+
 ## Verification
 
 ```bash

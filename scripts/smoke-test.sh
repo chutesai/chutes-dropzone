@@ -108,7 +108,7 @@ curl_edge() {
 
 echo "=== Syntax checks ==="
 
-for file in "$PROJECT_DIR/deploy.sh" "$PROJECT_DIR/scripts/"*.sh; do
+for file in "$PROJECT_DIR/deploy.sh" "$PROJECT_DIR/update.sh" "$PROJECT_DIR/scripts/"*.sh; do
     if bash -n "$file" >/dev/null 2>&1; then
         pass "bash -n $(basename "$file")"
     else
@@ -126,7 +126,7 @@ for file in "$PROJECT_DIR/standalone/entrypoint.sh" "$PROJECT_DIR/standalone/con
 done
 
 if command -v shellcheck >/dev/null 2>&1; then
-    shellcheck_out="$(shellcheck -x "$PROJECT_DIR/deploy.sh" "$PROJECT_DIR/scripts/"*.sh 2>&1)" || true
+    shellcheck_out="$(shellcheck -x "$PROJECT_DIR/deploy.sh" "$PROJECT_DIR/update.sh" "$PROJECT_DIR/scripts/"*.sh 2>&1)" || true
     if [ -z "$shellcheck_out" ]; then
         pass "shellcheck shell scripts"
     else
