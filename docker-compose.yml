@@ -124,8 +124,8 @@ services:
       dockerfile: Dockerfile.local-repo
       target: openwebui-runtime
       args:
-        OPENWEBUI_VERSION: ${OPENWEBUI_VERSION:-v0.8.10}
-        OPENWEBUI_IMAGE: ${OPENWEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.8.10@sha256:7eb132b5f14905ef4b07872428681151b6a98e024132cdc9e8124119780e2261}
+        OPENWEBUI_VERSION: ${OPENWEBUI_VERSION:-v0.8.12}
+        OPENWEBUI_IMAGE: ${OPENWEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.8.12@sha256:96737272eef841d3dd695d1bbe6e3db5262277609cbc807f9cdd62a6e7c5aa56}
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_OPENWEBUI_USER:-${POSTGRES_USER:-dropzone}}:${POSTGRES_OPENWEBUI_PASSWORD:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_OPENWEBUI_DB:-openwebui}
       - WEBUI_URL=https://${DROPZONE_HOST:-localhost}/chat
