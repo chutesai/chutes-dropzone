@@ -476,8 +476,14 @@ fi
 
 auth_headers="$(curl_edge -skI "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F")"
 if ! printf '%s' "$auth_headers" | grep -qi '^HTTP/.* 200'; then
-    echo "FAIL: /auth did not return the OpenWebUI login page" >&2
+    echo "FAIL: /auth did not return the Dropzone auth handoff page" >&2
     printf '%s\n' "$auth_headers" >&2
+    exit 1
+fi
+
+auth_html="$(curl_edge -sk "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F")"
+if [[ "$auth_html" != *'window.location.replace("/api/v1/dropzone/chutes-login")'* ]]; then
+    echo "FAIL: /auth did not render the Dropzone Chutes-login handoff" >&2
     exit 1
 fi
 
@@ -491,6 +497,19 @@ fi
 if ! printf '%s' "$oauth_login_headers" | grep -qi "redirect_uri=https%3A%2F%2F${DROPZONE_HOST}%2Foauth%2Foidc%2Fcallback"; then
     echo "FAIL: OpenWebUI is not requesting the root OAuth callback alias" >&2
     printf '%s\n' "$oauth_login_headers" >&2
+    exit 1
+fi
+
+handoff_headers="$(curl_edge -skD- "https://${DROPZONE_HOST}/api/v1/dropzone/chutes-login" -o /dev/null)"
+if ! printf '%s' "$handoff_headers" | grep -qi '^HTTP/.* 30[27]'; then
+    echo "FAIL: /api/v1/dropzone/chutes-login did not redirect into the auth flow" >&2
+    printf '%s\n' "$handoff_headers" >&2
+    exit 1
+fi
+
+if ! printf '%s' "$handoff_headers" | grep -qi "redirect_uri=https%3A%2F%2F${DROPZONE_HOST}%2Foauth%2Foidc%2Fcallback"; then
+    echo "FAIL: Dropzone auth handoff did not preserve the root OAuth callback alias" >&2
+    printf '%s\n' "$handoff_headers" >&2
     exit 1
 fi
 

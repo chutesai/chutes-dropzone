@@ -191,6 +191,12 @@ if command -v python3 >/dev/null 2>&1; then
     else
         fail "python3 -m py_compile branding/openwebui/dropzone_account.py"
     fi
+
+    if python3 -m py_compile "$PROJECT_DIR/branding/openwebui/dropzone_auth.py" >/dev/null 2>&1; then
+        pass "python3 -m py_compile branding/openwebui/dropzone_auth.py"
+    else
+        fail "python3 -m py_compile branding/openwebui/dropzone_auth.py"
+    fi
 else
     skip "python3 not installed - cannot validate OpenWebUI model-order sync helper"
 fi
@@ -578,10 +584,12 @@ fi
 
 if openwebui_enabled; then
     auth_headers="$(curl_edge -skI "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F" 2>/dev/null || true)"
-    if echo "$auth_headers" | grep -qi '^HTTP/.* 200'; then
-        pass "root OpenWebUI auth alias is served directly"
+    auth_html="$(curl_edge -sk "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F" 2>/dev/null || true)"
+    if echo "$auth_headers" | grep -qi '^HTTP/.* 200' && \
+       echo "$auth_html" | grep -q 'window.location.replace("/api/v1/dropzone/chutes-login")'; then
+        pass "root OpenWebUI auth alias hands off directly into Chutes login"
     else
-        fail "root OpenWebUI auth alias did not return a login page"
+        fail "root OpenWebUI auth alias did not return the Chutes login handoff page"
     fi
 
     openwebui_account_status="$(curl_edge -sk -o /tmp/chutes-dropzone.openwebui-account.out -w '%{http_code}' \
@@ -632,6 +640,14 @@ if openwebui_enabled; then
         pass "OpenWebUI OIDC login uses the root OAuth callback alias"
     else
         fail "OpenWebUI OIDC login is not requesting the root OAuth callback alias"
+    fi
+
+    handoff_headers="$(curl_edge -skD- "https://${DROPZONE_HOST}/api/v1/dropzone/chutes-login" -o /dev/null 2>/dev/null || true)"
+    if echo "$handoff_headers" | grep -qi '^HTTP/.* 30[27]' &&
+       echo "$handoff_headers" | grep -qi "redirect_uri=https%3A%2F%2F${DROPZONE_HOST}%2Foauth%2Foidc%2Fcallback"; then
+        pass "Dropzone auth handoff preserves the root OAuth callback alias"
+    else
+        fail "Dropzone auth handoff did not preserve the root OAuth callback alias"
     fi
 else
     skip "OpenWebUI is disabled - skipping OpenWebUI route and auth checks"
