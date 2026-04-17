@@ -355,6 +355,17 @@ else
     fail "OpenWebUI manifest branding is incomplete"
 fi
 
+if [ -s "$PROJECT_DIR/branding/openwebui/splash.png" ] && \
+   [ -s "$PROJECT_DIR/branding/openwebui/splash-dark.png" ] && \
+   grep -q 'COPY branding/openwebui/splash.png /app/build/static/splash.png' "$PROJECT_DIR/Dockerfile.local-repo" && \
+   grep -q 'COPY branding/openwebui/splash-dark.png /app/build/static/splash-dark.png' "$PROJECT_DIR/Dockerfile.local-repo" && \
+   grep -q 'COPY branding/openwebui/splash.png /app/backend/open_webui/static/splash.png' "$PROJECT_DIR/Dockerfile.local-repo" && \
+   grep -q 'COPY branding/openwebui/splash-dark.png /app/backend/open_webui/static/splash-dark.png' "$PROJECT_DIR/Dockerfile.local-repo"; then
+    pass "OpenWebUI splash screen uses Chutes-branded assets"
+else
+    fail "OpenWebUI splash screen branding is incomplete"
+fi
+
 for placeholder in __INSTALL_MODE__ __CHUTES_TRAFFIC_MODE__ __DROPZONE_HOST__; do
     if grep -q "$placeholder" "$PROJECT_DIR/landing/index.template.html"; then
         pass "landing template has $placeholder"

@@ -4,8 +4,10 @@
   var CHUTES_APP_ICON_URL = "/static/chutes-chat-icon-180.png";
   var N8N_LOGO_URL = "/static/n8n-logo.svg";
   var ACCOUNT_SUMMARY_URL = "/api/v1/dropzone/account-summary";
+  var MODELS_URL = "/api/models";
   var ACCOUNT_SUMMARY_POLL_MS = 60000;
   var ACCOUNT_SUMMARY_RETRY_MS = 5000;
+  var AUTO_MODEL_HINT_LABEL = "Models";
   var MENU_MARKERS = ["New Chat", "Search", "Notes", "Folders", "Chats"];
   var scheduled = false;
   var accountSummary = null;
@@ -13,6 +15,10 @@
   var accountSummaryPromise = null;
   var accountSummaryFailureCount = 0;
   var accountSummaryTimerId = null;
+  var autoModelDescription = "";
+  var autoModelTooltip = "";
+  var autoModelMetaLoaded = false;
+  var autoModelMetaPromise = null;
   var n8nConfirmed = false;
   var tooltipLayer = null;
   var activeTooltipTarget = null;
@@ -217,6 +223,44 @@
       });
   }
 
+  function queueAutoModelMetaFetch(force) {
+    if (autoModelMetaPromise) return;
+    if (!force && autoModelMetaLoaded) return;
+
+    autoModelMetaPromise = window
+      .fetch(MODELS_URL, {
+        cache: "no-store",
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error("models unavailable");
+        }
+        return response.json();
+      })
+      .then(function (payload) {
+        var models = (payload && payload.data) || payload || [];
+        var autoModel = Array.isArray(models)
+          ? models.find(function (model) {
+              return model && model.id === "chutes-auto";
+            })
+          : null;
+        var meta = (autoModel && ((autoModel.info && autoModel.info.meta) || autoModel.meta)) || {};
+        autoModelDescription = normalizeText(meta.description || "");
+        autoModelTooltip = normalizeText(meta.routing_tooltip || "");
+      })
+      .catch(function () {
+        autoModelDescription = "";
+        autoModelTooltip = "";
+      })
+      .finally(function () {
+        autoModelMetaLoaded = true;
+        autoModelMetaPromise = null;
+        scheduleRefresh();
+      });
+  }
+
   function formatQuota(value) {
     var number = Number(value || 0);
     if (!isFinite(number)) return "0";
@@ -402,6 +446,16 @@
     var head = createElement("div", "chutes-account-head");
     head.appendChild(buildQuotaRing(summary));
 
+    if (summary.avatarUrl) {
+      var avatar = createElement("div", "chutes-account-avatar");
+      var avatarImage = document.createElement("img");
+      avatarImage.src = summary.avatarUrl;
+      avatarImage.alt = summary.username;
+      avatarImage.className = "chutes-account-avatar-image";
+      avatar.appendChild(avatarImage);
+      head.appendChild(avatar);
+    }
+
     var copy = createElement("div", "chutes-account-copy");
     copy.appendChild(createElement("div", "chutes-account-name", summary.username || "Chutes User"));
     copy.appendChild(createElement("div", "chutes-account-tier", summary.tierLabel || "Flex"));
@@ -467,6 +521,31 @@
       '<span class="chutes-crosslink-label">Open n8n</span>' +
       "</span>";
     return link;
+  }
+
+  function ensureChutesAutoHint() {
+    queueAutoModelMetaFetch();
+    if (!autoModelMetaLoaded || !autoModelDescription || !autoModelTooltip) return;
+
+    Array.prototype.forEach.call(document.querySelectorAll("div.line-clamp-2.max-w-xl.markdown"), function (node) {
+      if (!isVisible(node)) return;
+
+      if (!node.getAttribute("data-chutes-auto-description")) {
+        if (normalizeText(node.textContent) !== autoModelDescription) return;
+        node.setAttribute("data-chutes-auto-description", "true");
+      }
+
+      var hint = node.querySelector(".chutes-auto-routing-hint");
+      if (!hint) {
+        hint = createElement("span", "chutes-auto-routing-hint", AUTO_MODEL_HINT_LABEL);
+        hint.setAttribute("role", "button");
+        hint.setAttribute("tabindex", "0");
+        node.appendChild(document.createTextNode(" "));
+        node.appendChild(hint);
+      }
+
+      applyTooltip(hint, autoModelTooltip);
+    });
   }
 
   function isCompactSidebar(sidebar) {
@@ -652,6 +731,7 @@
   function refresh() {
     scheduled = false;
     patchBranding();
+    ensureChutesAutoHint();
     ensureSidebarCard();
   }
 
@@ -668,6 +748,7 @@
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) {
       queueAccountSummaryFetch(true);
+      queueAutoModelMetaFetch(true);
     }
   });
   window.addEventListener(

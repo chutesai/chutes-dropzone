@@ -29,6 +29,7 @@ PROVIDER_LOGOS: dict[str, str] = {
 }
 
 CHUTES_LOGO_URL = "/static/chutes-logo.svg"
+AUTO_MODEL_DESCRIPTION = "Best available model."
 
 HF_AVATAR_RE = re.compile(
     r"https://cdn-avatars\.huggingface\.co/v1/production/uploads/[a-f0-9]+/[A-Za-z0-9_-]+\.\w+"
@@ -537,7 +538,7 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
     ranked = rank_models_by_capacity(set(ordered_ids))
     if ranked:
         auto_model_id = "chutes-auto"
-        is_proxy = any("e2ee-proxy" in u for u in api_urls)
+        is_proxy = os.environ.get("CHUTES_TRAFFIC_MODE", "direct").strip().lower() == "e2ee-proxy"
         if is_proxy:
             auto_base = ranked[0]
         else:
@@ -712,22 +713,44 @@ def sync_auto_model(
 
     ranked_key = hashlib.sha256(",".join(ranked).encode()).hexdigest()[:16]
     name = "Chutes Auto"
-    short_names = ", ".join(m.split("/", 1)[-1] for m in ranked)
-    description = f"Best available model, updated every 5 minutes. Routing: {short_names}"
+    description = AUTO_MODEL_DESCRIPTION
+    routing_models = [model_name.split("/", 1)[-1] for model_name in ranked]
+    routing_tooltip = f"Routing: {', '.join(routing_models)}" if routing_models else ""
 
     with get_db() as db:
         existing = Models.get_model_by_id(model_id, db)
 
-    current_key = ""
+    composite = generate_composite_logo(ranked)
+
     if existing:
         current_desc = ""
-        if existing.meta and hasattr(existing.meta, "description"):
-            current_desc = existing.meta.description or ""
-        if current_desc.endswith(f"[{ranked_key}]"):
+        current_routing_key = ""
+        current_routing_tooltip = ""
+        current_profile_image = ""
+        current_base_model_id = getattr(existing, "base_model_id", "") or ""
+
+        if existing.meta:
+            current_desc = getattr(existing.meta, "description", "") or ""
+            current_routing_key = getattr(existing.meta, "routing_key", "") or ""
+            current_routing_tooltip = getattr(existing.meta, "routing_tooltip", "") or ""
+            current_profile_image = getattr(existing.meta, "profile_image_url", "") or ""
+
+        if (
+            current_desc == description
+            and current_routing_key == ranked_key
+            and current_routing_tooltip == routing_tooltip
+            and current_base_model_id == base_model_id
+            and ((not composite) or current_profile_image == composite)
+        ):
             return False
 
-    composite = generate_composite_logo(ranked)
-    meta = {"description": f"{description} [{ranked_key}]"}
+    meta = {
+        "description": description,
+        "routing_key": ranked_key,
+        "routing_models": routing_models,
+    }
+    if routing_tooltip:
+        meta["routing_tooltip"] = routing_tooltip
     if composite:
         meta["profile_image_url"] = composite
 

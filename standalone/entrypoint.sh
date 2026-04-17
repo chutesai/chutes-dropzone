@@ -269,7 +269,7 @@ is_proxy_backed_openwebui_url() {
         https://llm.chutes.ai/v1)
             return 1
             ;;
-        http://e2ee-proxy:80/v1|https://127.0.0.1:8443/v1)
+        http://e2ee-proxy:80/v1|https://127.0.0.1:8443/v1|http://127.0.0.1/v1)
             return 0
             ;;
         "https://${DROPZONE_HOST:-}/v1"|"https://${LOCAL_HOSTNAME}/v1")

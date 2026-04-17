@@ -89,6 +89,26 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
   gap: 0.24rem;
 }
 
+[data-chutes-nav-slot="n8n"] .chutes-account-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: rgba(247, 247, 246, 0.1);
+  color: #f7f7f6;
+  font-size: 0.8rem;
+  font-weight: 700;
+  overflow: hidden;
+}
+
+[data-chutes-nav-slot="n8n"] .chutes-account-avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 [data-chutes-nav-slot="n8n"] .chutes-account-name {
   color: var(--chutes-crosslink-text);
   width: 100%;
@@ -203,6 +223,27 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
   transform: translateY(0);
 }
 
+.chutes-auto-routing-hint {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.45rem;
+  padding: 0.08rem 0.42rem;
+  border: 1px solid rgba(82, 82, 91, 0.18);
+  border-radius: 999px;
+  background: rgba(82, 82, 91, 0.06);
+  color: rgba(82, 82, 91, 0.9);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.2;
+  vertical-align: middle;
+}
+
+.dark .chutes-auto-routing-hint {
+  border-color: rgba(154, 252, 191, 0.2);
+  background: rgba(154, 252, 191, 0.08);
+  color: rgba(248, 248, 247, 0.82);
+}
+
 [data-chutes-nav-slot="n8n"] .chutes-account-link:hover,
 [data-chutes-nav-slot="n8n"] .chutes-account-link:focus-visible {
   transform: translateY(-1px);
@@ -304,6 +345,7 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
   padding: 0;
 }
 
+[data-chutes-nav-slot="n8n"].is-compact .chutes-account-avatar,
 [data-chutes-nav-slot="n8n"].is-compact .chutes-account-copy,
 [data-chutes-nav-slot="n8n"].is-compact .chutes-account-actions,
 [data-chutes-nav-slot="n8n"].is-compact .chutes-account-quota-copy {
@@ -334,4 +376,3 @@ body::after {
   opacity: 0.08;
   filter: blur(6px) brightness(1.5);
 }
-
