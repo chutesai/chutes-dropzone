@@ -376,12 +376,11 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
 
 [data-chutes-nav-slot="n8n"].is-compact .chutes-account-head {
   justify-content: center;
-  gap: 0.35rem;
+  gap: 0;
 }
 
 [data-chutes-nav-slot="n8n"].is-compact .chutes-account-avatar {
-  width: 1.45rem;
-  height: 1.45rem;
+  display: none;
 }
 
 [data-chutes-nav-slot="n8n"].is-compact .chutes-account-avatar-fallback {

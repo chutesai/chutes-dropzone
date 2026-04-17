@@ -4,12 +4,14 @@
   var CHUTES_LOGO_URL = "/static/chutes-logo.svg";
   var CHUTES_APP_ICON_URL = "/static/chutes-chat-icon-180.png";
   var N8N_LOGO_URL = "/static/n8n-logo.svg";
+  var AUTH_HANDOFF_URL = "/api/v1/dropzone/chutes-login";
   var ACCOUNT_SUMMARY_URL = "/api/v1/dropzone/account-summary";
   var MODELS_URL = "/api/models";
   var ACCOUNT_SUMMARY_POLL_MS = 60000;
   var ACCOUNT_SUMMARY_RETRY_MS = 5000;
   var AUTO_MODEL_HINT_LABEL = "Models";
   var MENU_MARKERS = ["New Chat", "Search", "Notes", "Folders", "Chats"];
+  var AUTH_AUTO_REDIRECT_KEY = "chutesAuthAutoRedirectAt";
   var scheduled = false;
   var accountSummary = null;
   var accountSummaryLoaded = false;
@@ -201,6 +203,105 @@
       img.setAttribute("alt", "Chutes");
       img.classList.add("chutes-brand-icon");
     });
+  }
+
+  function isAuthFlowPath(pathname) {
+    return /^\/(?:chat\/)?(?:auth\/?|oauth\/oidc\/callback\/?|api\/v1\/dropzone\/chutes-login\/?)$/i.test(pathname || "");
+  }
+
+  function findAuthHeading() {
+    return Array.prototype.slice
+      .call(document.querySelectorAll("h1, h2, [role='heading']"))
+      .find(function (node) {
+        return /sign in to chutes chat/i.test(normalizeText(node.textContent)) && isVisible(node);
+      });
+  }
+
+  function findAuthCta() {
+    return Array.prototype.slice
+      .call(document.querySelectorAll("a, button"))
+      .find(function (node) {
+        return /continue with chutes/i.test(normalizeText(node.textContent)) && isVisible(node);
+      });
+  }
+
+  function persistAuthRedirectPath() {
+    var redirectPath = "";
+
+    try {
+      redirectPath = new URL(window.location.href).searchParams.get("redirect") || "";
+    } catch (error) {
+      redirectPath = "";
+    }
+
+    if (!redirectPath) {
+      var currentPath =
+        window.location.pathname +
+        (window.location.search || "") +
+        (window.location.hash || "");
+      if (!isAuthFlowPath(window.location.pathname)) {
+        redirectPath = currentPath;
+      }
+    }
+
+    if (!redirectPath) return;
+
+    try {
+      window.localStorage.setItem("redirectPath", redirectPath);
+    } catch (error) {
+      console.warn("Unable to persist redirectPath", error);
+    }
+  }
+
+  function shouldAutoRedirectAuthScreen() {
+    var heading = findAuthHeading();
+    var cta = findAuthCta();
+    if (!heading || !cta) return false;
+
+    try {
+      if (new URL(window.location.href).searchParams.get("error")) {
+        return false;
+      }
+    } catch (error) {
+      return false;
+    }
+
+    if (isAuthFlowPath(window.location.pathname) && /callback/i.test(window.location.pathname)) {
+      return false;
+    }
+
+    try {
+      var lastRedirectAt = Number(window.sessionStorage.getItem(AUTH_AUTO_REDIRECT_KEY) || "0");
+      if (Date.now() - lastRedirectAt < 4000) {
+        return false;
+      }
+    } catch (error) {
+      return true;
+    }
+
+    return true;
+  }
+
+  function ensureAuthHandoff() {
+    var cta = findAuthCta();
+    if (cta) {
+      var clickable = cta.closest ? cta.closest("a, button") : cta;
+      if (clickable && clickable.tagName === "A" && clickable.getAttribute("href") !== AUTH_HANDOFF_URL) {
+        clickable.setAttribute("href", AUTH_HANDOFF_URL);
+      }
+    }
+
+    if (!shouldAutoRedirectAuthScreen()) return;
+
+    persistAuthRedirectPath();
+
+    try {
+      window.sessionStorage.setItem(AUTH_AUTO_REDIRECT_KEY, String(Date.now()));
+    } catch (error) {
+      console.warn("Unable to persist auth redirect guard", error);
+    }
+
+    window.location.replace(AUTH_HANDOFF_URL);
   }
 
   function scheduleAccountSummaryPoll(delay) {
@@ -811,6 +912,7 @@
   function refresh() {
     scheduled = false;
     patchBranding();
+    ensureAuthHandoff();
     ensureChutesAutoHint();
     ensureSidebarCard();
   }

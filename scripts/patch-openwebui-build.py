@@ -6,17 +6,22 @@ import sys
 
 def patch_text(text: str, subpath: str) -> str:
     replacements = (
+        (
+            "logo.src = isDarkMode ? '/static/splash-dark.svg' : '/static/splash.svg';",
+            f"logo.src = isDarkMode ? '{subpath}/static/splash-dark.svg' : '{subpath}/static/splash.svg';",
+        ),
+        (
+            "logo.src = isDarkMode ? '/static/splash-dark.png' : '/static/splash.png';",
+            f"logo.src = isDarkMode ? '{subpath}/static/splash-dark.svg' : '{subpath}/static/splash.svg';",
+        ),
+        ('src="/static/splash.png"', f'src="{subpath}/static/splash.svg"'),
+        ('src="/static/splash.svg"', f'src="{subpath}/static/splash.svg"'),
         ('href="/static/', f'href="{subpath}/static/'),
         ('src="/static/', f'src="{subpath}/static/'),
         ('href="/manifest.json"', f'href="{subpath}/manifest.json"'),
         ('href="/_app/', f'href="{subpath}/_app/'),
         ('import("/_app/', f'import("{subpath}/_app/'),
         ('base: ""', f'base: "{subpath}"'),
-        (
-            "logo.src = isDarkMode ? '/static/splash-dark.png' : '/static/splash.png';",
-            f"logo.src = isDarkMode ? '{subpath}/static/splash-dark.png' : '{subpath}/static/splash.png';",
-        ),
-        ('src="/static/splash.png"', f'src="{subpath}/static/splash.png"'),
     )
 
     for old, new in replacements:

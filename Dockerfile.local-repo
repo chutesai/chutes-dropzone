@@ -143,6 +143,8 @@ COPY branding/openwebui/loader.js /app/build/static/loader.js
 COPY branding/openwebui/chutes-logo.svg /app/build/static/chutes-logo.svg
 COPY branding/openwebui/splash.png /app/build/static/splash.png
 COPY branding/openwebui/splash-dark.png /app/build/static/splash-dark.png
+COPY branding/openwebui/splash.svg /app/build/static/splash.svg
+COPY branding/openwebui/splash-dark.svg /app/build/static/splash-dark.svg
 COPY branding/openwebui/chutes-chat-icon-192.png /app/build/static/favicon.png
 COPY branding/openwebui/n8n-logo.svg /app/build/static/n8n-logo.svg
 COPY branding/openwebui/chutas2.webp /app/build/static/chutas2.webp
@@ -158,6 +160,8 @@ COPY branding/openwebui/loader.js /app/backend/open_webui/static/loader.js
 COPY branding/openwebui/chutes-logo.svg /app/backend/open_webui/static/chutes-logo.svg
 COPY branding/openwebui/splash.png /app/backend/open_webui/static/splash.png
 COPY branding/openwebui/splash-dark.png /app/backend/open_webui/static/splash-dark.png
+COPY branding/openwebui/splash.svg /app/backend/open_webui/static/splash.svg
+COPY branding/openwebui/splash-dark.svg /app/backend/open_webui/static/splash-dark.svg
 COPY branding/openwebui/chutes-chat-icon-192.png /app/backend/open_webui/static/favicon.png
 COPY branding/openwebui/n8n-logo.svg /app/backend/open_webui/static/n8n-logo.svg
 COPY branding/openwebui/chutas2.webp /app/backend/open_webui/static/chutas2.webp
@@ -324,6 +328,8 @@ COPY branding/openwebui/loader.js /app/build/static/loader.js
 COPY branding/openwebui/chutes-logo.svg /app/build/static/chutes-logo.svg
 COPY branding/openwebui/splash.png /app/build/static/splash.png
 COPY branding/openwebui/splash-dark.png /app/build/static/splash-dark.png
+COPY branding/openwebui/splash.svg /app/build/static/splash.svg
+COPY branding/openwebui/splash-dark.svg /app/build/static/splash-dark.svg
 COPY branding/openwebui/chutes-chat-icon-192.png /app/build/static/favicon.png
 COPY branding/openwebui/n8n-logo.svg /app/build/static/n8n-logo.svg
 COPY branding/openwebui/chutas2.webp /app/build/static/chutas2.webp
@@ -339,6 +345,8 @@ COPY branding/openwebui/loader.js /app/backend/open_webui/static/loader.js
 COPY branding/openwebui/chutes-logo.svg /app/backend/open_webui/static/chutes-logo.svg
 COPY branding/openwebui/splash.png /app/backend/open_webui/static/splash.png
 COPY branding/openwebui/splash-dark.png /app/backend/open_webui/static/splash-dark.png
+COPY branding/openwebui/splash.svg /app/backend/open_webui/static/splash.svg
+COPY branding/openwebui/splash-dark.svg /app/backend/open_webui/static/splash-dark.svg
 COPY branding/openwebui/chutes-chat-icon-192.png /app/backend/open_webui/static/favicon.png
 COPY branding/openwebui/n8n-logo.svg /app/backend/open_webui/static/n8n-logo.svg
 COPY branding/openwebui/chutas2.webp /app/backend/open_webui/static/chutas2.webp

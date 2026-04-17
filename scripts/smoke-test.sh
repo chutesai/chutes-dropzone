@@ -365,12 +365,13 @@ else
     fail "OpenWebUI manifest branding is incomplete"
 fi
 
-if [ -s "$PROJECT_DIR/branding/openwebui/splash.png" ] && \
-   [ -s "$PROJECT_DIR/branding/openwebui/splash-dark.png" ] && \
-   grep -q 'COPY branding/openwebui/splash.png /app/build/static/splash.png' "$PROJECT_DIR/Dockerfile.local-repo" && \
-   grep -q 'COPY branding/openwebui/splash-dark.png /app/build/static/splash-dark.png' "$PROJECT_DIR/Dockerfile.local-repo" && \
-   grep -q 'COPY branding/openwebui/splash.png /app/backend/open_webui/static/splash.png' "$PROJECT_DIR/Dockerfile.local-repo" && \
-   grep -q 'COPY branding/openwebui/splash-dark.png /app/backend/open_webui/static/splash-dark.png' "$PROJECT_DIR/Dockerfile.local-repo"; then
+if [ -s "$PROJECT_DIR/branding/openwebui/splash.svg" ] && \
+   [ -s "$PROJECT_DIR/branding/openwebui/splash-dark.svg" ] && \
+   grep -q 'splash-dark.svg' "$PROJECT_DIR/scripts/patch-openwebui-build.py" && \
+   grep -q 'COPY branding/openwebui/splash.svg /app/build/static/splash.svg' "$PROJECT_DIR/Dockerfile.local-repo" && \
+   grep -q 'COPY branding/openwebui/splash-dark.svg /app/build/static/splash-dark.svg' "$PROJECT_DIR/Dockerfile.local-repo" && \
+   grep -q 'COPY branding/openwebui/splash.svg /app/backend/open_webui/static/splash.svg' "$PROJECT_DIR/Dockerfile.local-repo" && \
+   grep -q 'COPY branding/openwebui/splash-dark.svg /app/backend/open_webui/static/splash-dark.svg' "$PROJECT_DIR/Dockerfile.local-repo"; then
     pass "OpenWebUI splash screen uses Chutes-branded assets"
 else
     fail "OpenWebUI splash screen branding is incomplete"
