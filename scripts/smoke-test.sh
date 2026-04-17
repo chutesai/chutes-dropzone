@@ -201,6 +201,14 @@ else
     skip "python3 not installed - cannot validate OpenWebUI model-order sync helper"
 fi
 
+if grep -q 'ENABLE_OLLAMA_API=false' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -q 'ollama/api/version' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -q 'connection_type = api_config.get("connection_type")' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
+    pass "OpenWebUI keeps Ollama disabled and Chutes models ungrouped"
+else
+    fail "OpenWebUI Ollama/model-grouping protections are missing"
+fi
+
 if command -v jq >/dev/null 2>&1; then
     for file in "$PROJECT_DIR/workflows/"*.json; do
         if jq empty "$file" >/dev/null 2>&1; then
@@ -790,6 +798,7 @@ if openwebui_enabled && compose exec -T openwebui sh -lc '
     test "${ENABLE_OAUTH_EMAIL_FALLBACK:-}" = "true" &&
     test "${ENABLE_LOGIN_FORM:-}" = "false" &&
     test "${ENABLE_PASSWORD_AUTH:-}" = "false" &&
+    test "${ENABLE_OLLAMA_API:-}" = "false" &&
     test "${MODELS_CACHE_TTL:-}" = "300"
 ' >/dev/null 2>&1; then
     pass "OpenWebUI env is pinned to /chat and SSO-only mode"

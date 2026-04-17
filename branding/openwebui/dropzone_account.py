@@ -20,6 +20,7 @@ N8N_ENABLED = os.environ.get("DROPZONE_ENABLE_N8N", "true").lower() not in ("fal
 ADMIN_PERMISSION_BITMASK = 19
 FREE_PERMISSION_BITMASK = 0
 DEFAULT_TIMEOUT = 15
+PLACEHOLDER_AVATAR_URLS = {"/user.png", "/user.svg", "user.png", "user.svg"}
 
 
 def _coerce_float(value: Any) -> float:
@@ -95,11 +96,63 @@ def _get_tier_label(tier: str, permissions_bitmask: int) -> str:
     }.get(tier, "Flex")
 
 
-def _normalize_avatar_url(account: dict[str, Any]) -> str | None:
-    for key in ("logo", "avatar_url", "profile_image_url"):
-        value = account.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
+def _clean_avatar_url(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+
+    candidate = value.strip()
+    if not candidate or candidate in PLACEHOLDER_AVATAR_URLS:
+        return None
+    return candidate
+
+
+def _extract_avatar_url(payload: Any) -> str | None:
+    if isinstance(payload, str):
+        return _clean_avatar_url(payload)
+
+    if not isinstance(payload, dict):
+        return None
+
+    for key in (
+        "logo",
+        "logo_url",
+        "avatarUrl",
+        "avatar_url",
+        "profile_image_url",
+        "picture",
+        "image",
+        "photo",
+    ):
+        avatar = _clean_avatar_url(payload.get(key))
+        if avatar:
+            return avatar
+
+    for key in ("user", "profile", "userinfo"):
+        avatar = _extract_avatar_url(payload.get(key))
+        if avatar:
+            return avatar
+
+    return None
+
+
+def _normalize_avatar_url(
+    account: dict[str, Any],
+    user: UserModel,
+    userinfo: dict[str, Any] | None = None,
+    oauth_session: OAuthSessionModel | None = None,
+) -> str | None:
+    token_payload = getattr(oauth_session, "token", None) if oauth_session else None
+
+    for source in (
+        account,
+        userinfo or {},
+        token_payload if isinstance(token_payload, dict) else {},
+        {"profile_image_url": getattr(user, "profile_image_url", None)},
+    ):
+        avatar = _extract_avatar_url(source)
+        if avatar:
+            return avatar
+
     return None
 
 
@@ -135,6 +188,13 @@ def _request_json(path: str, access_token: str) -> Any:
         )
 
     return response.json()
+
+
+def _request_optional_json(path: str, access_token: str) -> Any:
+    try:
+        return _request_json(path, access_token)
+    except (PermissionError, HTTPException, ValueError, requests.RequestException):
+        return {}
 
 
 def _refresh_oauth_session(
@@ -214,7 +274,7 @@ def _current_oauth_session(user_id: str, db: Session) -> OAuthSessionModel | Non
 def _fetch_account_bundle(
     oauth_session: OAuthSessionModel,
     db: Session,
-) -> tuple[OAuthSessionModel, dict[str, Any], Any, Any]:
+) -> tuple[OAuthSessionModel, dict[str, Any], Any, Any, dict[str, Any]]:
     token = oauth_session.token.get("access_token")
     if not token:
         oauth_session = _refresh_oauth_session(oauth_session, db=db)
@@ -224,14 +284,16 @@ def _fetch_account_bundle(
         account = _request_json("/users/me", token)
         quotas = _request_json("/users/me/quotas", token)
         live_quota = _request_json("/users/me/quota_usage/h", token)
-        return oauth_session, account, quotas, live_quota
+        userinfo = _request_optional_json("/idp/userinfo", token)
+        return oauth_session, account, quotas, live_quota, userinfo
     except PermissionError:
         oauth_session = _refresh_oauth_session(oauth_session, db=db)
         refreshed_token = oauth_session.token.get("access_token")
         account = _request_json("/users/me", refreshed_token)
         quotas = _request_json("/users/me/quotas", refreshed_token)
         live_quota = _request_json("/users/me/quota_usage/h", refreshed_token)
-        return oauth_session, account, quotas, live_quota
+        userinfo = _request_optional_json("/idp/userinfo", refreshed_token)
+        return oauth_session, account, quotas, live_quota, userinfo
 
 
 def get_chutes_account_summary(user: UserModel, db: Session) -> dict[str, Any]:
@@ -242,7 +304,9 @@ def get_chutes_account_summary(user: UserModel, db: Session) -> dict[str, Any]:
             detail="No Chutes OAuth session is linked to this OpenWebUI user",
         )
 
-    _, account, quotas, live_quota = _fetch_account_bundle(oauth_session, db=db)
+    oauth_session, account, quotas, live_quota, userinfo = _fetch_account_bundle(
+        oauth_session, db=db
+    )
 
     permissions_bitmask = int(account.get("permissions_bitmask") or 0)
     daily_quota = _extract_daily_quota(quotas)
@@ -257,7 +321,7 @@ def get_chutes_account_summary(user: UserModel, db: Session) -> dict[str, Any]:
 
     return {
         "username": _username_for(account, user),
-        "avatarUrl": _normalize_avatar_url(account),
+        "avatarUrl": _normalize_avatar_url(account, user, userinfo, oauth_session),
         "tier": tier,
         "tierLabel": _get_tier_label(tier, permissions_bitmask),
         "balanceUsd": round(_coerce_float(account.get("balance")), 2),

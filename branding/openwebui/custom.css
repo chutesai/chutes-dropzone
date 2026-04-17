@@ -90,23 +90,46 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
 }
 
 [data-chutes-nav-slot="n8n"] .chutes-account-avatar {
+  position: relative;
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   width: 2rem;
   height: 2rem;
   border-radius: 999px;
-  background: rgba(247, 247, 246, 0.1);
+  border: 1px solid rgba(247, 247, 246, 0.18);
+  background: linear-gradient(180deg, rgba(247, 247, 246, 0.16), rgba(247, 247, 246, 0.08));
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
   color: #f7f7f6;
   font-size: 0.8rem;
   font-weight: 700;
   overflow: hidden;
 }
 
+[data-chutes-nav-slot="n8n"] .chutes-account-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 0.62rem;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
 [data-chutes-nav-slot="n8n"] .chutes-account-avatar-image {
+  position: absolute;
+  inset: 0;
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
+}
+
+[data-chutes-nav-slot="n8n"] .chutes-account-avatar.has-image .chutes-account-avatar-fallback {
+  display: none;
 }
 
 [data-chutes-nav-slot="n8n"] .chutes-account-name {
@@ -345,7 +368,6 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
   padding: 0;
 }
 
-[data-chutes-nav-slot="n8n"].is-compact .chutes-account-avatar,
 [data-chutes-nav-slot="n8n"].is-compact .chutes-account-copy,
 [data-chutes-nav-slot="n8n"].is-compact .chutes-account-actions,
 [data-chutes-nav-slot="n8n"].is-compact .chutes-account-quota-copy {
@@ -354,6 +376,16 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
 
 [data-chutes-nav-slot="n8n"].is-compact .chutes-account-head {
   justify-content: center;
+  gap: 0.35rem;
+}
+
+[data-chutes-nav-slot="n8n"].is-compact .chutes-account-avatar {
+  width: 1.45rem;
+  height: 1.45rem;
+}
+
+[data-chutes-nav-slot="n8n"].is-compact .chutes-account-avatar-fallback {
+  font-size: 0.5rem;
 }
 
 [data-chutes-nav-slot="n8n"].is-compact .chutes-account-ring,

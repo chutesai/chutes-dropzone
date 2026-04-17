@@ -1,5 +1,6 @@
 (function () {
   var CHAT_NAME = "Chutes Chat";
+  var CHUTES_FAVICON_URL = "/static/favicon.png";
   var CHUTES_LOGO_URL = "/static/chutes-logo.svg";
   var CHUTES_APP_ICON_URL = "/static/chutes-chat-icon-180.png";
   var N8N_LOGO_URL = "/static/n8n-logo.svg";
@@ -22,6 +23,46 @@
   var n8nConfirmed = false;
   var tooltipLayer = null;
   var activeTooltipTarget = null;
+
+  function isOllamaVersionRequest(input) {
+    var url = typeof input === "string" ? input : input && input.url;
+    if (!url) return false;
+
+    try {
+      var parsed = new URL(url, window.location.origin);
+      return /^\/ollama\/api\/version(?:\/[^/]+)?\/?$/.test(parsed.pathname);
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function installOllamaFetchGuard() {
+    if (!window.fetch || window.fetch.__chutesOllamaVersionGuard) return;
+
+    var nativeFetch = window.fetch.bind(window);
+
+    function guardedFetch(input, init) {
+      if (isOllamaVersionRequest(input)) {
+        if (!window.Response) {
+          return nativeFetch(input, init);
+        }
+
+        return Promise.resolve(
+          new window.Response(JSON.stringify({ version: "" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+
+      return nativeFetch(input, init);
+    }
+
+    guardedFetch.__chutesOllamaVersionGuard = true;
+    window.fetch = guardedFetch;
+  }
+
+  installOllamaFetchGuard();
 
 
   function isVisible(node) {
@@ -76,8 +117,9 @@
       if (!link.getAttribute("rel")) {
         link.setAttribute("rel", "icon");
       }
-      link.setAttribute("href", CHUTES_LOGO_URL);
-      link.setAttribute("type", "image/svg+xml");
+      link.setAttribute("href", CHUTES_FAVICON_URL);
+      link.setAttribute("type", "image/png");
+      link.setAttribute("sizes", "192x192");
     });
   }
 
@@ -439,22 +481,60 @@
     return link;
   }
 
+  function getAvatarInitials(summary) {
+    var name = String((summary && summary.username) || "Chutes User").replace(/\s+/g, " ").trim();
+    if (!name) return "CU";
+
+    var parts = name.split(" ").filter(Boolean);
+    if (parts.length === 1) {
+      return parts[0].slice(0, 2).toUpperCase();
+    }
+
+    return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+  }
+
+  function buildAccountAvatar(summary) {
+    var avatar = createElement("div", "chutes-account-avatar");
+    var fallback = createElement("span", "chutes-account-avatar-fallback", getAvatarInitials(summary));
+    avatar.appendChild(fallback);
+
+    var avatarUrl = String((summary && summary.avatarUrl) || "").trim();
+    if (!avatarUrl) {
+      avatar.classList.add("is-fallback");
+      return avatar;
+    }
+
+    avatar.classList.add("is-loading");
+
+    var avatarImage = document.createElement("img");
+    avatarImage.alt = (summary && summary.username) || "Chutes User";
+    avatarImage.className = "chutes-account-avatar-image";
+    avatarImage.decoding = "async";
+    avatarImage.referrerPolicy = "no-referrer";
+    avatarImage.setAttribute("draggable", "false");
+    avatarImage.addEventListener("load", function () {
+      avatar.classList.remove("is-loading");
+      avatar.classList.remove("is-fallback");
+      avatar.classList.add("has-image");
+    });
+    avatarImage.addEventListener("error", function () {
+      avatar.classList.remove("is-loading");
+      avatar.classList.remove("has-image");
+      avatar.classList.add("is-fallback");
+      avatarImage.remove();
+    });
+    avatarImage.src = avatarUrl;
+    avatar.appendChild(avatarImage);
+    return avatar;
+  }
+
   function buildSummaryCard(summary) {
     var wrapper = createElement("div", "chutes-account-card");
     wrapper.setAttribute("data-chutes-account-card", "true");
 
     var head = createElement("div", "chutes-account-head");
     head.appendChild(buildQuotaRing(summary));
-
-    if (summary.avatarUrl) {
-      var avatar = createElement("div", "chutes-account-avatar");
-      var avatarImage = document.createElement("img");
-      avatarImage.src = summary.avatarUrl;
-      avatarImage.alt = summary.username;
-      avatarImage.className = "chutes-account-avatar-image";
-      avatar.appendChild(avatarImage);
-      head.appendChild(avatar);
-    }
+    head.appendChild(buildAccountAvatar(summary));
 
     var copy = createElement("div", "chutes-account-copy");
     copy.appendChild(createElement("div", "chutes-account-name", summary.username || "Chutes User"));

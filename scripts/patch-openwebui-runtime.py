@@ -15,15 +15,31 @@ def replace_one_of(text: str, olds: list[str], new: str, label: str) -> str:
     raise SystemExit(f"missing expected {label} block")
 
 
+def replace_one_of_or_keep(text: str, olds: list[str], new: str, label: str) -> str:
+    if new in text:
+        return text
+    return replace_one_of(text, olds, new, label)
+
+
+def insert_after_one_of(text: str, anchors: list[str], addition: str, label: str) -> str:
+    if addition in text:
+        return text
+    for anchor in anchors:
+        if anchor in text:
+            return text.replace(anchor, anchor + addition, 1)
+    raise SystemExit(f"missing expected {label} anchor")
+
+
 def patch_env(path: Path) -> None:
     original = path.read_text(encoding="utf-8")
-    patched = replace_one_of(
+    patched = replace_one_of_or_keep(
         original,
         [
             'WEBUI_NAME = os.environ.get("WEBUI_NAME", "Open WebUI")\nif WEBUI_NAME != "Open WebUI":\n    WEBUI_NAME += " (Open WebUI)"\n\nWEBUI_FAVICON_URL = "https://openwebui.com/favicon.png"\n',
             "WEBUI_NAME = os.environ.get('WEBUI_NAME', 'Open WebUI')\nif WEBUI_NAME != 'Open WebUI':\n    WEBUI_NAME += ' (Open WebUI)'\n\nWEBUI_FAVICON_URL = 'https://openwebui.com/favicon.png'\n",
+            'WEBUI_NAME = os.environ.get("WEBUI_NAME", "Open WebUI")\n\nWEBUI_FAVICON_URL = os.environ.get("WEBUI_FAVICON_URL", "/static/chutes-logo.svg")\n',
         ],
-        'WEBUI_NAME = os.environ.get("WEBUI_NAME", "Open WebUI")\n\nWEBUI_FAVICON_URL = os.environ.get("WEBUI_FAVICON_URL", "/static/chutes-logo.svg")\n',
+        'WEBUI_NAME = os.environ.get("WEBUI_NAME", "Open WebUI")\n\nWEBUI_FAVICON_URL = os.environ.get("WEBUI_FAVICON_URL", "/static/favicon.png")\n',
         "WEBUI_NAME suffix block",
     )
     path.write_text(patched, encoding="utf-8")
@@ -31,29 +47,58 @@ def patch_env(path: Path) -> None:
 
 def patch_main(path: Path) -> None:
     original = path.read_text(encoding="utf-8")
-    patched = replace_once(
+    patched = insert_after_one_of(
         original,
-        "from open_webui.utils.redis import get_sentinels_from_env\n",
-        "from open_webui.utils.redis import get_sentinels_from_env\nfrom open_webui.dropzone_account import get_chutes_account_summary\nfrom open_webui.dropzone_audio import router as dropzone_audio_router\nfrom open_webui.dropzone_auth import router as dropzone_auth_router\n",
+        ["from open_webui.utils.redis import get_sentinels_from_env\n"],
+        "from open_webui.dropzone_account import get_chutes_account_summary\n",
         "dropzone account import",
     )
-    patched = replace_one_of(
+    patched = insert_after_one_of(
         patched,
         [
-            '@app.get("/manifest.json")\nasync def get_manifest_json():\n    if app.state.EXTERNAL_PWA_MANIFEST_URL:\n        return requests.get(app.state.EXTERNAL_PWA_MANIFEST_URL).json()\n    else:\n        return {\n            "name": app.state.WEBUI_NAME,\n            "short_name": app.state.WEBUI_NAME,\n            "description": f"{app.state.WEBUI_NAME} is an open, extensible, user-friendly interface for AI that adapts to your workflow.",\n            "start_url": "/",\n            "display": "standalone",\n            "background_color": "#343541",\n            "icons": [\n                {\n                    "src": "/static/logo.png",\n                    "type": "image/png",\n                    "sizes": "500x500",\n                    "purpose": "any",\n                },\n                {\n                    "src": "/static/logo.png",\n                    "type": "image/png",\n                    "sizes": "500x500",\n                    "purpose": "maskable",\n                },\n            ],\n            "share_target": {\n                "action": "/",\n                "method": "GET",\n                "params": {"text": "shared"},\n            },\n        }\n',
-            "@app.get('/manifest.json')\nasync def get_manifest_json():\n    if app.state.EXTERNAL_PWA_MANIFEST_URL:\n        return requests.get(app.state.EXTERNAL_PWA_MANIFEST_URL).json()\n    else:\n        return {\n            'name': app.state.WEBUI_NAME,\n            'short_name': app.state.WEBUI_NAME,\n            'description': f'{app.state.WEBUI_NAME} is an open, extensible, user-friendly interface for AI that adapts to your workflow.',\n            'start_url': '/',\n            'display': 'standalone',\n            'background_color': '#343541',\n            'icons': [\n                {\n                    'src': '/static/logo.png',\n                    'type': 'image/png',\n                    'sizes': '500x500',\n                    'purpose': 'any',\n                },\n                {\n                    'src': '/static/logo.png',\n                    'type': 'image/png',\n                    'sizes': '500x500',\n                    'purpose': 'maskable',\n                },\n            ],\n            'share_target': {\n                'action': '/',\n                'method': 'GET',\n                'params': {'text': 'shared'},\n            },\n        }\n",
+            "from open_webui.dropzone_account import get_chutes_account_summary\n",
+            "from open_webui.utils.redis import get_sentinels_from_env\n",
         ],
-        '@app.get("/api/v1/dropzone/account-summary")\nasync def get_dropzone_account_summary(\n    user=Depends(get_verified_user), db: Session = Depends(get_session)\n):\n    return get_chutes_account_summary(user, db)\n\n\napp.include_router(dropzone_audio_router)\napp.include_router(dropzone_auth_router)\n\n\n@app.get("/manifest.json")\nasync def get_manifest_json():\n    if app.state.EXTERNAL_PWA_MANIFEST_URL:\n        return requests.get(app.state.EXTERNAL_PWA_MANIFEST_URL).json()\n    else:\n        return {\n            "name": app.state.WEBUI_NAME,\n            "short_name": app.state.WEBUI_NAME,\n            "description": "Chutes Chat is a private AI workspace powered by Chutes.",\n            "start_url": "/chat/",\n            "scope": "/chat/",\n            "display": "standalone",\n            "theme_color": "#171717",\n            "background_color": "#171717",\n            "icons": [\n                {\n                    "src": "/chat/static/chutes-chat-icon-192.png",\n                    "type": "image/png",\n                    "sizes": "192x192",\n                    "purpose": "any maskable",\n                },\n                {\n                    "src": "/chat/static/chutes-chat-icon-512.png",\n                    "type": "image/png",\n                    "sizes": "512x512",\n                    "purpose": "any maskable",\n                },\n            ],\n            "share_target": {\n                "action": "/chat/",\n                "method": "GET",\n                "params": {"text": "shared"},\n            },\n        }\n',
-        "manifest route block",
+        "from open_webui.dropzone_audio import router as dropzone_audio_router\n",
+        "dropzone audio import",
+    )
+    patched = insert_after_one_of(
+        patched,
+        [
+            "from open_webui.dropzone_audio import router as dropzone_audio_router\n",
+            "from open_webui.dropzone_account import get_chutes_account_summary\n",
+            "from open_webui.utils.redis import get_sentinels_from_env\n",
+        ],
+        "from open_webui.dropzone_auth import router as dropzone_auth_router\n",
+        "dropzone auth import",
+    )
+    if '@app.get("/api/v1/dropzone/account-summary")' not in patched:
+        patched = replace_one_of(
+            patched,
+            [
+                '@app.get("/manifest.json")\nasync def get_manifest_json():\n    if app.state.EXTERNAL_PWA_MANIFEST_URL:\n        return requests.get(app.state.EXTERNAL_PWA_MANIFEST_URL).json()\n    else:\n        return {\n            "name": app.state.WEBUI_NAME,\n            "short_name": app.state.WEBUI_NAME,\n            "description": f"{app.state.WEBUI_NAME} is an open, extensible, user-friendly interface for AI that adapts to your workflow.",\n            "start_url": "/",\n            "display": "standalone",\n            "background_color": "#343541",\n            "icons": [\n                {\n                    "src": "/static/logo.png",\n                    "type": "image/png",\n                    "sizes": "500x500",\n                    "purpose": "any",\n                },\n                {\n                    "src": "/static/logo.png",\n                    "type": "image/png",\n                    "sizes": "500x500",\n                    "purpose": "maskable",\n                },\n            ],\n            "share_target": {\n                "action": "/",\n                "method": "GET",\n                "params": {"text": "shared"},\n            },\n        }\n',
+                "@app.get('/manifest.json')\nasync def get_manifest_json():\n    if app.state.EXTERNAL_PWA_MANIFEST_URL:\n        return requests.get(app.state.EXTERNAL_PWA_MANIFEST_URL).json()\n    else:\n        return {\n            'name': app.state.WEBUI_NAME,\n            'short_name': app.state.WEBUI_NAME,\n            'description': f'{app.state.WEBUI_NAME} is an open, extensible, user-friendly interface for AI that adapts to your workflow.',\n            'start_url': '/',\n            'display': 'standalone',\n            'background_color': '#343541',\n            'icons': [\n                {\n                    'src': '/static/logo.png',\n                    'type': 'image/png',\n                    'sizes': '500x500',\n                    'purpose': 'any',\n                },\n                {\n                    'src': '/static/logo.png',\n                    'type': 'image/png',\n                    'sizes': '500x500',\n                    'purpose': 'maskable',\n                },\n            ],\n            'share_target': {\n                'action': '/',\n                'method': 'GET',\n                'params': {'text': 'shared'},\n            },\n        }\n",
+            ],
+            '@app.get("/api/v1/dropzone/account-summary")\nasync def get_dropzone_account_summary(\n    user=Depends(get_verified_user), db: Session = Depends(get_session)\n):\n    return get_chutes_account_summary(user, db)\n\n\napp.include_router(dropzone_audio_router)\napp.include_router(dropzone_auth_router)\n\n\n@app.get("/manifest.json")\nasync def get_manifest_json():\n    if app.state.EXTERNAL_PWA_MANIFEST_URL:\n        return requests.get(app.state.EXTERNAL_PWA_MANIFEST_URL).json()\n    else:\n        return {\n            "name": app.state.WEBUI_NAME,\n            "short_name": app.state.WEBUI_NAME,\n            "description": "Chutes Chat is a private AI workspace powered by Chutes.",\n            "start_url": "/chat/",\n            "scope": "/chat/",\n            "display": "standalone",\n            "theme_color": "#171717",\n            "background_color": "#171717",\n            "icons": [\n                {\n                    "src": "/chat/static/chutes-chat-icon-192.png",\n                    "type": "image/png",\n                    "sizes": "192x192",\n                    "purpose": "any maskable",\n                },\n                {\n                    "src": "/chat/static/chutes-chat-icon-512.png",\n                    "type": "image/png",\n                    "sizes": "512x512",\n                    "purpose": "any maskable",\n                },\n            ],\n            "share_target": {\n                "action": "/chat/",\n                "method": "GET",\n                "params": {"text": "shared"},\n            },\n        }\n',
+            "manifest route block",
+        )
+    patched = insert_after_one_of(
+        patched,
+        [
+            "app.include_router(dropzone_audio_router)\n",
+        ],
+        "app.include_router(dropzone_auth_router)\n",
+        "dropzone auth router include",
     )
     # Allow comma-delimited base_model_id (Chutes multi-model routing) to bypass
     # the MODELS lookup — the first model in the list determines the backend.
-    patched = replace_once(
-        patched,
-        "            if base_model_id not in request.app.state.MODELS:\n",
-        "            if \",\" not in base_model_id and base_model_id not in request.app.state.MODELS:\n",
-        "multi-model routing bypass",
-    )
+    if '            if "," not in base_model_id and base_model_id not in request.app.state.MODELS:\n' not in patched:
+        patched = replace_once(
+            patched,
+            "            if base_model_id not in request.app.state.MODELS:\n",
+            '            if "," not in base_model_id and base_model_id not in request.app.state.MODELS:\n',
+            "multi-model routing bypass",
+        )
     path.write_text(patched, encoding="utf-8")
 
 
@@ -61,7 +106,7 @@ def patch_openai_router(path: Path) -> None:
     original = path.read_text(encoding="utf-8")
     # When model_id is a comma-delimited routing string, use the first model
     # for backend resolution (urlIdx) while keeping the full string in the payload.
-    patched = replace_one_of(
+    patched = replace_one_of_or_keep(
         original,
         [
             "    model = models.get(model_id)\n\n    if model:\n        idx = model[\"urlIdx\"]\n    else:\n        raise HTTPException(\n            status_code=404,\n            detail=\"Model not found\",\n        )\n",
@@ -69,6 +114,24 @@ def patch_openai_router(path: Path) -> None:
         ],
         '    model = models.get(model_id)\n    if not model and "," in model_id:\n        model = models.get(model_id.split(",")[0])\n\n    if model:\n        idx = model["urlIdx"]\n    else:\n        raise HTTPException(\n            status_code=404,\n            detail="Model not found",\n        )\n',
         "multi-model urlIdx resolution",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            '            connection_type = api_config.get("connection_type", "external")\n',
+            "            connection_type = api_config.get('connection_type', 'external')\n",
+        ],
+        '            connection_type = api_config.get("connection_type")\n',
+        "OpenAI connection type default",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            '                            "connection_type": model.get("connection_type", "external"),\n',
+            "                            'connection_type': model.get('connection_type', 'external'),\n",
+        ],
+        '                            **({"connection_type": model["connection_type"]} if model.get("connection_type") else {}),\n',
+        "OpenAI merged connection type default",
     )
     path.write_text(patched, encoding="utf-8")
 

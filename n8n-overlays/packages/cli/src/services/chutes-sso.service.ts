@@ -38,6 +38,17 @@ type ChutesUserInfo = {
 	sub?: string;
 	username?: string;
 	created_at?: string;
+	logo?: string;
+	logo_url?: string;
+	avatarUrl?: string;
+	avatar_url?: string;
+	profile_image_url?: string;
+	picture?: string;
+	image?: string;
+	photo?: string;
+	user?: ChutesUserInfo;
+	profile?: ChutesUserInfo;
+	userinfo?: ChutesUserInfo;
 };
 
 type ChutesQuotaItem = {
@@ -54,6 +65,16 @@ type ChutesLiveQuota = {
 type ChutesAccount = {
 	username?: string;
 	logo?: string;
+	logo_url?: string;
+	avatarUrl?: string;
+	avatar_url?: string;
+	profile_image_url?: string;
+	picture?: string;
+	image?: string;
+	photo?: string;
+	user?: ChutesUserInfo;
+	profile?: ChutesUserInfo;
+	userinfo?: ChutesUserInfo;
 	permissions_bitmask?: number;
 	balance?: number;
 };
@@ -175,10 +196,10 @@ export class ChutesSsoService {
 		managedCredential = await this.getManagedCredentialForUser(user.id);
 
 		try {
-			const { account, quotas, liveQuota } = await this.fetchAccountBundle(
+			const { account, quotas, liveQuota, userInfo } = await this.fetchAccountBundle(
 				managedCredential.data.sessionToken,
 			);
-			return this.buildAccountSummary(user, account, quotas, liveQuota);
+			return this.buildAccountSummary(user, account, quotas, liveQuota, userInfo);
 		} catch (error) {
 			if (!(error instanceof ChutesAccountUnauthorizedError)) {
 				throw new AuthError('Failed to fetch the Chutes account summary');
@@ -186,11 +207,11 @@ export class ChutesSsoService {
 		}
 
 		managedCredential = await this.refreshManagedCredential(managedCredential);
-		const { account, quotas, liveQuota } = await this.fetchAccountBundle(
+		const { account, quotas, liveQuota, userInfo } = await this.fetchAccountBundle(
 			managedCredential.data.sessionToken,
 		);
 
-		return this.buildAccountSummary(user, account, quotas, liveQuota);
+		return this.buildAccountSummary(user, account, quotas, liveQuota, userInfo);
 	}
 
 	private async exchangeCode(code: string, verifier: string) {
@@ -530,10 +551,11 @@ export class ChutesSsoService {
 			validateStatus: () => true,
 		};
 
-		const [accountResponse, quotasResponse, liveQuotaResponse] = await Promise.all([
+		const [accountResponse, quotasResponse, liveQuotaResponse, userInfo] = await Promise.all([
 			axios.get<ChutesAccount>(`${this.idpBaseUrl}/users/me`, config),
 			axios.get<ChutesQuotaItem[]>(`${this.idpBaseUrl}/users/me/quotas`, config),
 			axios.get<ChutesLiveQuota>(`${this.idpBaseUrl}/users/me/quota_usage/h`, config),
+			this.getUserInfo(token).catch(() => ({} as ChutesUserInfo)),
 		]);
 
 		for (const response of [accountResponse, quotasResponse, liveQuotaResponse]) {
@@ -549,7 +571,54 @@ export class ChutesSsoService {
 			account: accountResponse.data ?? {},
 			quotas: quotasResponse.data ?? [],
 			liveQuota: liveQuotaResponse.data ?? {},
+			userInfo: userInfo ?? {},
 		};
+	}
+
+	private normalizeAvatarCandidate(value?: string | null) {
+		const candidate = typeof value === 'string' ? value.trim() : '';
+		if (!candidate || ['/user.png', '/user.svg', 'user.png', 'user.svg'].includes(candidate)) {
+			return null;
+		}
+		return candidate;
+	}
+
+	private extractAvatarUrl(payload?: ChutesAccount | ChutesUserInfo | null): string | null {
+		if (!payload) {
+			return null;
+		}
+
+		for (const key of [
+			'logo',
+			'logo_url',
+			'avatarUrl',
+			'avatar_url',
+			'profile_image_url',
+			'picture',
+			'image',
+			'photo',
+		] as const) {
+			const avatar = this.normalizeAvatarCandidate(payload[key]);
+			if (avatar) {
+				return avatar;
+			}
+		}
+
+		for (const key of ['user', 'profile', 'userinfo'] as const) {
+			const avatar = this.extractAvatarUrl(payload[key]);
+			if (avatar) {
+				return avatar;
+			}
+		}
+
+		return null;
+	}
+
+	private resolveAvatarUrl(
+		account: ChutesAccount,
+		userInfo?: ChutesUserInfo,
+	) {
+		return this.extractAvatarUrl(account) || this.extractAvatarUrl(userInfo) || null;
 	}
 
 	private buildAccountSummary(
@@ -557,6 +626,7 @@ export class ChutesSsoService {
 		account: ChutesAccount,
 		quotas: ChutesQuotaItem[],
 		liveQuota: ChutesLiveQuota,
+		userInfo?: ChutesUserInfo,
 	) {
 		const openWebUiEnabled = !['false', '0', 'no'].includes(
 			String(process.env.DROPZONE_ENABLE_OPENWEBUI ?? 'true').toLowerCase(),
@@ -583,7 +653,7 @@ export class ChutesSsoService {
 				user.firstName?.trim() ||
 				user.email.split('@', 1)[0] ||
 				'Chutes User',
-			avatarUrl: account.logo?.trim() || null,
+			avatarUrl: this.resolveAvatarUrl(account, userInfo),
 			tier,
 			tierLabel: this.getTierLabel(tier, permissionsBitmask),
 			balanceUsd: Number(Number(account.balance ?? 0).toFixed(2)),

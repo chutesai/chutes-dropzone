@@ -600,6 +600,7 @@ if "username" not in summary:
 assert summary["username"] == "member-user"
 assert summary["tier"] == "enterprise"
 assert summary["tierLabel"] == "Enterprise"
+assert summary["avatarUrl"] == "https://cdn.rayonlabs.ai/chutes/default-avatar.webp"
 assert abs(summary["quota"]["used"] - 1284.9) < 0.01
 assert abs(summary["quota"]["limit"] - 5001) < 0.01
 assert summary["links"]["chatUrl"] == "/chat/"
@@ -632,6 +633,7 @@ if "username" not in summary:
 assert summary["username"] == "member-user", f"expected member-user, got {summary['username']}"
 assert summary["tier"] == "enterprise"
 assert summary["tierLabel"] == "Enterprise"
+assert summary["avatarUrl"] == "https://cdn.rayonlabs.ai/chutes/default-avatar.webp"
 assert abs(summary["quota"]["used"] - 1284.9) < 0.01
 assert abs(summary["quota"]["limit"] - 5001) < 0.01
 assert summary["links"]["accountUrl"] == "https://chutes.ai/app/api/billing-balance#daily-quota-usage"

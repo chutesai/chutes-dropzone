@@ -262,22 +262,60 @@
     return link;
   }
 
+  function getAvatarInitials(summary) {
+    var name = String((summary && summary.username) || "Chutes User").replace(/\s+/g, " ").trim();
+    if (!name) return "CU";
+
+    var parts = name.split(" ").filter(Boolean);
+    if (parts.length === 1) {
+      return parts[0].slice(0, 2).toUpperCase();
+    }
+
+    return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+  }
+
+  function buildAccountAvatar(summary) {
+    var avatar = createElement("div", "chutes-account-avatar");
+    var fallback = createElement("span", "chutes-account-avatar-fallback", getAvatarInitials(summary));
+    avatar.appendChild(fallback);
+
+    var avatarUrl = String((summary && summary.avatarUrl) || "").trim();
+    if (!avatarUrl) {
+      avatar.classList.add("is-fallback");
+      return avatar;
+    }
+
+    avatar.classList.add("is-loading");
+
+    var avatarImage = document.createElement("img");
+    avatarImage.alt = (summary && summary.username) || "Chutes User";
+    avatarImage.className = "chutes-account-avatar-image";
+    avatarImage.decoding = "async";
+    avatarImage.referrerPolicy = "no-referrer";
+    avatarImage.setAttribute("draggable", "false");
+    avatarImage.addEventListener("load", function () {
+      avatar.classList.remove("is-loading");
+      avatar.classList.remove("is-fallback");
+      avatar.classList.add("has-image");
+    });
+    avatarImage.addEventListener("error", function () {
+      avatar.classList.remove("is-loading");
+      avatar.classList.remove("has-image");
+      avatar.classList.add("is-fallback");
+      avatarImage.remove();
+    });
+    avatarImage.src = avatarUrl;
+    avatar.appendChild(avatarImage);
+    return avatar;
+  }
+
   function buildSummaryCard(summary) {
     var wrapper = createElement("div", "chutes-account-card");
     wrapper.setAttribute("data-chutes-account-card", "true");
 
     var head = createElement("div", "chutes-account-head");
     head.appendChild(buildQuotaRing(summary));
-
-    if (summary.avatarUrl) {
-      var avatar = createElement("div", "chutes-account-avatar");
-      var avatarImage = document.createElement("img");
-      avatarImage.src = summary.avatarUrl;
-      avatarImage.alt = summary.username;
-      avatarImage.className = "chutes-account-avatar-image";
-      avatar.appendChild(avatarImage);
-      head.appendChild(avatar);
-    }
+    head.appendChild(buildAccountAvatar(summary));
 
     var copy = createElement("div", "chutes-account-copy");
     copy.appendChild(createElement("div", "chutes-account-name", summary.username || "Chutes User"));
