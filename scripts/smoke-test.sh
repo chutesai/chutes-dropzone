@@ -201,9 +201,11 @@ else
     skip "python3 not installed - cannot validate OpenWebUI model-order sync helper"
 fi
 
-if grep -q 'ENABLE_OLLAMA_API=false' "$PROJECT_DIR/standalone/entrypoint.sh" && \
-   grep -q 'ollama/api/version' "$PROJECT_DIR/branding/openwebui/loader.js" && \
-   grep -q 'connection_type = api_config.get("connection_type")' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
+if grep -Fq 'ENABLE_OLLAMA_API=false' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'isOllamaVersionRequest' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq '\/ollama\/api\/version' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'connection_type = api_config.get("connection_type")' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq '**({"connection_type": model["connection_type"]} if model.get("connection_type") else {}),' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
     pass "OpenWebUI keeps Ollama disabled and Chutes models ungrouped"
 else
     fail "OpenWebUI Ollama/model-grouping protections are missing"
