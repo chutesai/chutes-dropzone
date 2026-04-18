@@ -705,6 +705,8 @@ member_openwebui_cookie="$COOKIE_DIR/member-openwebui.cookies"
 member_openwebui_headers="$COOKIE_DIR/member-openwebui.headers"
 member_openwebui_final_url="$COOKIE_DIR/member-openwebui.final-url"
 member_openwebui_chat_auth_headers="$COOKIE_DIR/member-openwebui-chat-auth.headers"
+member_openwebui_auths_headers="$COOKIE_DIR/member-openwebui-auths.headers"
+member_openwebui_auths_body="$COOKIE_DIR/member-openwebui-auths.json"
 complete_openwebui_sso_login "$member_openwebui_cookie" "$member_openwebui_headers" "$member_openwebui_final_url"
 if ! grep -Eq '/(home|auth)' "$member_openwebui_final_url"; then
     echo "FAIL: OpenWebUI SSO did not finish on an app route" >&2
@@ -719,6 +721,24 @@ if ! grep -qi '^HTTP/.* 200' "$member_openwebui_chat_auth_headers" || \
     cat "$member_openwebui_chat_auth_headers" >&2
     exit 1
 fi
+
+curl_edge -skD- -b "$member_openwebui_cookie" -H 'Accept: application/json' \
+    "https://${DROPZONE_HOST}/api/v1/auths/" -o "$member_openwebui_auths_body" >"$member_openwebui_auths_headers"
+if ! grep -qi '^HTTP/.* 200' "$member_openwebui_auths_headers"; then
+    echo "FAIL: OpenWebUI cookie-auth session bootstrap endpoint did not return 200" >&2
+    cat "$member_openwebui_auths_headers" >&2
+    cat "$member_openwebui_auths_body" >&2
+    exit 1
+fi
+
+MEMBER_OPENWEBUI_AUTHS="$(cat "$member_openwebui_auths_body")" python3 - <<'PY'
+import json
+import os
+
+payload = json.loads(os.environ["MEMBER_OPENWEBUI_AUTHS"])
+assert payload["name"] == "member-user", payload
+assert payload["profile_image_url"], payload
+PY
 
 if [ ! -s "$member_openwebui_cookie" ] || ! grep -q 'token' "$member_openwebui_cookie" 2>/dev/null; then
     echo "DEBUG: OpenWebUI cookie jar content:" >&2

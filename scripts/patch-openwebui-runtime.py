@@ -136,6 +136,28 @@ def patch_openai_router(path: Path) -> None:
     path.write_text(patched, encoding="utf-8")
 
 
+def patch_auths_router(path: Path) -> None:
+    original = path.read_text(encoding="utf-8")
+    patched = replace_one_of_or_keep(
+        original,
+        [
+            "    auth_header = request.headers.get('Authorization')\n    auth_token = get_http_authorization_cred(auth_header)\n    token = auth_token.credentials\n",
+            '    auth_header = request.headers.get("Authorization")\n    auth_token = get_http_authorization_cred(auth_header)\n    token = auth_token.credentials\n',
+        ],
+        "    auth_header = request.headers.get('Authorization')\n"
+        "    auth_token = get_http_authorization_cred(auth_header) if auth_header else None\n"
+        "    token = auth_token.credentials if auth_token else request.cookies.get('token')\n"
+        "\n"
+        "    if not token:\n"
+        "        raise HTTPException(\n"
+        "            status_code=status.HTTP_401_UNAUTHORIZED,\n"
+        "            detail=ERROR_MESSAGES.INVALID_TOKEN,\n"
+        "        )\n",
+        "cookie-aware auth session token lookup",
+    )
+    path.write_text(patched, encoding="utf-8")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: patch-openwebui-runtime.py <openwebui-root>")
@@ -144,6 +166,7 @@ def main() -> int:
     patch_env(root / "backend" / "open_webui" / "env.py")
     patch_main(root / "backend" / "open_webui" / "main.py")
     patch_openai_router(root / "backend" / "open_webui" / "routers" / "openai.py")
+    patch_auths_router(root / "backend" / "open_webui" / "routers" / "auths.py")
     return 0
 
 

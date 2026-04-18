@@ -248,10 +248,17 @@ fi
 if grep -Fq 'window.__DROPZONE_AUTH_GATE__' "$PROJECT_DIR/scripts/patch-openwebui-build.py" && \
    grep -Fq '/api/v1/dropzone/account-summary' "$PROJECT_DIR/scripts/patch-openwebui-build.py" && \
    grep -Fq 'encodeURIComponent(currentTarget())' "$PROJECT_DIR/scripts/patch-openwebui-build.py" && \
+   ! grep -Fq "return /(?:^|;\\s*)token=/.test(document.cookie || \"\");" "$PROJECT_DIR/scripts/patch-openwebui-build.py" && \
    grep -Fq 'window.location.replace' "$PROJECT_DIR/scripts/patch-openwebui-build.py"; then
     pass "OpenWebUI build patch injects an early auth gate before app boot"
 else
     fail "OpenWebUI build patch is missing the early auth gate"
+fi
+
+if grep -Fq "request.cookies.get('token')" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
+    pass "OpenWebUI runtime patch makes session bootstrap cookie-aware"
+else
+    fail "OpenWebUI runtime patch is missing the cookie-aware session bootstrap fix"
 fi
 
 if grep -Fq 'ENABLE_OLLAMA_API=false' "$PROJECT_DIR/standalone/entrypoint.sh" && \

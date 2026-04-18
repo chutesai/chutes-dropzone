@@ -48,17 +48,8 @@ def auth_gate_script(subpath: str) -> str:
 					return new Promise(() => {{}});
 				}}
 
-				function hasAuthCookie() {{
-					return /(?:^|;\\s*)token=/.test(document.cookie || "");
-				}}
-
 				if (isAuthRoute(path)) {{
 					window.__DROPZONE_AUTH_GATE__ = Promise.resolve();
-					return;
-				}}
-
-				if (!hasAuthCookie()) {{
-					window.__DROPZONE_AUTH_GATE__ = redirectToAuth();
 					return;
 				}}
 
