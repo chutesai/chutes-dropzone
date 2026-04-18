@@ -143,6 +143,16 @@
         gap: 18px;
       }
 
+      .fingerprint-panel {
+        display: none;
+        flex-direction: column;
+        gap: 18px;
+      }
+
+      .fingerprint-panel.is-active {
+        display: flex;
+      }
+
       .button,
       .provider,
       .link-button,
@@ -190,6 +200,53 @@
         width: 20px;
         height: 20px;
         flex: 0 0 auto;
+      }
+
+      .back-button {
+        align-self: flex-start;
+        padding: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+        font-weight: 600;
+      }
+
+      .back-button:hover,
+      .back-button:focus-visible {
+        color: var(--text);
+      }
+
+      .fingerprint-form {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .fingerprint-field {
+        width: 100%;
+        min-height: 58px;
+        padding: 0 18px;
+        border: 1px solid var(--surface-strong);
+        border-radius: 16px;
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
+      }
+
+      .fingerprint-field:focus {
+        outline: none;
+        border-color: rgba(247, 247, 246, 0.28);
+        background: var(--surface-hover);
+      }
+
+      .fingerprint-field::placeholder {
+        color: rgba(247, 247, 246, 0.42);
+      }
+
+      .fingerprint-helper {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+        text-align: center;
       }
 
       .divider {
@@ -279,6 +336,10 @@
           gap: 12px;
         }
       }
+
+      .hidden {
+        display: none !important;
+      }
     </style>
   </head>
   <body>
@@ -293,7 +354,7 @@
         $error_html
 
         <div class="auth-selection" id="auth-selection">
-          <a class="button" id="fingerprint-login" href="$fingerprint_login_url">
+          <button class="button" id="fingerprint-login" type="button">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 3.75a4.75 4.75 0 0 0-4.75 4.75v2.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
               <path d="M6 15.5V12a6 6 0 1 1 12 0v1.75" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
@@ -301,7 +362,7 @@
               <path d="M12 11.25v4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
             </svg>
             Log in with Fingerprint
-          </a>
+          </button>
 
           <div class="divider"><span>or continue with</span></div>
 
@@ -328,6 +389,37 @@
             <a class="link-button subtle" href="$auth_reset_url">Forgotten your Fingerprint?</a>
           </div>
         </div>
+
+        <div class="fingerprint-panel" id="fingerprint-panel" hidden>
+          <button class="back-button" id="fingerprint-back" type="button">Back</button>
+
+          <form class="fingerprint-form" id="fingerprint-form" action="$fingerprint_action_url" method="POST">
+            <input type="hidden" name="client_id" value="$fingerprint_client_id" />
+            <input type="hidden" name="redirect_uri" value="$fingerprint_redirect_uri" />
+            <input type="hidden" name="state" value="$fingerprint_state" />
+            <input type="hidden" name="scope" value="$fingerprint_scope" />
+            <input type="hidden" name="auth_method" value="fingerprint" />
+            <input type="hidden" name="code_challenge" value="$fingerprint_code_challenge" />
+            <input type="hidden" name="code_challenge_method" value="$fingerprint_code_challenge_method" />
+
+            <input
+              class="fingerprint-field"
+              id="fingerprint-input"
+              type="password"
+              name="fingerprint"
+              placeholder="Enter your fingerprint"
+              autocomplete="current-password"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck="false"
+              required
+            />
+
+            <button class="button" type="submit">Continue</button>
+          </form>
+
+          <p class="fingerprint-helper">Enter your fingerprint to log in.</p>
+        </div>
       </section>
     </main>
     <script>
@@ -336,6 +428,13 @@
         var AUTH_REDIRECT_COOKIE_NAME = "dropzone-auth-redirect";
         var DEFAULT_AUTH_REDIRECT = "/c/new";
         var revealed = false;
+        var submitTimer = 0;
+        var authSelection = document.getElementById("auth-selection");
+        var fingerprintPanel = document.getElementById("fingerprint-panel");
+        var fingerprintLoginButton = document.getElementById("fingerprint-login");
+        var fingerprintBackButton = document.getElementById("fingerprint-back");
+        var fingerprintForm = document.getElementById("fingerprint-form");
+        var fingerprintInput = document.getElementById("fingerprint-input");
 
         function reveal() {
           if (revealed) return;
@@ -356,11 +455,28 @@
         }
 
         function clearCookie(name) {
-          document.cookie = name + "=; Max-Age=0; path=/; SameSite=Lax";
+          document.cookie =
+            name +
+            "=; Max-Age=0; path=/; SameSite=Lax" +
+            (window.location.protocol === "https:" ? "; Secure" : "");
+        }
+
+        function stripWrappedCookieValue(value) {
+          var text = String(value || "").trim();
+          if (!text) return "";
+
+          while (text.length >= 2 && text.charAt(0) === '"' && text.charAt(text.length - 1) === '"') {
+            text = text.slice(1, -1).trim();
+          }
+
+          return text
+            .replace(/\\\//g, "/")
+            .replace(/\\"/g, '"')
+            .replace(/\\\\/g, "\\");
         }
 
         function safeRelativePath(value, fallback) {
-          var text = String(value || "").trim();
+          var text = stripWrappedCookieValue(value);
           if (!text) return fallback;
 
           try {
@@ -379,6 +495,46 @@
           var target = safeRelativePath(readCookie(AUTH_REDIRECT_COOKIE_NAME), DEFAULT_AUTH_REDIRECT);
           clearCookie(AUTH_REDIRECT_COOKIE_NAME);
           window.location.replace(target);
+        }
+
+        function showFingerprintPanel() {
+          if (!authSelection || !fingerprintPanel) return;
+          authSelection.classList.add("hidden");
+          fingerprintPanel.hidden = false;
+          fingerprintPanel.classList.add("is-active");
+          if (fingerprintInput) {
+            window.requestAnimationFrame(function () {
+              fingerprintInput.focus();
+            });
+          }
+        }
+
+        function showAuthSelection() {
+          if (!authSelection || !fingerprintPanel) return;
+          fingerprintPanel.hidden = true;
+          fingerprintPanel.classList.remove("is-active");
+          authSelection.classList.remove("hidden");
+          if (fingerprintInput) {
+            fingerprintInput.value = "";
+          }
+        }
+
+        if (fingerprintLoginButton) {
+          fingerprintLoginButton.addEventListener("click", showFingerprintPanel);
+        }
+
+        if (fingerprintBackButton) {
+          fingerprintBackButton.addEventListener("click", showAuthSelection);
+        }
+
+        if (fingerprintInput && fingerprintForm) {
+          fingerprintInput.addEventListener("input", function () {
+            window.clearTimeout(submitTimer);
+            if (String(fingerprintInput.value || "").trim().length !== 32) return;
+            submitTimer = window.setTimeout(function () {
+              fingerprintForm.requestSubmit();
+            }, 80);
+          });
         }
 
         window.setTimeout(reveal, 1500);

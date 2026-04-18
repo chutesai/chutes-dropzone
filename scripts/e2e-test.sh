@@ -505,8 +505,9 @@ fi
 auth_html="$(curl_edge -sk "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F")"
 if [[ "$auth_html" != *'Log in to Chutes'* ]] || \
    [[ "$auth_html" != *'id="fingerprint-login"'* ]] || \
-   [[ "$auth_html" != *'/idp/authorize?response_type=code'* ]] || \
-   [[ "$auth_html" == *'id="fingerprint-login" href="https://chutes.ai/auth'* ]] || \
+   [[ "$auth_html" != *'/idp/login'* ]] || \
+   [[ "$auth_html" != *'name="auth_method" value="fingerprint"'* ]] || \
+   [[ "$auth_html" != *'type="password"'* ]] || \
    [[ "$auth_html" != *'Google'* ]] || \
    [[ "$auth_html" != *'GitHub'* ]] || \
    [[ "$auth_html" != *'/auth/signin/google?callbackUrl='* ]] || \
@@ -523,6 +524,7 @@ auth_stale_cookie_headers="$(curl_edge -skD- -H 'Cookie: token=stale-session' "h
 auth_stale_cookie_html="$(curl_edge -sk -H 'Cookie: token=stale-session' "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F")"
 if [[ "$auth_stale_cookie_headers" != *'HTTP/2 200'* && "$auth_stale_cookie_headers" != *'HTTP/1.1 200'* ]] || \
    [[ "$auth_stale_cookie_html" != *'Log in to Chutes'* ]] || \
+   [[ "$auth_stale_cookie_html" != *'/idp/login'* ]] || \
    [[ "$auth_stale_cookie_html" != *'redirect-path=%2Fchat%2F'* ]] || \
    [[ "$auth_stale_cookie_html" == *'Continue with Chutes'* ]]; then
     echo "FAIL: /auth fell back to the native OpenWebUI auth screen when a stale token cookie was present" >&2
@@ -533,7 +535,8 @@ loader_js="$(curl_edge -sk "https://${DROPZONE_HOST}/static/loader.js")"
 if [[ "$loader_js" != *'forceDropzoneAuthScreen'* ]] || \
    [[ "$loader_js" != *'Sign in to Chutes Chat'* ]] || \
    [[ "$loader_js" != *'Continue with Chutes'* ]] || \
-   [[ "$loader_js" != *'/auth?redirect='* ]]; then
+   [[ "$loader_js" != *'/auth?redirect='* ]] || \
+   [[ "$loader_js" != *'stripWrappedCookieValue'* ]]; then
     echo "FAIL: /static/loader.js is missing the legacy auth redirect guard" >&2
     exit 1
 fi
@@ -569,7 +572,7 @@ if [ -z "$handoff_location" ] || \
     exit 1
 fi
 
-if ! printf '%s' "$handoff_headers" | grep -Eqi '^set-cookie: dropzone-auth-redirect="?/chat/"?;' || \
+if ! printf '%s' "$handoff_headers" | grep -Eqi '^set-cookie: dropzone-auth-redirect=(%2Fchat%2F|"?/chat/"?);' || \
    printf '%s' "$handoff_headers" | grep -qi '^location: https://chutes\.ai/auth'; then
     echo "FAIL: Dropzone auth handoff did not preserve the requested post-login path" >&2
     printf '%s\n' "$handoff_headers" >&2
@@ -591,6 +594,26 @@ fi
 chat_native_html="$(curl_edge -sk "https://${DROPZONE_HOST}/c/new")"
 if [[ "$chat_native_html" != *'href="/_app/'* || "$chat_native_html" != *'src="/static/'* || "$chat_native_html" == *'base: "/chat"'* ]]; then
     echo "FAIL: OpenWebUI frontend HTML is not using native root routes" >&2
+    exit 1
+fi
+
+if ! python3 - <<'PY' "$chat_native_html"
+import sys
+
+html = sys.argv[1]
+required = [
+    "window.__DROPZONE_AUTH_GATE__",
+    "/api/v1/dropzone/account-summary",
+    "encodeURIComponent(currentTarget())",
+    "window.location.replace",
+]
+
+for marker in required:
+    if marker not in html:
+        raise SystemExit(f"missing auth gate marker: {marker}")
+PY
+then
+    echo "FAIL: OpenWebUI frontend HTML is missing the early auth gate" >&2
     exit 1
 fi
 

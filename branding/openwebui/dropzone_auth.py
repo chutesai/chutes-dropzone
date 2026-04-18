@@ -60,7 +60,7 @@ def _set_auth_redirect_cookie(request: Request, response, redirect_path: str | N
     target = _resolve_redirect_path(redirect_path)
     response.set_cookie(
         AUTH_REDIRECT_COOKIE_NAME,
-        target,
+        urllib.parse.quote(target, safe=""),
         max_age=AUTH_REDIRECT_COOKIE_MAX_AGE,
         path="/",
         secure=request.url.scheme == "https",
@@ -90,9 +90,35 @@ def _load_auth_page_template() -> Template:
     return Template(AUTH_PAGE_TEMPLATE_PATH.read_text(encoding="utf-8"))
 
 
+def _build_fingerprint_form_context(authorize_url: str) -> dict[str, str]:
+    parsed = urllib.parse.urlsplit(authorize_url)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError("OIDC authorize URL is missing an origin")
+
+    query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
+    if not query.get("client_id") or not query.get("redirect_uri"):
+        raise ValueError("OIDC authorize URL is missing required login parameters")
+
+    return {
+        "action_url": urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "/idp/login", "", "")),
+        "client_id": query.get("client_id", ""),
+        "redirect_uri": query.get("redirect_uri", ""),
+        "state": query.get("state", ""),
+        "scope": query.get("scope", ""),
+        "code_challenge": query.get("code_challenge", ""),
+        "code_challenge_method": query.get("code_challenge_method", ""),
+    }
+
+
 def _render_auth_page(
     *,
-    fingerprint_login_url: str,
+    fingerprint_action_url: str,
+    fingerprint_client_id: str,
+    fingerprint_redirect_uri: str,
+    fingerprint_state: str,
+    fingerprint_scope: str,
+    fingerprint_code_challenge: str,
+    fingerprint_code_challenge_method: str,
     auth_start_url: str,
     auth_reset_url: str,
     google_signin_url: str,
@@ -105,7 +131,15 @@ def _render_auth_page(
 
     template = _load_auth_page_template()
     return template.safe_substitute(
-        fingerprint_login_url=html.escape(fingerprint_login_url, quote=True),
+        fingerprint_action_url=html.escape(fingerprint_action_url, quote=True),
+        fingerprint_client_id=html.escape(fingerprint_client_id, quote=True),
+        fingerprint_redirect_uri=html.escape(fingerprint_redirect_uri, quote=True),
+        fingerprint_state=html.escape(fingerprint_state, quote=True),
+        fingerprint_scope=html.escape(fingerprint_scope, quote=True),
+        fingerprint_code_challenge=html.escape(fingerprint_code_challenge, quote=True),
+        fingerprint_code_challenge_method=html.escape(
+            fingerprint_code_challenge_method, quote=True
+        ),
         auth_start_url=html.escape(auth_start_url, quote=True),
         auth_reset_url=html.escape(auth_reset_url, quote=True),
         google_signin_url=html.escape(google_signin_url, quote=True),
@@ -150,15 +184,24 @@ async def auth_handoff(request: Request):
     parsed_auth = urllib.parse.urlparse(CHUTES_AUTH_URL or "https://chutes.ai/auth")
     auth_path = parsed_auth.path.rstrip("/") or "/auth"
     redirect_params = _build_redirect_params(authorize_url, redirect_path)
-    # Fingerprint stays on the direct OIDC authorize URL; social providers reuse
-    # the same chutes-web callback contract so they still land back on our OIDC flow.
+    fingerprint_context = _build_fingerprint_form_context(authorize_url)
+    # Fingerprint posts straight to the Chutes IDP; social providers still reuse
+    # the chutes-web callback contract so they land back on our OIDC flow.
     callback_url = _build_auth_route_url(
         f"{auth_path}/callback",
         redirect_params,
     )
     try:
         auth_page = _render_auth_page(
-            fingerprint_login_url=authorize_url,
+            fingerprint_action_url=fingerprint_context["action_url"],
+            fingerprint_client_id=fingerprint_context["client_id"],
+            fingerprint_redirect_uri=fingerprint_context["redirect_uri"],
+            fingerprint_state=fingerprint_context["state"],
+            fingerprint_scope=fingerprint_context["scope"],
+            fingerprint_code_challenge=fingerprint_context["code_challenge"],
+            fingerprint_code_challenge_method=fingerprint_context[
+                "code_challenge_method"
+            ],
             auth_start_url=_build_auth_route_url(f"{auth_path}/start", redirect_params),
             auth_reset_url=_build_auth_route_url(f"{auth_path}/reset"),
             google_signin_url=_build_auth_route_url(

@@ -72,7 +72,7 @@
   installOllamaFetchGuard();
 
   function getSafeRelativePath(value, fallback) {
-    var text = String(value || "").trim();
+    var text = stripWrappedCookieValue(value);
     if (!text) return fallback;
 
     try {
@@ -85,6 +85,20 @@
     } catch (error) {
       return fallback;
     }
+  }
+
+  function stripWrappedCookieValue(value) {
+    var text = String(value || "").trim();
+    if (!text) return "";
+
+    while (text.length >= 2 && text.charAt(0) === '"' && text.charAt(text.length - 1) === '"') {
+      text = text.slice(1, -1).trim();
+    }
+
+    return text
+      .replace(/\\\//g, "/")
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, "\\");
   }
 
   function normalizeAuthRedirectTarget(value) {
@@ -198,7 +212,10 @@
   }
 
   function clearCookie(name) {
-    document.cookie = name + "=; Max-Age=0; path=/; SameSite=Lax";
+    document.cookie =
+      name +
+      "=; Max-Age=0; path=/; SameSite=Lax" +
+      (window.location.protocol === "https:" ? "; Secure" : "");
   }
 
   function getPendingAuthRedirectTarget() {

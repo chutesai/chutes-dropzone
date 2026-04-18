@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
+import re
 import sys
 
 
@@ -17,6 +18,63 @@ def normalize_subpath(raw: str | None) -> str:
 
 def with_subpath(path: str, subpath: str) -> str:
     return f"{subpath}{path}" if subpath else path
+
+
+def auth_gate_script(subpath: str) -> str:
+    auth_path = with_subpath("/auth", subpath)
+    account_summary_path = with_subpath("/api/v1/dropzone/account-summary", subpath)
+    oauth_prefix = with_subpath("/oauth/oidc/", subpath)
+
+    return f"""
+		<script>
+			(() => {{
+				if (window.__DROPZONE_AUTH_GATE__) return;
+
+				const AUTH_PATH = "{auth_path}";
+				const ACCOUNT_SUMMARY_URL = "{account_summary_path}";
+				const OAUTH_PREFIX = "{oauth_prefix}";
+				const path = window.location.pathname || "/";
+
+				function isAuthRoute(currentPath) {{
+					return currentPath === AUTH_PATH || currentPath === `${{AUTH_PATH}}/` || currentPath.indexOf(OAUTH_PREFIX) === 0;
+				}}
+
+				function currentTarget() {{
+					return (window.location.pathname || "/") + (window.location.search || "") + (window.location.hash || "");
+				}}
+
+				function redirectToAuth() {{
+					window.location.replace(`${{AUTH_PATH}}?redirect=${{encodeURIComponent(currentTarget())}}`);
+					return new Promise(() => {{}});
+				}}
+
+				function hasAuthCookie() {{
+					return /(?:^|;\\s*)token=/.test(document.cookie || "");
+				}}
+
+				if (isAuthRoute(path)) {{
+					window.__DROPZONE_AUTH_GATE__ = Promise.resolve();
+					return;
+				}}
+
+				if (!hasAuthCookie()) {{
+					window.__DROPZONE_AUTH_GATE__ = redirectToAuth();
+					return;
+				}}
+
+				window.__DROPZONE_AUTH_GATE__ = window
+					.fetch(ACCOUNT_SUMMARY_URL, {{
+						cache: "no-store",
+						credentials: "include",
+						headers: {{ Accept: "application/json" }},
+					}})
+					.then((response) => {{
+						if (response.ok) return;
+						return redirectToAuth();
+					}})
+					.catch(() => {{}});
+			}})();
+		</script>""".lstrip("\n")
 
 
 def patch_text(text: str, subpath: str) -> str:
@@ -51,6 +109,39 @@ def patch_text(text: str, subpath: str) -> str:
     return text
 
 
+def patch_index_html(text: str, subpath: str) -> str:
+    script = auth_gate_script(subpath)
+
+    if "window.__DROPZONE_AUTH_GATE__" not in text:
+        head_anchor = "\t\t<script>\n\t\t\tfunction resizeIframe(obj) {\n"
+        if head_anchor in text:
+            text = text.replace(head_anchor, script + "\n\n" + head_anchor, 1)
+        else:
+            title_anchor = "\t\t<title>"
+            if title_anchor not in text:
+                raise SystemExit("missing expected head anchor for auth gate injection")
+            text = text.replace(title_anchor, script + "\n\n" + title_anchor, 1)
+
+    startup_pattern = re.compile(
+        r'Promise\.all\(\[\s*import\((?P<first>[^)]*)\),\s*import\((?P<second>[^)]*)\)\s*\]\)\.then\(\(\[kit, app\]\) => \{\s*kit\.start\(app, element\);\s*\}\);',
+        re.MULTILINE,
+    )
+    startup_replacement = (
+        "Promise.all([\n"
+        "\t\t\t\t\t\twindow.__DROPZONE_AUTH_GATE__ || Promise.resolve(),\n"
+        "\t\t\t\t\t\timport(\\g<first>),\n"
+        "\t\t\t\t\t\timport(\\g<second>)\n"
+        "\t\t\t\t\t]).then(([_, kit, app]) => {\n"
+        "\t\t\t\t\t\tkit.start(app, element);\n"
+        "\t\t\t\t\t});"
+    )
+    patched = startup_pattern.sub(startup_replacement, text, count=1)
+    if patched == text and "window.__DROPZONE_AUTH_GATE__ || Promise.resolve()" not in text:
+        raise SystemExit("missing expected Svelte startup block for auth gate patch")
+
+    return patched
+
+
 def main() -> int:
     if len(sys.argv) not in {2, 3}:
         raise SystemExit("usage: patch-openwebui-build.py <index.html> [subpath]")
@@ -60,6 +151,7 @@ def main() -> int:
 
     html = index_path.read_text(encoding="utf-8")
     html = patch_text(html, subpath)
+    html = patch_index_html(html, subpath)
     index_path.write_text(html, encoding="utf-8")
 
     immutable_dir = index_path.parent / "_app" / "immutable"
