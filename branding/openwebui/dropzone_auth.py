@@ -117,19 +117,6 @@ def _build_auth_route_url(path: str, params: list[tuple[str, str]] | None = None
     )
 
 
-def _build_auth_action_url(params: list[tuple[str, str]]) -> str:
-    parsed_auth = urllib.parse.urlparse(CHUTES_AUTH_URL)
-    existing = urllib.parse.parse_qsl(parsed_auth.query, keep_blank_values=True)
-    query = "/login"
-    if existing:
-        query += "&" + urllib.parse.urlencode(existing)
-    if params:
-        query += "&" + urllib.parse.urlencode(params)
-    return urllib.parse.urlunparse(
-        parsed_auth._replace(params="", query=query, fragment="")
-    )
-
-
 def _build_redirect_params(authorize_url: str, redirect_path: str | None) -> list[tuple[str, str]]:
     params = [("redirect_to", authorize_url)]
     if redirect_path:
@@ -144,11 +131,11 @@ def _load_auth_page_template() -> Template:
 
 def _render_auth_page(
     *,
+    fingerprint_login_url: str,
     auth_start_url: str,
     auth_reset_url: str,
     google_signin_url: str,
     github_signin_url: str,
-    fingerprint_action_url: str,
     error_message: str | None,
 ) -> str:
     error_html = ""
@@ -157,11 +144,11 @@ def _render_auth_page(
 
     template = _load_auth_page_template()
     return template.safe_substitute(
+        fingerprint_login_url=html.escape(fingerprint_login_url, quote=True),
         auth_start_url=html.escape(auth_start_url, quote=True),
         auth_reset_url=html.escape(auth_reset_url, quote=True),
         google_signin_url=html.escape(google_signin_url, quote=True),
         github_signin_url=html.escape(github_signin_url, quote=True),
-        fingerprint_action_url=html.escape(fingerprint_action_url, quote=True),
         error_html=error_html,
     )
 
@@ -205,6 +192,7 @@ async def auth_handoff(request: Request):
     )
     try:
         auth_page = _render_auth_page(
+            fingerprint_login_url=_wrap_authorize_url(authorize_url, redirect_path),
             auth_start_url=_build_auth_route_url(f"{auth_path}/start", redirect_params),
             auth_reset_url=_build_auth_route_url(f"{auth_path}/reset"),
             google_signin_url=_build_auth_route_url(
@@ -213,7 +201,6 @@ async def auth_handoff(request: Request):
             github_signin_url=_build_auth_route_url(
                 f"{auth_path}/signin/github", [("callbackUrl", callback_url)]
             ),
-            fingerprint_action_url=_build_auth_action_url(redirect_params),
             error_message=request.query_params.get("error"),
         )
     except Exception:

@@ -10,6 +10,11 @@
   var ACCOUNT_SUMMARY_RETRY_MS = 5000;
   var AUTO_MODEL_HINT_LABEL = "Models";
   var MENU_MARKERS = ["New Chat", "Search", "Notes", "Folders", "Chats"];
+  var DEFAULT_AUTH_REDIRECT = "/c/new";
+  var DROPZONE_AUTH_MARKERS = ["Log in to Chutes", "Log in with Fingerprint"];
+  var LEGACY_AUTH_MARKERS = ["Sign in to Chutes Chat", "Continue with Chutes"];
+  var AUTH_REDIRECT_SESSION_KEY = "chutes.dropzone.auth.redirect";
+  var AUTH_REDIRECT_COOLDOWN_MS = 2000;
   var scheduled = false;
   var accountSummary = null;
   var accountSummaryLoaded = false;
@@ -64,6 +69,138 @@
 
   installOllamaFetchGuard();
 
+  function getSafeRelativePath(value, fallback) {
+    var text = String(value || "").trim();
+    if (!text) return fallback;
+
+    try {
+      var parsed = new URL(text, window.location.origin);
+      if (parsed.origin !== window.location.origin) return fallback;
+      if (!parsed.pathname || parsed.pathname.charAt(0) !== "/" || parsed.pathname.indexOf("//") === 0) {
+        return fallback;
+      }
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch (error) {
+      return fallback;
+    }
+  }
+
+  function normalizeAuthRedirectTarget(value) {
+    var safe = getSafeRelativePath(value, DEFAULT_AUTH_REDIRECT);
+
+    if (
+      safe === "/" ||
+      safe === "/auth" ||
+      safe === "/auth/" ||
+      safe === "/chat" ||
+      safe === "/chat/"
+    ) {
+      return DEFAULT_AUTH_REDIRECT;
+    }
+
+    if (safe.indexOf("/oauth/oidc/") === 0) {
+      return DEFAULT_AUTH_REDIRECT;
+    }
+
+    if (safe.indexOf("/chat/") === 0) {
+      safe = safe.slice("/chat".length) || DEFAULT_AUTH_REDIRECT;
+    }
+
+    return safe || DEFAULT_AUTH_REDIRECT;
+  }
+
+  function getAuthRedirectTarget() {
+    var params = new URLSearchParams(window.location.search || "");
+    var redirect = params.get("redirect") || params.get("redirect-path");
+
+    if (redirect) {
+      return normalizeAuthRedirectTarget(redirect);
+    }
+
+    return normalizeAuthRedirectTarget(
+      (window.location.pathname || "/") + (window.location.search || "") + (window.location.hash || "")
+    );
+  }
+
+  function hasExactText(selector, expected) {
+    return Array.prototype.some.call(document.querySelectorAll(selector), function (node) {
+      return normalizeText(node.textContent) === expected;
+    });
+  }
+
+  function isDropzoneAuthScreen(text) {
+    return DROPZONE_AUTH_MARKERS.every(function (marker) {
+      return text.indexOf(marker) !== -1;
+    });
+  }
+
+  function isLegacyAuthScreen() {
+    var path = window.location.pathname || "";
+    if (path.indexOf("/oauth/oidc/") === 0 || !document.body) return false;
+
+    var text = normalizeText(document.body.textContent);
+    if (isDropzoneAuthScreen(text)) return false;
+
+    if (path === "/auth" || path === "/auth/") {
+      return true;
+    }
+
+    return (
+      LEGACY_AUTH_MARKERS.every(function (marker) {
+        return text.indexOf(marker) !== -1;
+      }) &&
+      hasExactText("h1, h2", "Sign in to Chutes Chat") &&
+      hasExactText("a, button", "Continue with Chutes")
+    );
+  }
+
+  function readStoredAuthRedirect() {
+    try {
+      return JSON.parse(window.sessionStorage.getItem(AUTH_REDIRECT_SESSION_KEY) || "null");
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function writeStoredAuthRedirect(url) {
+    try {
+      window.sessionStorage.setItem(
+        AUTH_REDIRECT_SESSION_KEY,
+        JSON.stringify({ url: url, at: Date.now() })
+      );
+    } catch (error) {
+      // Ignore sessionStorage failures; the redirect itself still matters.
+    }
+  }
+
+  function clearStoredAuthRedirect() {
+    try {
+      window.sessionStorage.removeItem(AUTH_REDIRECT_SESSION_KEY);
+    } catch (error) {
+      // Ignore sessionStorage failures; this is only loop protection state.
+    }
+  }
+
+  function forceDropzoneAuthScreen() {
+    if (!isLegacyAuthScreen()) {
+      clearStoredAuthRedirect();
+      return false;
+    }
+
+    var nextUrl = "/auth?redirect=" + encodeURIComponent(getAuthRedirectTarget());
+    var previous = readStoredAuthRedirect();
+    if (
+      previous &&
+      previous.url === nextUrl &&
+      Date.now() - Number(previous.at || 0) < AUTH_REDIRECT_COOLDOWN_MS
+    ) {
+      return true;
+    }
+
+    writeStoredAuthRedirect(nextUrl);
+    window.location.replace(nextUrl);
+    return true;
+  }
 
   function isVisible(node) {
     if (!node || !node.getBoundingClientRect) return false;
@@ -464,7 +601,6 @@
     svg.appendChild(fill);
     ring.appendChild(svg);
     ring.appendChild(createElement("div", "chutes-account-ring-value", Math.round(percentage) + "%"));
-    ring.appendChild(buildAccountAvatar(summary, "is-badge"));
     return ring;
   }
 
@@ -747,6 +883,10 @@
     );
   }
 
+  function hasLegacyQuotaBadge(slot) {
+    return !!(slot && slot.querySelector(".chutes-account-avatar.is-badge"));
+  }
+
   function ensureSidebarCard() {
     var sidebar = findSidebar();
     if (!sidebar) return;
@@ -784,7 +924,9 @@
       slot.setAttribute("data-chutes-rendered", "true");
     }
 
-    var needsSummary = hasSummary && !slot.querySelector(".chutes-account-card");
+    var needsSummary =
+      hasSummary &&
+      (!slot.querySelector(".chutes-account-card") || hasLegacyQuotaBadge(slot));
     if (needsSummary) {
       slot.innerHTML = "";
       slot.appendChild(buildSummaryCard(accountSummary));
@@ -810,6 +952,7 @@
 
   function refresh() {
     scheduled = false;
+    if (forceDropzoneAuthScreen()) return;
     patchBranding();
     ensureChutesAutoHint();
     ensureSidebarCard();
@@ -843,4 +986,5 @@
 
   var observer = new MutationObserver(scheduleRefresh);
   observer.observe(document.documentElement, { childList: true, subtree: true });
+  scheduleRefresh();
 })();

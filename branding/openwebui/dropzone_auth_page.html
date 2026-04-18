@@ -25,7 +25,7 @@
 
       html,
       body {
-        min-height: 100%;
+        height: 100%;
         margin: 0;
       }
 
@@ -34,6 +34,8 @@
         display: grid;
         place-items: center;
         overflow: hidden;
+        min-height: 100vh;
+        min-height: 100dvh;
         padding: 24px;
         background:
           radial-gradient(circle at top, rgba(152, 207, 178, 0.15) 0%, transparent 38%),
@@ -77,6 +79,8 @@
       main {
         position: relative;
         z-index: 1;
+        display: grid;
+        place-items: center;
         width: min(100%, 520px);
       }
 
@@ -182,8 +186,9 @@
       .divider {
         position: relative;
         text-align: center;
-        color: var(--muted);
-        font-size: 0.95rem;
+        color: rgba(247, 247, 246, 0.48);
+        font-size: 0.9rem;
+        font-weight: 500;
       }
 
       .divider::before {
@@ -195,8 +200,15 @@
 
       .divider span {
         position: relative;
-        padding: 0 12px;
-        background: var(--bg);
+        display: inline-block;
+        padding: 0 18px;
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          rgba(5, 5, 5, 0.78) 18%,
+          rgba(5, 5, 5, 0.78) 82%,
+          transparent 100%
+        );
       }
 
       .providers {
@@ -244,70 +256,6 @@
         color: #ffffff;
       }
 
-      .fingerprint-panel {
-        display: none;
-        flex-direction: column;
-        gap: 14px;
-      }
-
-      .fingerprint-panel.is-open {
-        display: flex;
-      }
-
-      .back-button {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        align-self: flex-start;
-        padding: 0;
-        color: var(--muted);
-        font-size: 0.95rem;
-        font-weight: 600;
-      }
-
-      .back-button:hover,
-      .back-button:focus-visible {
-        color: var(--text);
-      }
-
-      .back-button svg {
-        width: 16px;
-        height: 16px;
-        flex: 0 0 auto;
-      }
-
-      .field {
-        width: 100%;
-        min-height: 58px;
-        padding: 0 22px;
-        border: 1px solid var(--surface-strong);
-        border-radius: 999px;
-        background: var(--surface);
-        color: var(--text);
-        font: inherit;
-      }
-
-      .field::placeholder {
-        color: rgba(247, 247, 246, 0.42);
-      }
-
-      .field:focus {
-        outline: none;
-        border-color: rgba(152, 207, 178, 0.5);
-        background: rgba(247, 247, 246, 0.08);
-      }
-
-      .hint {
-        margin: 0;
-        color: var(--muted);
-        font-size: 0.95rem;
-        text-align: center;
-      }
-
-      [hidden] {
-        display: none !important;
-      }
-
       @media (max-width: 640px) {
         main {
           width: min(100%, 420px);
@@ -336,7 +284,7 @@
         $error_html
 
         <div class="auth-selection" id="auth-selection">
-          <button class="button" type="button" id="fingerprint-toggle">
+          <a class="button" id="fingerprint-login" href="$fingerprint_login_url">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 3.75a4.75 4.75 0 0 0-4.75 4.75v2.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
               <path d="M6 15.5V12a6 6 0 1 1 12 0v1.75" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
@@ -344,9 +292,9 @@
               <path d="M12 11.25v4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
             </svg>
             Log in with Fingerprint
-          </button>
+          </a>
 
-          <div class="divider"><span>Or continue with</span></div>
+          <div class="divider"><span>or continue with</span></div>
 
           <div class="providers">
             <a class="provider" href="$google_signin_url">
@@ -371,56 +319,7 @@
             <a class="link-button subtle" href="$auth_reset_url">Forgotten your Fingerprint?</a>
           </div>
         </div>
-
-        <form class="fingerprint-panel" id="fingerprint-panel" method="POST" action="$fingerprint_action_url">
-          <button class="back-button" type="button" id="fingerprint-back">
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M15 18 9 12l6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-            Back
-          </button>
-          <input
-            class="field"
-            type="password"
-            name="fingerprint"
-            placeholder="Enter your fingerprint..."
-            autocomplete="off"
-            required
-          />
-          <button class="button" type="submit">Continue</button>
-          <p class="hint">Paste or enter your fingerprint to continue.</p>
-        </form>
       </section>
     </main>
-    <script>
-      (function () {
-        var selection = document.getElementById("auth-selection");
-        var panel = document.getElementById("fingerprint-panel");
-        var toggle = document.getElementById("fingerprint-toggle");
-        var back = document.getElementById("fingerprint-back");
-        if (!selection || !panel || !toggle || !back) {
-          return;
-        }
-
-        var input = panel.querySelector("input");
-
-        function openPanel() {
-          selection.hidden = true;
-          panel.classList.add("is-open");
-          if (input) {
-            input.focus();
-          }
-        }
-
-        function closePanel() {
-          panel.classList.remove("is-open");
-          selection.hidden = false;
-          toggle.focus();
-        }
-
-        toggle.addEventListener("click", openPanel);
-        back.addEventListener("click", closePanel);
-      })();
-    </script>
   </body>
 </html>

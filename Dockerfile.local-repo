@@ -176,12 +176,14 @@ COPY branding/openwebui/chutes-chat-icon-512.png /app/backend/open_webui/static/
 COPY branding/openwebui/chutes-chat-icon-180.png /app/backend/open_webui/static/apple-touch-icon.png
 COPY branding/openwebui/chutes-chat-icon-192.png /app/backend/open_webui/static/web-app-manifest-192x192.png
 COPY branding/openwebui/chutes-chat-icon-512.png /app/backend/open_webui/static/web-app-manifest-512x512.png
+COPY scripts/patch-openwebui-build.py /opt/dropzone/patch-openwebui-build.py
 COPY scripts/patch-openwebui-runtime.py /opt/dropzone/patch-openwebui-runtime.py
 COPY scripts/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync.py
 COPY scripts/openwebui-model-order-sync-loop.sh /opt/dropzone/openwebui-model-order-sync-loop.sh
-RUN python3 /opt/dropzone/patch-openwebui-runtime.py /app && \
+RUN python3 /opt/dropzone/patch-openwebui-build.py /app/build/index.html && \
+    python3 /opt/dropzone/patch-openwebui-runtime.py /app && \
     chmod -R a+rwX /app/build/static /app/backend/open_webui/static && \
-    chmod +x /opt/dropzone/patch-openwebui-runtime.py /opt/dropzone/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync-loop.sh
+    chmod +x /opt/dropzone/patch-openwebui-build.py /opt/dropzone/patch-openwebui-runtime.py /opt/dropzone/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync-loop.sh
 
 # ---------------------------------------------------------------------------
 # Stage 6c: repo-pinned n8n runtime for compose/local use
@@ -362,12 +364,14 @@ COPY branding/openwebui/chutes-chat-icon-512.png /app/backend/open_webui/static/
 COPY branding/openwebui/chutes-chat-icon-180.png /app/backend/open_webui/static/apple-touch-icon.png
 COPY branding/openwebui/chutes-chat-icon-192.png /app/backend/open_webui/static/web-app-manifest-192x192.png
 COPY branding/openwebui/chutes-chat-icon-512.png /app/backend/open_webui/static/web-app-manifest-512x512.png
+COPY scripts/patch-openwebui-build.py /opt/dropzone/patch-openwebui-build.py
 COPY scripts/patch-openwebui-runtime.py /opt/dropzone/patch-openwebui-runtime.py
 COPY scripts/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync.py
 COPY scripts/openwebui-model-order-sync-loop.sh /opt/dropzone/openwebui-model-order-sync-loop.sh
-RUN python3 /opt/dropzone/patch-openwebui-runtime.py /app && \
+RUN python3 /opt/dropzone/patch-openwebui-build.py /app/build/index.html && \
+    python3 /opt/dropzone/patch-openwebui-runtime.py /app && \
     chmod -R a+rwX /app/build/static /app/backend/open_webui/static && \
-    chmod +x /opt/dropzone/patch-openwebui-runtime.py /opt/dropzone/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync-loop.sh
+    chmod +x /opt/dropzone/patch-openwebui-build.py /opt/dropzone/patch-openwebui-runtime.py /opt/dropzone/openwebui-model-order-sync.py /opt/dropzone/openwebui-model-order-sync-loop.sh
 
 # Custom Chutes nodes
 RUN mkdir -p /opt/custom-nodes/n8n-nodes-chutes

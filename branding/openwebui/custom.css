@@ -109,10 +109,7 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
 }
 
 [data-chutes-nav-slot="n8n"] .chutes-account-avatar.is-badge {
-  position: absolute;
-  right: -0.1rem;
-  bottom: -0.08rem;
-  z-index: 2;
+  display: none !important;
 }
 
 [data-chutes-nav-slot="n8n"] .chutes-account-avatar-fallback {

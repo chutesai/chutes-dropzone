@@ -499,11 +499,13 @@ fi
 
 auth_html="$(curl_edge -sk "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F")"
 if [[ "$auth_html" != *'Log in to Chutes'* ]] || \
+   [[ "$auth_html" != *'id="fingerprint-login"'* ]] || \
    [[ "$auth_html" != *'Google'* ]] || \
    [[ "$auth_html" != *'GitHub'* ]] || \
    [[ "$auth_html" != *'/auth/signin/google?callbackUrl='* ]] || \
    [[ "$auth_html" != *'redirect-path=%2Fchat%2F'* ]] || \
    [[ "$auth_html" != *'redirect_to='* ]] || \
+   [[ "$auth_html" == *'?/login'* ]] || \
    [[ "$auth_html" == *'Sign in to Chutes Chat'* ]] || \
    [[ "$auth_html" == *'Continue with Chutes'* ]]; then
     echo "FAIL: /auth did not render the Chutes-style login options with preserved redirects" >&2
@@ -517,6 +519,15 @@ if [[ "$auth_stale_cookie_headers" != *'HTTP/2 200'* && "$auth_stale_cookie_head
    [[ "$auth_stale_cookie_html" != *'redirect-path=%2Fchat%2F'* ]] || \
    [[ "$auth_stale_cookie_html" == *'Continue with Chutes'* ]]; then
     echo "FAIL: /auth fell back to the native OpenWebUI auth screen when a stale token cookie was present" >&2
+    exit 1
+fi
+
+loader_js="$(curl_edge -sk "https://${DROPZONE_HOST}/static/loader.js")"
+if [[ "$loader_js" != *'forceDropzoneAuthScreen'* ]] || \
+   [[ "$loader_js" != *'Sign in to Chutes Chat'* ]] || \
+   [[ "$loader_js" != *'Continue with Chutes'* ]] || \
+   [[ "$loader_js" != *'/auth?redirect='* ]]; then
+    echo "FAIL: /static/loader.js is missing the legacy auth redirect guard" >&2
     exit 1
 fi
 
@@ -573,6 +584,14 @@ fi
 chat_native_html="$(curl_edge -sk "https://${DROPZONE_HOST}/c/new")"
 if [[ "$chat_native_html" != *'href="/_app/'* || "$chat_native_html" != *'src="/static/'* || "$chat_native_html" == *'base: "/chat"'* ]]; then
     echo "FAIL: OpenWebUI frontend HTML is not using native root routes" >&2
+    exit 1
+fi
+
+if [[ "$chat_native_html" != *'/static/splash.svg'* ]] || \
+   [[ "$chat_native_html" != *'/static/splash-dark.svg'* ]] || \
+   [[ "$chat_native_html" == *'/static/splash.png'* ]] || \
+   [[ "$chat_native_html" == *'/static/splash-dark.png'* ]]; then
+    echo "FAIL: OpenWebUI splash screen is not using the branded SVG assets in the built frontend" >&2
     exit 1
 fi
 

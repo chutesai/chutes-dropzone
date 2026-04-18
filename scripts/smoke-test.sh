@@ -197,6 +197,12 @@ if command -v python3 >/dev/null 2>&1; then
         fail "python3 -m py_compile patch-openwebui-runtime.py"
     fi
 
+    if python3 -m py_compile "$PROJECT_DIR/scripts/patch-openwebui-build.py" >/dev/null 2>&1; then
+        pass "python3 -m py_compile patch-openwebui-build.py"
+    else
+        fail "python3 -m py_compile patch-openwebui-build.py"
+    fi
+
     if python3 -m py_compile "$PROJECT_DIR/branding/openwebui/dropzone_account.py" >/dev/null 2>&1; then
         pass "python3 -m py_compile branding/openwebui/dropzone_account.py"
     else
@@ -219,6 +225,15 @@ if [ -s "$PROJECT_DIR/branding/openwebui/dropzone_auth_page.html" ] && \
     pass "Dropzone auth page is template-driven and bundled with OpenWebUI"
 else
     fail "Dropzone auth page template wiring is incomplete"
+fi
+
+if grep -Fq 'forceDropzoneAuthScreen' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'Sign in to Chutes Chat' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'Continue with Chutes' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq '/auth?redirect=' "$PROJECT_DIR/branding/openwebui/loader.js"; then
+    pass "OpenWebUI loader replaces legacy auth screens with Dropzone auth"
+else
+    fail "OpenWebUI loader is missing the legacy auth redirect guard"
 fi
 
 if grep -Fq 'ENABLE_OLLAMA_API=false' "$PROJECT_DIR/standalone/entrypoint.sh" && \
@@ -388,11 +403,13 @@ fi
 if [ -s "$PROJECT_DIR/branding/openwebui/splash.svg" ] && \
    [ -s "$PROJECT_DIR/branding/openwebui/splash-dark.svg" ] && \
    grep -q 'splash-dark.svg' "$PROJECT_DIR/scripts/patch-openwebui-build.py" && \
+   grep -q 'COPY scripts/patch-openwebui-build.py /opt/dropzone/patch-openwebui-build.py' "$PROJECT_DIR/Dockerfile.local-repo" && \
+   grep -q 'python3 /opt/dropzone/patch-openwebui-build.py /app/build/index.html' "$PROJECT_DIR/Dockerfile.local-repo" && \
    grep -q 'COPY branding/openwebui/splash.svg /app/build/static/splash.svg' "$PROJECT_DIR/Dockerfile.local-repo" && \
    grep -q 'COPY branding/openwebui/splash-dark.svg /app/build/static/splash-dark.svg' "$PROJECT_DIR/Dockerfile.local-repo" && \
    grep -q 'COPY branding/openwebui/splash.svg /app/backend/open_webui/static/splash.svg' "$PROJECT_DIR/Dockerfile.local-repo" && \
    grep -q 'COPY branding/openwebui/splash-dark.svg /app/backend/open_webui/static/splash-dark.svg' "$PROJECT_DIR/Dockerfile.local-repo"; then
-    pass "OpenWebUI splash screen uses Chutes-branded assets"
+    pass "OpenWebUI splash screen uses Chutes-branded assets through the image build pipeline"
 else
     fail "OpenWebUI splash screen branding is incomplete"
 fi
@@ -629,6 +646,7 @@ if openwebui_enabled; then
     auth_html="$(curl_edge -sk "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F" 2>/dev/null || true)"
     if echo "$auth_headers" | grep -qi '^HTTP/.* 200' && \
        echo "$auth_headers" | grep -qi '^set-cookie: owui-session=' && \
+       echo "$auth_html" | grep -q 'id="fingerprint-login"' && \
        echo "$auth_html" | grep -q 'Log in to Chutes' && \
        echo "$auth_html" | grep -q 'Google' && \
        echo "$auth_html" | grep -q 'GitHub' && \
@@ -636,6 +654,7 @@ if openwebui_enabled; then
        echo "$auth_html" | grep -Fq '/auth/signin/google?callbackUrl=' && \
        echo "$auth_html" | grep -q 'redirect_to=' && \
        echo "$auth_html" | grep -q 'redirect-path=%2Fchat%2F' && \
+       ! echo "$auth_html" | grep -Fq '?/login' && \
        ! echo "$auth_html" | grep -q 'Sign in to Chutes Chat' && \
        ! echo "$auth_html" | grep -q 'Continue with Chutes'; then
         pass "root OpenWebUI auth alias renders the Chutes login options page"
