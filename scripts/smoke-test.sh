@@ -106,6 +106,17 @@ curl_edge() {
     curl "${host_args[@]}" "$@"
 }
 
+query_param_from_url() {
+    python3 - "$1" "$2" <<'PY'
+import sys
+from urllib.parse import parse_qs, urlparse
+
+url = sys.argv[1]
+param = sys.argv[2]
+print(parse_qs(urlparse(url).query).get(param, [""])[0])
+PY
+}
+
 echo "=== Syntax checks ==="
 
 for file in "$PROJECT_DIR/deploy.sh" "$PROJECT_DIR/scripts/"*.sh; do
@@ -199,6 +210,15 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 else
     skip "python3 not installed - cannot validate OpenWebUI model-order sync helper"
+fi
+
+if [ -s "$PROJECT_DIR/branding/openwebui/dropzone_auth_page.html" ] && \
+   grep -Fq 'Path(__file__).with_name("dropzone_auth_page.html")' "$PROJECT_DIR/branding/openwebui/dropzone_auth.py" && \
+   grep -Fq 'COPY branding/openwebui/dropzone_auth_page.html /app/backend/open_webui/dropzone_auth_page.html' "$PROJECT_DIR/Dockerfile.local-repo" && \
+   grep -Fq 'Log in with Fingerprint' "$PROJECT_DIR/branding/openwebui/dropzone_auth_page.html"; then
+    pass "Dropzone auth page is template-driven and bundled with OpenWebUI"
+else
+    fail "Dropzone auth page template wiring is incomplete"
 fi
 
 if grep -Fq 'ENABLE_OLLAMA_API=false' "$PROJECT_DIR/standalone/entrypoint.sh" && \
@@ -606,21 +626,33 @@ fi
 
 if openwebui_enabled; then
     auth_headers="$(curl_edge -skD- "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F" -o /dev/null 2>/dev/null || true)"
-    if echo "$auth_headers" | grep -qi '^HTTP/.* 30[27]' && \
-       echo "$auth_headers" | grep -qi '^location: https://chutes\.ai/auth' && \
-       echo "$auth_headers" | grep -q 'redirect-path=%2Fchat%2F' && \
-       echo "$auth_headers" | grep -q 'redirect_to='; then
-        pass "root OpenWebUI auth alias redirects straight to the Chutes login options"
+    auth_html="$(curl_edge -sk "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F" 2>/dev/null || true)"
+    if echo "$auth_headers" | grep -qi '^HTTP/.* 200' && \
+       echo "$auth_headers" | grep -qi '^set-cookie: owui-session=' && \
+       echo "$auth_html" | grep -q 'Log in to Chutes' && \
+       echo "$auth_html" | grep -q 'Google' && \
+       echo "$auth_html" | grep -q 'GitHub' && \
+       echo "$auth_html" | grep -q 'Create Account' && \
+       echo "$auth_html" | grep -Fq '/auth/signin/google?callbackUrl=' && \
+       echo "$auth_html" | grep -q 'redirect_to=' && \
+       echo "$auth_html" | grep -q 'redirect-path=%2Fchat%2F' && \
+       ! echo "$auth_html" | grep -q 'Sign in to Chutes Chat' && \
+       ! echo "$auth_html" | grep -q 'Continue with Chutes'; then
+        pass "root OpenWebUI auth alias renders the Chutes login options page"
     else
-        fail "root OpenWebUI auth alias did not redirect straight to the Chutes login options"
+        fail "root OpenWebUI auth alias did not render the Chutes login options page"
     fi
 
     auth_stale_cookie_headers="$(curl_edge -skD- -H 'Cookie: token=stale-session' \
         "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F" -o /dev/null 2>/dev/null || true)"
-    if echo "$auth_stale_cookie_headers" | grep -qi '^HTTP/.* 30[27]' && \
-       echo "$auth_stale_cookie_headers" | grep -qi '^location: https://chutes\.ai/auth' && \
-       echo "$auth_stale_cookie_headers" | grep -q 'redirect-path=%2Fchat%2F' && \
-       echo "$auth_stale_cookie_headers" | grep -q 'redirect_to='; then
+    auth_stale_cookie_html="$(curl_edge -sk -H 'Cookie: token=stale-session' \
+        "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F" 2>/dev/null || true)"
+    if echo "$auth_stale_cookie_headers" | grep -qi '^HTTP/.* 200' && \
+       echo "$auth_stale_cookie_headers" | grep -qi '^set-cookie: owui-session=' && \
+       echo "$auth_stale_cookie_html" | grep -q 'Log in to Chutes' && \
+       echo "$auth_stale_cookie_html" | grep -q 'Google' && \
+       echo "$auth_stale_cookie_html" | grep -q 'redirect-path=%2Fchat%2F' && \
+       ! echo "$auth_stale_cookie_html" | grep -q 'Continue with Chutes'; then
         pass "root OpenWebUI auth alias ignores stale token cookies"
     else
         fail "root OpenWebUI auth alias still falls back to the native auth screen when a stale token cookie is present"
@@ -677,10 +709,13 @@ if openwebui_enabled; then
     fi
 
     handoff_headers="$(curl_edge -skD- "https://${DROPZONE_HOST}/api/v1/dropzone/chutes-login?redirect=%2Fchat%2F" -o /dev/null 2>/dev/null || true)"
+    handoff_location="$(printf '%s\n' "$handoff_headers" | awk 'BEGIN{IGNORECASE=1} /^location: /{sub(/\r$/, ""); print substr($0, 11); exit}')"
+    handoff_redirect_to="$(query_param_from_url "$handoff_location" redirect_to)"
     if echo "$handoff_headers" | grep -qi '^HTTP/.* 30[27]' &&
        echo "$handoff_headers" | grep -qi '^location: https://chutes\.ai/auth' &&
        echo "$handoff_headers" | grep -q 'redirect-path=%2Fchat%2F' &&
-       echo "$handoff_headers" | grep -qi "redirect_uri=https%3A%2F%2F${DROPZONE_HOST}%2Foauth%2Foidc%2Fcallback"; then
+       [ -n "$handoff_redirect_to" ] &&
+       printf '%s' "$handoff_redirect_to" | grep -qi "redirect_uri=https%3A%2F%2F${DROPZONE_HOST}%2Foauth%2Foidc%2Fcallback"; then
         pass "Dropzone auth handoff preserves the root OAuth callback alias and target path"
     else
         fail "Dropzone auth handoff did not preserve the root OAuth callback alias and target path"

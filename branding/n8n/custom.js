@@ -245,6 +245,7 @@
     svg.appendChild(fill);
     ring.appendChild(svg);
     ring.appendChild(createElement("div", "chutes-account-ring-value", Math.round(percentage) + "%"));
+    ring.appendChild(buildAccountAvatar(summary, "is-badge"));
     return ring;
   }
 
@@ -274,8 +275,8 @@
     return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
   }
 
-  function buildAccountAvatar(summary) {
-    var avatar = createElement("div", "chutes-account-avatar");
+  function buildAccountAvatar(summary, extraClass) {
+    var avatar = createElement("div", "chutes-account-avatar" + (extraClass ? " " + extraClass : ""));
     var fallback = createElement("span", "chutes-account-avatar-fallback", getAvatarInitials(summary));
     avatar.appendChild(fallback);
 
@@ -315,7 +316,6 @@
 
     var head = createElement("div", "chutes-account-head");
     head.appendChild(buildQuotaRing(summary));
-    head.appendChild(buildAccountAvatar(summary));
 
     var copy = createElement("div", "chutes-account-copy");
     copy.appendChild(createElement("div", "chutes-account-name", summary.username || "Chutes User"));

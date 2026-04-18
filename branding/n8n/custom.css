@@ -38,6 +38,7 @@
   width: 2.5rem;
   height: 2.5rem;
   flex: 0 0 auto;
+  overflow: visible;
 }
 
 #side-menu [data-chutes-nav-slot="chat"] .chutes-account-ring-svg {
@@ -97,16 +98,23 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
+  width: 1.35rem;
+  height: 1.35rem;
   border-radius: 999px;
-  border: 1px solid rgba(247, 247, 246, 0.18);
-  background: linear-gradient(180deg, rgba(247, 247, 246, 0.16), rgba(247, 247, 246, 0.08));
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+  border: 2px solid #121212;
+  background: linear-gradient(180deg, rgba(247, 247, 246, 0.18), rgba(247, 247, 246, 0.08));
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.24);
   color: #f7f7f6;
-  font-size: 0.8rem;
+  font-size: 0.54rem;
   font-weight: 700;
   overflow: hidden;
+}
+
+#side-menu [data-chutes-nav-slot="chat"] .chutes-account-avatar.is-badge {
+  position: absolute;
+  right: -0.1rem;
+  bottom: -0.08rem;
+  z-index: 2;
 }
 
 #side-menu [data-chutes-nav-slot="chat"] .chutes-account-avatar-fallback {
@@ -115,7 +123,7 @@
   justify-content: center;
   width: 100%;
   height: 100%;
-  font-size: 0.62rem;
+  font-size: 0.46rem;
   line-height: 1;
   text-transform: uppercase;
 }
@@ -340,12 +348,12 @@
 }
 
 #side-menu [data-chutes-nav-slot="chat"].is-compact .chutes-account-avatar {
-  width: 1.45rem;
-  height: 1.45rem;
+  width: 1.08rem;
+  height: 1.08rem;
 }
 
 #side-menu [data-chutes-nav-slot="chat"].is-compact .chutes-account-avatar-fallback {
-  font-size: 0.5rem;
+  font-size: 0.42rem;
 }
 
 #side-menu [data-chutes-nav-slot="chat"].is-compact .chutes-account-copy,

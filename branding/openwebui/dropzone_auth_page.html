@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex,nofollow" />
+    <meta http-equiv="Cache-Control" content="no-store" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Log in to Chutes</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #050505;
+        --text: #f7f7f6;
+        --muted: rgba(247, 247, 246, 0.68);
+        --line: rgba(247, 247, 246, 0.12);
+        --surface: rgba(247, 247, 246, 0.05);
+        --surface-hover: rgba(247, 247, 246, 0.1);
+        --surface-strong: rgba(247, 247, 246, 0.16);
+        --danger: #fca5a5;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+        margin: 0;
+      }
+
+      body {
+        position: relative;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        padding: 24px;
+        background:
+          radial-gradient(circle at top, rgba(152, 207, 178, 0.15) 0%, transparent 38%),
+          radial-gradient(circle at bottom, rgba(243, 190, 92, 0.08) 0%, transparent 26%),
+          var(--bg);
+        color: var(--text);
+        font:
+          16px/1.45 Inter,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 50%;
+        width: min(60vw, 720px);
+        height: 2px;
+        transform: translateX(-50%);
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          rgba(152, 207, 178, 0.88) 50%,
+          transparent 100%
+        );
+        opacity: 0.9;
+        pointer-events: none;
+      }
+
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background: radial-gradient(circle at top center, rgba(152, 207, 178, 0.1), transparent 62%);
+        pointer-events: none;
+      }
+
+      main {
+        position: relative;
+        z-index: 1;
+        width: min(100%, 520px);
+      }
+
+      .auth-stack {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 28px;
+      }
+
+      .brand {
+        width: 40px;
+        height: 40px;
+      }
+
+      .header {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        text-align: center;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2.1rem, 4vw, 3.25rem);
+        font-weight: 600;
+        line-height: 1.04;
+      }
+
+      .notice {
+        width: 100%;
+        margin: 0;
+        padding: 12px 16px;
+        border: 1px solid rgba(252, 165, 165, 0.24);
+        border-radius: 14px;
+        background: rgba(239, 68, 68, 0.08);
+        color: var(--danger);
+        font-size: 0.95rem;
+        text-align: center;
+      }
+
+      .auth-selection,
+      .fingerprint-panel {
+        width: min(100%, 480px);
+      }
+
+      .auth-selection {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+
+      .button,
+      .provider,
+      .link-button,
+      .back-button {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        font: inherit;
+        text-decoration: none;
+      }
+
+      .button,
+      .provider {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        width: 100%;
+        min-height: 58px;
+        padding: 0 22px;
+        border-radius: 999px;
+        text-align: center;
+        transition:
+          background-color 150ms ease,
+          border-color 150ms ease,
+          color 150ms ease;
+      }
+
+      .button {
+        background: #f7f7f6;
+        color: #111111;
+        font-size: 1rem;
+        font-weight: 600;
+      }
+
+      .button:hover,
+      .button:focus-visible {
+        background: #ececea;
+      }
+
+      .button svg,
+      .provider svg {
+        width: 20px;
+        height: 20px;
+        flex: 0 0 auto;
+      }
+
+      .divider {
+        position: relative;
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .divider::before {
+        content: "";
+        position: absolute;
+        inset: 50% 0 auto;
+        border-top: 1px solid var(--line);
+      }
+
+      .divider span {
+        position: relative;
+        padding: 0 12px;
+        background: var(--bg);
+      }
+
+      .providers {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .provider {
+        border: 1px solid var(--surface-strong);
+        color: var(--text);
+        font-size: 1rem;
+        font-weight: 600;
+      }
+
+      .provider:hover,
+      .provider:focus-visible {
+        background: var(--surface);
+        border-color: rgba(247, 247, 246, 0.24);
+      }
+
+      .actions {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding-top: 24px;
+        border-top: 1px solid var(--line);
+      }
+
+      .link-button {
+        display: inline-flex;
+        justify-content: center;
+        width: 100%;
+        color: var(--text);
+        font-size: 1rem;
+        font-weight: 600;
+      }
+
+      .link-button.subtle {
+        color: rgba(247, 247, 246, 0.42);
+      }
+
+      .link-button:hover,
+      .link-button:focus-visible {
+        color: #ffffff;
+      }
+
+      .fingerprint-panel {
+        display: none;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .fingerprint-panel.is-open {
+        display: flex;
+      }
+
+      .back-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        align-self: flex-start;
+        padding: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+        font-weight: 600;
+      }
+
+      .back-button:hover,
+      .back-button:focus-visible {
+        color: var(--text);
+      }
+
+      .back-button svg {
+        width: 16px;
+        height: 16px;
+        flex: 0 0 auto;
+      }
+
+      .field {
+        width: 100%;
+        min-height: 58px;
+        padding: 0 22px;
+        border: 1px solid var(--surface-strong);
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
+      }
+
+      .field::placeholder {
+        color: rgba(247, 247, 246, 0.42);
+      }
+
+      .field:focus {
+        outline: none;
+        border-color: rgba(152, 207, 178, 0.5);
+        background: rgba(247, 247, 246, 0.08);
+      }
+
+      .hint {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+        text-align: center;
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      @media (max-width: 640px) {
+        main {
+          width: min(100%, 420px);
+        }
+
+        .auth-stack {
+          gap: 24px;
+        }
+
+        .providers {
+          grid-template-columns: 1fr;
+          gap: 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="auth-stack" aria-label="Chutes login">
+        <img class="brand" src="/static/chutes-logo.svg" alt="Chutes" />
+
+        <div class="header">
+          <h1>Log in to Chutes</h1>
+        </div>
+
+        $error_html
+
+        <div class="auth-selection" id="auth-selection">
+          <button class="button" type="button" id="fingerprint-toggle">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 3.75a4.75 4.75 0 0 0-4.75 4.75v2.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+              <path d="M6 15.5V12a6 6 0 1 1 12 0v1.75" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+              <path d="M9 16.5c0 2.1.62 3.54 1.53 4.75M15 16c0 2.72-.94 4.58-2.28 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+              <path d="M12 11.25v4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+            </svg>
+            Log in with Fingerprint
+          </button>
+
+          <div class="divider"><span>Or continue with</span></div>
+
+          <div class="providers">
+            <a class="provider" href="$google_signin_url">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M21.8 12.2c0-.72-.06-1.25-.2-1.8H12v3.4h5.64c-.11.84-.71 2.1-2.04 2.95l-.02.11 3.02 2.29.21.02c1.92-1.74 3-4.29 3-6.97Z" fill="#4285F4" />
+                <path d="M12 22c2.76 0 5.07-.9 6.76-2.45l-3.21-2.42c-.86.58-2 .99-3.55.99-2.7 0-4.99-1.76-5.81-4.19l-.11.01-3.14 2.38-.04.1A10.2 10.2 0 0 0 12 22Z" fill="#34A853" />
+                <path d="M6.19 13.93A6.12 6.12 0 0 1 5.85 12c0-.67.12-1.32.32-1.93l-.01-.13-3.18-2.42-.1.04A10 10 0 0 0 2 12c0 1.63.39 3.18 1.08 4.57l3.11-2.64Z" fill="#FBBC05" />
+                <path d="M12 5.88c1.96 0 3.28.83 4.03 1.52l2.94-2.79C17.06 2.9 14.76 2 12 2a10.2 10.2 0 0 0-9.12 5.58l3.29 2.5C6.99 7.64 9.29 5.88 12 5.88Z" fill="#EA4335" />
+              </svg>
+              Google
+            </a>
+            <a class="provider" href="$github_signin_url">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M12 1.75a10.25 10.25 0 0 0-3.24 19.98c.51.1.7-.22.7-.5v-1.93c-2.86.62-3.47-1.2-3.47-1.2-.47-1.18-1.14-1.5-1.14-1.5-.93-.62.07-.61.07-.61 1.03.07 1.56 1.04 1.56 1.04.91 1.55 2.39 1.1 2.97.84.1-.66.36-1.1.66-1.35-2.28-.25-4.67-1.11-4.67-4.95 0-1.1.39-2 1.04-2.7-.1-.25-.45-1.27.1-2.65 0 0 .85-.27 2.78 1.03a9.7 9.7 0 0 1 5.06 0c1.92-1.3 2.77-1.03 2.77-1.03.56 1.38.21 2.4.1 2.65.65.7 1.04 1.6 1.04 2.7 0 3.85-2.4 4.7-4.69 4.95.37.32.7.94.7 1.9v2.82c0 .28.19.61.71.5A10.25 10.25 0 0 0 12 1.75Z" />
+              </svg>
+              GitHub
+            </a>
+          </div>
+
+          <div class="actions">
+            <a class="link-button" href="$auth_start_url">Create Account</a>
+            <a class="link-button subtle" href="$auth_reset_url">Forgotten your Fingerprint?</a>
+          </div>
+        </div>
+
+        <form class="fingerprint-panel" id="fingerprint-panel" method="POST" action="$fingerprint_action_url">
+          <button class="back-button" type="button" id="fingerprint-back">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M15 18 9 12l6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            Back
+          </button>
+          <input
+            class="field"
+            type="password"
+            name="fingerprint"
+            placeholder="Enter your fingerprint..."
+            autocomplete="off"
+            required
+          />
+          <button class="button" type="submit">Continue</button>
+          <p class="hint">Paste or enter your fingerprint to continue.</p>
+        </form>
+      </section>
+    </main>
+    <script>
+      (function () {
+        var selection = document.getElementById("auth-selection");
+        var panel = document.getElementById("fingerprint-panel");
+        var toggle = document.getElementById("fingerprint-toggle");
+        var back = document.getElementById("fingerprint-back");
+        if (!selection || !panel || !toggle || !back) {
+          return;
+        }
+
+        var input = panel.querySelector("input");
+
+        function openPanel() {
+          selection.hidden = true;
+          panel.classList.add("is-open");
+          if (input) {
+            input.focus();
+          }
+        }
+
+        function closePanel() {
+          panel.classList.remove("is-open");
+          selection.hidden = false;
+          toggle.focus();
+        }
+
+        toggle.addEventListener("click", openPanel);
+        back.addEventListener("click", closePanel);
+      })();
+    </script>
+  </body>
+</html>

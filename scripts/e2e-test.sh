@@ -133,6 +133,17 @@ print(parse_qs(urlparse(location).query).get("state", [""])[0])
 PY
 }
 
+extract_query_param_from_location() {
+    python3 - "$1" "$2" <<'PY'
+import sys
+from urllib.parse import urlparse, parse_qs
+
+location = sys.argv[1]
+param = sys.argv[2]
+print(parse_qs(urlparse(location).query).get(param, [""])[0])
+PY
+}
+
 query_scalar() {
     compose exec -T postgres psql -U "${POSTGRES_USER:-dropzone}" -d "${POSTGRES_N8N_DB:-${POSTGRES_DB:-n8n}}" -At -v ON_ERROR_STOP=1 -c "$1"
 }
@@ -475,25 +486,36 @@ if ! printf '%s' "$landing_headers" | grep -qi '^Cache-Control: no-store'; then
 fi
 
 auth_headers="$(curl_edge -skD- "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F" -o /dev/null)"
-if ! printf '%s' "$auth_headers" | grep -qi '^HTTP/.* 30[27]'; then
-    echo "FAIL: /auth did not redirect into the Chutes login flow" >&2
+if ! printf '%s' "$auth_headers" | grep -qi '^HTTP/.* 200'; then
+    echo "FAIL: /auth did not render the Dropzone login page" >&2
     printf '%s\n' "$auth_headers" >&2
     exit 1
 fi
 
-if ! printf '%s' "$auth_headers" | grep -qi '^location: https://chutes\.ai/auth'; then
-    echo "FAIL: /auth did not redirect straight to the Chutes login options page" >&2
+if ! printf '%s' "$auth_headers" | grep -qi '^set-cookie: owui-session='; then
+    echo "FAIL: /auth did not mint the OpenWebUI OIDC state cookie" >&2
     exit 1
 fi
 
-if ! printf '%s' "$auth_headers" | grep -q 'redirect-path=%2Fchat%2F'; then
-    echo "FAIL: /auth did not preserve the requested redirect path" >&2
+auth_html="$(curl_edge -sk "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F")"
+if [[ "$auth_html" != *'Log in to Chutes'* ]] || \
+   [[ "$auth_html" != *'Google'* ]] || \
+   [[ "$auth_html" != *'GitHub'* ]] || \
+   [[ "$auth_html" != *'/auth/signin/google?callbackUrl='* ]] || \
+   [[ "$auth_html" != *'redirect-path=%2Fchat%2F'* ]] || \
+   [[ "$auth_html" != *'redirect_to='* ]] || \
+   [[ "$auth_html" == *'Sign in to Chutes Chat'* ]] || \
+   [[ "$auth_html" == *'Continue with Chutes'* ]]; then
+    echo "FAIL: /auth did not render the Chutes-style login options with preserved redirects" >&2
     exit 1
 fi
 
 auth_stale_cookie_headers="$(curl_edge -skD- -H 'Cookie: token=stale-session' "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F" -o /dev/null)"
-if [[ "$auth_stale_cookie_headers" != *'location: https://chutes.ai/auth'* ]] || \
-   [[ "$auth_stale_cookie_headers" != *'redirect-path=%2Fchat%2F'* ]]; then
+auth_stale_cookie_html="$(curl_edge -sk -H 'Cookie: token=stale-session' "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F")"
+if [[ "$auth_stale_cookie_headers" != *'HTTP/2 200'* && "$auth_stale_cookie_headers" != *'HTTP/1.1 200'* ]] || \
+   [[ "$auth_stale_cookie_html" != *'Log in to Chutes'* ]] || \
+   [[ "$auth_stale_cookie_html" != *'redirect-path=%2Fchat%2F'* ]] || \
+   [[ "$auth_stale_cookie_html" == *'Continue with Chutes'* ]]; then
     echo "FAIL: /auth fell back to the native OpenWebUI auth screen when a stale token cookie was present" >&2
     exit 1
 fi
@@ -511,14 +533,19 @@ if ! printf '%s' "$oauth_login_headers" | grep -qi "redirect_uri=https%3A%2F%2F$
     exit 1
 fi
 
-handoff_headers="$(curl_edge -skD- "https://${DROPZONE_HOST}/api/v1/dropzone/chutes-login?redirect=%2Fchat%2F" -o /dev/null)"
+handoff_headers_file="$COOKIE_DIR/handoff-headers.txt"
+curl_edge -sk -D "$handoff_headers_file" "https://${DROPZONE_HOST}/api/v1/dropzone/chutes-login?redirect=%2Fchat%2F" -o /dev/null
+handoff_headers="$(cat "$handoff_headers_file")"
 if ! printf '%s' "$handoff_headers" | grep -qi '^HTTP/.* 30[27]'; then
     echo "FAIL: /api/v1/dropzone/chutes-login did not redirect into the auth flow" >&2
     printf '%s\n' "$handoff_headers" >&2
     exit 1
 fi
 
-if ! printf '%s' "$handoff_headers" | grep -qi "redirect_uri=https%3A%2F%2F${DROPZONE_HOST}%2Foauth%2Foidc%2Fcallback"; then
+handoff_location="$(extract_location "$handoff_headers_file")"
+handoff_redirect_to="$(extract_query_param_from_location "$handoff_location" "redirect_to")"
+if [ -z "$handoff_redirect_to" ] || \
+   ! printf '%s' "$handoff_redirect_to" | grep -qi "redirect_uri=https%3A%2F%2F${DROPZONE_HOST}%2Foauth%2Foidc%2Fcallback"; then
     echo "FAIL: Dropzone auth handoff did not preserve the root OAuth callback alias" >&2
     printf '%s\n' "$handoff_headers" >&2
     exit 1
