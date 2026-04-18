@@ -221,7 +221,9 @@ fi
 if [ -s "$PROJECT_DIR/branding/openwebui/dropzone_auth_page.html" ] && \
    grep -Fq 'Path(__file__).with_name("dropzone_auth_page.html")' "$PROJECT_DIR/branding/openwebui/dropzone_auth.py" && \
    grep -Fq 'COPY branding/openwebui/dropzone_auth_page.html /app/backend/open_webui/dropzone_auth_page.html' "$PROJECT_DIR/Dockerfile.local-repo" && \
-   grep -Fq 'Log in with Fingerprint' "$PROJECT_DIR/branding/openwebui/dropzone_auth_page.html"; then
+   grep -Fq 'Log in with Fingerprint' "$PROJECT_DIR/branding/openwebui/dropzone_auth_page.html" && \
+   grep -Fq '/api/v1/dropzone/account-summary' "$PROJECT_DIR/branding/openwebui/dropzone_auth_page.html" && \
+   grep -Fq 'dropzone-auth-redirect' "$PROJECT_DIR/branding/openwebui/dropzone_auth_page.html"; then
     pass "Dropzone auth page is template-driven and bundled with OpenWebUI"
 else
     fail "Dropzone auth page template wiring is incomplete"
@@ -230,7 +232,8 @@ fi
 if grep -Fq 'forceDropzoneAuthScreen' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'Sign in to Chutes Chat' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'Continue with Chutes' "$PROJECT_DIR/branding/openwebui/loader.js" && \
-   grep -Fq '/auth?redirect=' "$PROJECT_DIR/branding/openwebui/loader.js"; then
+   grep -Fq '/auth?redirect=' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'dropzone-auth-redirect' "$PROJECT_DIR/branding/openwebui/loader.js"; then
     pass "OpenWebUI loader replaces legacy auth screens with Dropzone auth"
 else
     fail "OpenWebUI loader is missing the legacy auth redirect guard"
@@ -646,8 +649,11 @@ if openwebui_enabled; then
     auth_html="$(curl_edge -sk "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F" 2>/dev/null || true)"
     if echo "$auth_headers" | grep -qi '^HTTP/.* 200' && \
        echo "$auth_headers" | grep -qi '^set-cookie: owui-session=' && \
+       echo "$auth_headers" | grep -qi '^set-cookie: dropzone-auth-redirect=' && \
        echo "$auth_html" | grep -q 'id="fingerprint-login"' && \
        echo "$auth_html" | grep -q 'Log in to Chutes' && \
+       echo "$auth_html" | grep -q '/idp/authorize?response_type=code' && \
+       ! echo "$auth_html" | grep -q 'id="fingerprint-login" href="https://chutes.ai/auth' && \
        echo "$auth_html" | grep -q 'Google' && \
        echo "$auth_html" | grep -q 'GitHub' && \
        echo "$auth_html" | grep -q 'Create Account' && \
@@ -729,12 +735,12 @@ if openwebui_enabled; then
 
     handoff_headers="$(curl_edge -skD- "https://${DROPZONE_HOST}/api/v1/dropzone/chutes-login?redirect=%2Fchat%2F" -o /dev/null 2>/dev/null || true)"
     handoff_location="$(printf '%s\n' "$handoff_headers" | awk 'BEGIN{IGNORECASE=1} /^location: /{sub(/\r$/, ""); print substr($0, 11); exit}')"
-    handoff_redirect_to="$(query_param_from_url "$handoff_location" redirect_to)"
     if echo "$handoff_headers" | grep -qi '^HTTP/.* 30[27]' &&
-       echo "$handoff_headers" | grep -qi '^location: https://chutes\.ai/auth' &&
-       echo "$handoff_headers" | grep -q 'redirect-path=%2Fchat%2F' &&
-       [ -n "$handoff_redirect_to" ] &&
-       printf '%s' "$handoff_redirect_to" | grep -qi "redirect_uri=https%3A%2F%2F${DROPZONE_HOST}%2Foauth%2Foidc%2Fcallback"; then
+       echo "$handoff_headers" | grep -Eqi '^set-cookie: dropzone-auth-redirect="?/chat/"?;' &&
+       ! echo "$handoff_headers" | grep -qi '^location: https://chutes\.ai/auth' &&
+       [ -n "$handoff_location" ] &&
+       printf '%s' "$handoff_location" | grep -qi '/idp/authorize?response_type=code' &&
+       printf '%s' "$handoff_location" | grep -qi "redirect_uri=https%3A%2F%2F${DROPZONE_HOST}%2Foauth%2Foidc%2Fcallback"; then
         pass "Dropzone auth handoff preserves the root OAuth callback alias and target path"
     else
         fail "Dropzone auth handoff did not preserve the root OAuth callback alias and target path"

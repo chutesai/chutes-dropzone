@@ -14,7 +14,9 @@
   var DROPZONE_AUTH_MARKERS = ["Log in to Chutes", "Log in with Fingerprint"];
   var LEGACY_AUTH_MARKERS = ["Sign in to Chutes Chat", "Continue with Chutes"];
   var AUTH_REDIRECT_SESSION_KEY = "chutes.dropzone.auth.redirect";
+  var AUTH_REDIRECT_COOKIE_NAME = "dropzone-auth-redirect";
   var AUTH_REDIRECT_COOLDOWN_MS = 2000;
+  var authRedirectInFlight = false;
   var scheduled = false;
   var accountSummary = null;
   var accountSummaryLoaded = false;
@@ -179,6 +181,60 @@
     } catch (error) {
       // Ignore sessionStorage failures; this is only loop protection state.
     }
+  }
+
+  function readCookie(name) {
+    var prefix = name + "=";
+    var cookies = document.cookie ? document.cookie.split(";") : [];
+
+    for (var index = 0; index < cookies.length; index += 1) {
+      var cookie = cookies[index].trim();
+      if (cookie.indexOf(prefix) === 0) {
+        return decodeURIComponent(cookie.slice(prefix.length));
+      }
+    }
+
+    return "";
+  }
+
+  function clearCookie(name) {
+    document.cookie = name + "=; Max-Age=0; path=/; SameSite=Lax";
+  }
+
+  function getPendingAuthRedirectTarget() {
+    var target = readCookie(AUTH_REDIRECT_COOKIE_NAME);
+    if (!target) return "";
+    return normalizeAuthRedirectTarget(target);
+  }
+
+  function shouldApplyPendingAuthRedirect() {
+    var path = window.location.pathname || "/";
+    return path === "/" || path === "/home" || path === "/home/" || path === "/auth" || path === "/auth/";
+  }
+
+  function maybeFinishAuthRedirect() {
+    if (authRedirectInFlight) return true;
+
+    var target = getPendingAuthRedirectTarget();
+    if (!target) return false;
+
+    var current = normalizeAuthRedirectTarget(
+      (window.location.pathname || "/") + (window.location.search || "") + (window.location.hash || "")
+    );
+
+    if (current === target) {
+      clearCookie(AUTH_REDIRECT_COOKIE_NAME);
+      return false;
+    }
+
+    if (!shouldApplyPendingAuthRedirect() || !(accountSummary && accountSummary.username)) {
+      return false;
+    }
+
+    authRedirectInFlight = true;
+    clearCookie(AUTH_REDIRECT_COOKIE_NAME);
+    window.location.replace(target);
+    return true;
   }
 
   function forceDropzoneAuthScreen() {
@@ -388,6 +444,7 @@
           accountSummaryFailureCount += 1;
         }
         accountSummaryLoaded = true;
+        maybeFinishAuthRedirect();
       })
       .catch(function () {
         if (!accountSummary) {
@@ -953,6 +1010,7 @@
   function refresh() {
     scheduled = false;
     if (forceDropzoneAuthScreen()) return;
+    if (maybeFinishAuthRedirect()) return;
     patchBranding();
     ensureChutesAutoHint();
     ensureSidebarCard();

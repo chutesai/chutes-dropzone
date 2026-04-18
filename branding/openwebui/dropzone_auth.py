@@ -20,11 +20,10 @@ log = logging.getLogger(__name__)
 router = APIRouter(tags=["dropzone-auth"])
 
 AUTH_HANDOFF_PATH = "/api/v1/dropzone/chutes-login"
+AUTH_REDIRECT_COOKIE_NAME = "dropzone-auth-redirect"
+AUTH_REDIRECT_COOKIE_MAX_AGE = 900
+DEFAULT_AUTH_REDIRECT = "/c/new"
 CHUTES_AUTH_URL = os.environ.get("CHUTES_AUTH_URL", "https://chutes.ai/auth").strip()
-CHUTES_IDP_BASE_URL = os.environ.get("CHUTES_IDP_BASE_URL", "").strip()
-OPENID_PROVIDER_URL = os.environ.get("OPENID_PROVIDER_URL", "").strip()
-DEFAULT_WRAPPED_AUTHORIZE_HOSTS = frozenset({"api.chutes.ai", "idp.chutes.ai"})
-WRAPPED_AUTHORIZE_PATHS = frozenset({"/idp/authorize"})
 AUTH_PAGE_TEMPLATE_PATH = Path(__file__).with_name("dropzone_auth_page.html")
 
 
@@ -44,49 +43,8 @@ def _normalize_redirect_path(value: str | None) -> str | None:
     return normalized or None
 
 
-def _wrap_authorize_url(authorize_url: str, redirect_path: str | None) -> str:
-    if not CHUTES_AUTH_URL:
-        return authorize_url
-
-    try:
-        if not _is_wrapped_authorize_url(authorize_url):
-            return authorize_url
-
-        parsed_auth = urllib.parse.urlparse(CHUTES_AUTH_URL)
-        params = urllib.parse.parse_qsl(parsed_auth.query, keep_blank_values=True)
-        if redirect_path:
-            params.append(("redirect-path", redirect_path))
-        params.append(("redirect_to", authorize_url))
-        return urllib.parse.urlunparse(parsed_auth._replace(query=urllib.parse.urlencode(params)))
-    except Exception as exc:
-        log.warning("Failed to wrap authorize URL %s: %s", authorize_url, exc)
-        return authorize_url
-
-
-def _hostname_from_url(url: str) -> str | None:
-    if not url:
-        return None
-
-    return urllib.parse.urlparse(url).hostname
-
-
-@lru_cache(maxsize=1)
-def _wrapped_authorize_hosts() -> frozenset[str]:
-    hosts = set(DEFAULT_WRAPPED_AUTHORIZE_HOSTS)
-    for candidate in (CHUTES_IDP_BASE_URL, OPENID_PROVIDER_URL):
-        host = _hostname_from_url(candidate)
-        if host:
-            hosts.add(host)
-    return frozenset(hosts)
-
-
-def _is_wrapped_authorize_url(authorize_url: str) -> bool:
-    parsed_authorize = urllib.parse.urlparse(authorize_url)
-    path = parsed_authorize.path.rstrip("/") or "/"
-    return (
-        parsed_authorize.hostname in _wrapped_authorize_hosts()
-        and path in WRAPPED_AUTHORIZE_PATHS
-    )
+def _resolve_redirect_path(value: str | None) -> str:
+    return _normalize_redirect_path(value) or DEFAULT_AUTH_REDIRECT
 
 
 def _copy_passthrough_headers(response, upstream_response) -> None:
@@ -98,18 +56,21 @@ def _copy_passthrough_headers(response, upstream_response) -> None:
     response.headers["Cache-Control"] = "no-store"
 
 
-def _build_wrapped_authorize_response(authorize_url: str, oidc_response, redirect_path: str | None):
-    wrapped_url = _wrap_authorize_url(authorize_url, redirect_path)
-    if wrapped_url == authorize_url:
-        return oidc_response
-
-    response = RedirectResponse(url=wrapped_url, status_code=oidc_response.status_code)
-    _copy_passthrough_headers(response, oidc_response)
-    return response
+def _set_auth_redirect_cookie(request: Request, response, redirect_path: str | None) -> None:
+    target = _resolve_redirect_path(redirect_path)
+    response.set_cookie(
+        AUTH_REDIRECT_COOKIE_NAME,
+        target,
+        max_age=AUTH_REDIRECT_COOKIE_MAX_AGE,
+        path="/",
+        secure=request.url.scheme == "https",
+        httponly=False,
+        samesite="lax",
+    )
 
 
 def _build_auth_route_url(path: str, params: list[tuple[str, str]] | None = None) -> str:
-    parsed_auth = urllib.parse.urlparse(CHUTES_AUTH_URL)
+    parsed_auth = urllib.parse.urlparse(CHUTES_AUTH_URL or "https://chutes.ai/auth")
     existing = urllib.parse.parse_qsl(parsed_auth.query, keep_blank_values=True)
     query = urllib.parse.urlencode(existing + (params or []))
     return urllib.parse.urlunparse(
@@ -170,29 +131,34 @@ async def _begin_chutes_login(request: Request):
 async def _start_chutes_login(request: Request, redirect_path: str | None):
     authorize_url, oidc_response = await _begin_chutes_login(request)
     if not authorize_url:
+        _set_auth_redirect_cookie(request, oidc_response, redirect_path)
         return oidc_response
 
-    return _build_wrapped_authorize_response(authorize_url, oidc_response, redirect_path)
+    _set_auth_redirect_cookie(request, oidc_response, redirect_path)
+    return oidc_response
 
 
 @router.get("/auth", include_in_schema=False)
 @router.get("/auth/", include_in_schema=False)
 async def auth_handoff(request: Request):
-    redirect_path = _normalize_redirect_path(request.query_params.get("redirect"))
+    redirect_path = _resolve_redirect_path(request.query_params.get("redirect"))
     authorize_url, oidc_response = await _begin_chutes_login(request)
     if not authorize_url:
+        _set_auth_redirect_cookie(request, oidc_response, redirect_path)
         return oidc_response
 
-    parsed_auth = urllib.parse.urlparse(CHUTES_AUTH_URL)
+    parsed_auth = urllib.parse.urlparse(CHUTES_AUTH_URL or "https://chutes.ai/auth")
     auth_path = parsed_auth.path.rstrip("/") or "/auth"
     redirect_params = _build_redirect_params(authorize_url, redirect_path)
+    # Fingerprint stays on the direct OIDC authorize URL; social providers reuse
+    # the same chutes-web callback contract so they still land back on our OIDC flow.
     callback_url = _build_auth_route_url(
         f"{auth_path}/callback",
         redirect_params,
     )
     try:
         auth_page = _render_auth_page(
-            fingerprint_login_url=_wrap_authorize_url(authorize_url, redirect_path),
+            fingerprint_login_url=authorize_url,
             auth_start_url=_build_auth_route_url(f"{auth_path}/start", redirect_params),
             auth_reset_url=_build_auth_route_url(f"{auth_path}/reset"),
             google_signin_url=_build_auth_route_url(
@@ -205,15 +171,15 @@ async def auth_handoff(request: Request):
         )
     except Exception:
         log.exception("Failed to render Dropzone auth page; falling back to direct Chutes auth")
-        return _build_wrapped_authorize_response(authorize_url, oidc_response, redirect_path)
+        _set_auth_redirect_cookie(request, oidc_response, redirect_path)
+        return oidc_response
 
     response = HTMLResponse(auth_page)
     _copy_passthrough_headers(response, oidc_response)
+    _set_auth_redirect_cookie(request, response, redirect_path)
     return response
 
 
 @router.get(AUTH_HANDOFF_PATH, include_in_schema=False)
 async def chutes_login_handoff(request: Request):
-    return await _start_chutes_login(
-        request, _normalize_redirect_path(request.query_params.get("redirect"))
-    )
+    return await _start_chutes_login(request, _resolve_redirect_path(request.query_params.get("redirect")))

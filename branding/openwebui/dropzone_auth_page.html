@@ -6,6 +6,9 @@
     <meta http-equiv="Cache-Control" content="no-store" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Log in to Chutes</title>
+    <script>
+      document.documentElement.classList.add("auth-loading");
+    </script>
     <style>
       :root {
         color-scheme: dark;
@@ -82,6 +85,12 @@
         display: grid;
         place-items: center;
         width: min(100%, 520px);
+        transition: opacity 140ms ease;
+      }
+
+      html.auth-loading main {
+        opacity: 0;
+        pointer-events: none;
       }
 
       .auth-stack {
@@ -321,5 +330,81 @@
         </div>
       </section>
     </main>
+    <script>
+      (function () {
+        var ACCOUNT_SUMMARY_URL = "/api/v1/dropzone/account-summary";
+        var AUTH_REDIRECT_COOKIE_NAME = "dropzone-auth-redirect";
+        var DEFAULT_AUTH_REDIRECT = "/c/new";
+        var revealed = false;
+
+        function reveal() {
+          if (revealed) return;
+          revealed = true;
+          document.documentElement.classList.remove("auth-loading");
+        }
+
+        function readCookie(name) {
+          var prefix = name + "=";
+          var cookies = document.cookie ? document.cookie.split(";") : [];
+          for (var index = 0; index < cookies.length; index += 1) {
+            var cookie = cookies[index].trim();
+            if (cookie.indexOf(prefix) === 0) {
+              return decodeURIComponent(cookie.slice(prefix.length));
+            }
+          }
+          return "";
+        }
+
+        function clearCookie(name) {
+          document.cookie = name + "=; Max-Age=0; path=/; SameSite=Lax";
+        }
+
+        function safeRelativePath(value, fallback) {
+          var text = String(value || "").trim();
+          if (!text) return fallback;
+
+          try {
+            var parsed = new URL(text, window.location.origin);
+            if (parsed.origin !== window.location.origin) return fallback;
+            if (!parsed.pathname || parsed.pathname.charAt(0) !== "/" || parsed.pathname.indexOf("//") === 0) {
+              return fallback;
+            }
+            return parsed.pathname + parsed.search + parsed.hash;
+          } catch (error) {
+            return fallback;
+          }
+        }
+
+        function finishRedirect() {
+          var target = safeRelativePath(readCookie(AUTH_REDIRECT_COOKIE_NAME), DEFAULT_AUTH_REDIRECT);
+          clearCookie(AUTH_REDIRECT_COOKIE_NAME);
+          window.location.replace(target);
+        }
+
+        window.setTimeout(reveal, 1500);
+
+        window
+          .fetch(ACCOUNT_SUMMARY_URL, {
+            cache: "no-store",
+            credentials: "include",
+            headers: { Accept: "application/json" },
+          })
+          .then(function (response) {
+            if (!response.ok) {
+              throw new Error("anonymous");
+            }
+            return response.json();
+          })
+          .then(function (payload) {
+            var summary = (payload && payload.data) || payload || null;
+            if (summary && summary.username) {
+              finishRedirect();
+              return;
+            }
+            reveal();
+          })
+          .catch(reveal);
+      })();
+    </script>
   </body>
 </html>

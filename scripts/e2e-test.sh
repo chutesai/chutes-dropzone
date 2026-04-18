@@ -497,9 +497,16 @@ if ! printf '%s' "$auth_headers" | grep -qi '^set-cookie: owui-session='; then
     exit 1
 fi
 
+if ! printf '%s' "$auth_headers" | grep -qi '^set-cookie: dropzone-auth-redirect='; then
+    echo "FAIL: /auth did not persist the post-login redirect target" >&2
+    exit 1
+fi
+
 auth_html="$(curl_edge -sk "https://${DROPZONE_HOST}/auth?redirect=%2Fchat%2F")"
 if [[ "$auth_html" != *'Log in to Chutes'* ]] || \
    [[ "$auth_html" != *'id="fingerprint-login"'* ]] || \
+   [[ "$auth_html" != *'/idp/authorize?response_type=code'* ]] || \
+   [[ "$auth_html" == *'id="fingerprint-login" href="https://chutes.ai/auth'* ]] || \
    [[ "$auth_html" != *'Google'* ]] || \
    [[ "$auth_html" != *'GitHub'* ]] || \
    [[ "$auth_html" != *'/auth/signin/google?callbackUrl='* ]] || \
@@ -554,16 +561,16 @@ if ! printf '%s' "$handoff_headers" | grep -qi '^HTTP/.* 30[27]'; then
 fi
 
 handoff_location="$(extract_location "$handoff_headers_file")"
-handoff_redirect_to="$(extract_query_param_from_location "$handoff_location" "redirect_to")"
-if [ -z "$handoff_redirect_to" ] || \
-   ! printf '%s' "$handoff_redirect_to" | grep -qi "redirect_uri=https%3A%2F%2F${DROPZONE_HOST}%2Foauth%2Foidc%2Fcallback"; then
+if [ -z "$handoff_location" ] || \
+   ! printf '%s' "$handoff_location" | grep -qi '/idp/authorize?response_type=code' || \
+   ! printf '%s' "$handoff_location" | grep -qi "redirect_uri=https%3A%2F%2F${DROPZONE_HOST}%2Foauth%2Foidc%2Fcallback"; then
     echo "FAIL: Dropzone auth handoff did not preserve the root OAuth callback alias" >&2
     printf '%s\n' "$handoff_headers" >&2
     exit 1
 fi
 
-if ! printf '%s' "$handoff_headers" | grep -qi '^location: https://chutes\.ai/auth' || \
-   ! printf '%s' "$handoff_headers" | grep -q 'redirect-path=%2Fchat%2F'; then
+if ! printf '%s' "$handoff_headers" | grep -Eqi '^set-cookie: dropzone-auth-redirect="?/chat/"?;' || \
+   printf '%s' "$handoff_headers" | grep -qi '^location: https://chutes\.ai/auth'; then
     echo "FAIL: Dropzone auth handoff did not preserve the requested post-login path" >&2
     printf '%s\n' "$handoff_headers" >&2
     exit 1

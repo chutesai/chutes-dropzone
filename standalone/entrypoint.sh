@@ -1214,6 +1214,7 @@ export OAUTH_USERNAME_CLAIM=username
 export OAUTH_EMAIL_CLAIM=email
 export OPENID_PROVIDER_URL="${CHUTES_IDP_BASE_URL}/.well-known/openid-configuration"
 export OPENID_REDIRECT_URI="https://${DROPZONE_HOST}/oauth/oidc/callback"
+export CHUTES_AUTH_URL="${CHUTES_AUTH_URL:-https://chutes.ai/auth}"
 export OPENAI_API_BASE_URLS="$OPENWEBUI_API_BASE_URL"
 export OPENAI_API_KEYS="${OPENWEBUI_API_KEY:-}"
 export MODELS_CACHE_TTL="${OPENWEBUI_MODELS_CACHE_TTL:-300}"
