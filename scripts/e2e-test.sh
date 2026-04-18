@@ -704,10 +704,19 @@ PY
 member_openwebui_cookie="$COOKIE_DIR/member-openwebui.cookies"
 member_openwebui_headers="$COOKIE_DIR/member-openwebui.headers"
 member_openwebui_final_url="$COOKIE_DIR/member-openwebui.final-url"
+member_openwebui_chat_auth_headers="$COOKIE_DIR/member-openwebui-chat-auth.headers"
 complete_openwebui_sso_login "$member_openwebui_cookie" "$member_openwebui_headers" "$member_openwebui_final_url"
 if ! grep -Eq '/(home|auth)' "$member_openwebui_final_url"; then
     echo "FAIL: OpenWebUI SSO did not finish on an app route" >&2
     cat "$member_openwebui_final_url" >&2
+    exit 1
+fi
+
+curl_edge -skD- -b "$member_openwebui_cookie" "https://${DROPZONE_HOST}/chat/auth" -o /dev/null >"$member_openwebui_chat_auth_headers"
+if ! grep -qi '^HTTP/.* 200' "$member_openwebui_chat_auth_headers" || \
+   grep -Eqi '^location: https?://[^/]+/auth$|^location: /auth$' "$member_openwebui_chat_auth_headers"; then
+    echo "FAIL: OpenWebUI chat auth finalizer was redirected away from the app" >&2
+    cat "$member_openwebui_chat_auth_headers" >&2
     exit 1
 fi
 

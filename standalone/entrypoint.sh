@@ -446,6 +446,27 @@ EOF
     fi
 
     cat <<'EOF'
+        location ^~ /chat/auth {
+            proxy_pass http://127.0.0.1:8080;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Host $host;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            # Strip internal-only headers to prevent external spoofing
+            proxy_set_header X-OpenWebUI-User-Id "";
+            proxy_set_header X-OpenWebUI-User-Email "";
+            proxy_set_header X-OpenWebUI-User-Name "";
+            proxy_set_header X-OpenWebUI-User-Role "";
+            proxy_buffering off;
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
+            client_max_body_size 50m;
+        }
+
         if ($request_uri ~ "^/chat//+") {
             return 302 /c/new;
         }
@@ -642,13 +663,27 @@ EOF
     fi
 
     cat <<'EOF'
+    @chatAuth path /chat/auth /chat/auth/*
+    handle @chatAuth {
+        reverse_proxy 127.0.0.1:8080 {
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Proto {scheme}
+            # Strip internal-only headers to prevent external spoofing
+            header_up -X-OpenWebUI-User-Id
+            header_up -X-OpenWebUI-User-Email
+            header_up -X-OpenWebUI-User-Name
+            header_up -X-OpenWebUI-User-Role
+        }
+    }
+
     redir /chat /chat/ 308
     redir /chat/ /c/new 302
 
     @chatAliasBad path_regexp chatAliasBad ^/chat//+.*$
     redir @chatAliasBad /c/new 302
 
-    @chatAlias path_regexp chatAlias ^/chat/([^/].*)$
+    @chatAlias path_regexp chatAlias ^/chat/(?!auth(?:/|$))([^/].*)$
     redir @chatAlias /{re.chatAlias.1} 308
 
     @chatCustomAssets path /static/custom.css /static/loader.js /static/site.webmanifest /chat/static/custom.css /chat/static/loader.js /chat/static/site.webmanifest

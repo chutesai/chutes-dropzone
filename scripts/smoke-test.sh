@@ -386,17 +386,21 @@ fi
 
 if grep -q '@chatCustomAssets path /static/custom.css /static/loader.js /static/site.webmanifest' "$PROJECT_DIR/deploy.sh" && \
    grep -q 'header @chatCustomAssets Cache-Control "no-store"' "$PROJECT_DIR/deploy.sh" && \
+   grep -q '@chatAuth path /chat/auth /chat/auth/\*' "$PROJECT_DIR/deploy.sh" && \
    grep -q 'location = /static/custom.css {' "$PROJECT_DIR/deploy.sh" && \
    grep -q 'location = /static/loader.js {' "$PROJECT_DIR/deploy.sh" && \
    grep -q 'location = /static/site.webmanifest {' "$PROJECT_DIR/deploy.sh" && \
+   grep -q 'location \^~ /chat/auth {' "$PROJECT_DIR/deploy.sh" && \
    grep -q '@chatCustomAssets path /static/custom.css /static/loader.js /static/site.webmanifest' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -q 'header @chatCustomAssets Cache-Control "no-store"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -q '@chatAuth path /chat/auth /chat/auth/\*' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -q 'location = /static/custom.css {' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -q 'location = /static/loader.js {' "$PROJECT_DIR/standalone/entrypoint.sh" && \
-   grep -q 'location = /static/site.webmanifest {' "$PROJECT_DIR/standalone/entrypoint.sh"; then
-    pass "chat custom assets are served no-store through the edge"
+   grep -q 'location = /static/site.webmanifest {' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -q 'location \^~ /chat/auth {' "$PROJECT_DIR/standalone/entrypoint.sh"; then
+    pass "chat assets and auth finalizer are routed correctly through the edge"
 else
-    fail "chat custom assets are missing edge no-store protection"
+    fail "chat edge routing is missing the auth finalizer or no-store asset protection"
 fi
 
 if python3 - "$PROJECT_DIR/branding/openwebui/site.webmanifest" <<'PY' >/dev/null 2>&1
@@ -731,6 +735,14 @@ if openwebui_enabled; then
         pass "OpenWebUI chat alias sends malformed double-slash paths to /c/new"
     else
         fail "OpenWebUI chat alias did not safely normalize malformed double-slash paths"
+    fi
+
+    chat_auth_headers="$(curl_edge -skD- "https://${DROPZONE_HOST}/chat/auth" -o /dev/null 2>/dev/null | tr -d '\r' || true)"
+    if echo "$chat_auth_headers" | grep -qi '^HTTP/.* 200' && \
+       ! echo "$chat_auth_headers" | grep -Eqi '^location: https?://[^/]+/auth$|^location: /auth$'; then
+        pass "OpenWebUI chat auth finalizer stays inside the app"
+    else
+        fail "OpenWebUI chat auth finalizer is still redirected to the legacy auth page"
     fi
 
     chat_native_html="$(curl_edge -sk "https://${DROPZONE_HOST}/home" 2>/dev/null || true)"
