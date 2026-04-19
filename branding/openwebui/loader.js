@@ -108,6 +108,8 @@
       safe === "/" ||
       safe === "/auth" ||
       safe === "/auth/" ||
+      safe === "/chat/auth" ||
+      safe === "/chat/auth/" ||
       safe === "/chat" ||
       safe === "/chat/"
     ) {
@@ -226,7 +228,15 @@
 
   function shouldApplyPendingAuthRedirect() {
     var path = window.location.pathname || "/";
-    return path === "/" || path === "/home" || path === "/home/" || path === "/auth" || path === "/auth/";
+    return (
+      path === "/" ||
+      path === "/home" ||
+      path === "/home/" ||
+      path === "/auth" ||
+      path === "/auth/" ||
+      path === "/chat/auth" ||
+      path === "/chat/auth/"
+    );
   }
 
   function maybeFinishAuthRedirect() {
@@ -235,8 +245,9 @@
     var target = getPendingAuthRedirectTarget();
     if (!target) return false;
 
-    var current = normalizeAuthRedirectTarget(
-      (window.location.pathname || "/") + (window.location.search || "") + (window.location.hash || "")
+    var current = getSafeRelativePath(
+      (window.location.pathname || "/") + (window.location.search || "") + (window.location.hash || ""),
+      DEFAULT_AUTH_REDIRECT
     );
 
     if (current === target) {
@@ -890,9 +901,28 @@
     if (sidebar && sidebar.id === "sidebar") {
       var sidebarRect = sidebar.getBoundingClientRect ? sidebar.getBoundingClientRect() : { height: 0 };
       var directChildren = Array.prototype.slice.call(sidebar.children).filter(isVisible);
+      var scoredChildren = directChildren
+        .map(function (child) {
+          var rect = child.getBoundingClientRect ? child.getBoundingClientRect() : { height: 0 };
+          return {
+            child: child,
+            rect: rect,
+            score: getMenuScore(child.textContent),
+          };
+        })
+        .sort(function (left, right) {
+          if (right.score !== left.score) {
+            return right.score - left.score;
+          }
+          return (right.rect.height || 0) - (left.rect.height || 0);
+        });
 
       if (directChildren.length === 1 && directChildren[0].childElementCount > 0) {
         return directChildren[0];
+      }
+
+      if (scoredChildren.length && scoredChildren[0].score >= 2) {
+        return scoredChildren[0].child;
       }
 
       for (var index = 0; index < directChildren.length; index += 1) {

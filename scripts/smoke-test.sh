@@ -256,6 +256,8 @@ if grep -Fq 'forceDropzoneAuthScreen' "$PROJECT_DIR/branding/openwebui/loader.js
    grep -Fq 'Continue with Chutes' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq '/auth?redirect=' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'dropzone-auth-redirect' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'path === "/chat/auth"' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'var current = getSafeRelativePath(' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'stripWrappedCookieValue' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    ! grep -Fq 'sirouk2' "$PROJECT_DIR/branding/openwebui/loader.js"; then
     pass "OpenWebUI loader replaces legacy auth screens with Dropzone auth"
