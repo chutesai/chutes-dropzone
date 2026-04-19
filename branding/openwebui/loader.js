@@ -928,7 +928,7 @@
       .reverse()
       .find(function (child) {
         var text = normalizeText(child.textContent);
-        return /settings|profile|sign out|logout|sirouk2|free|plus|pro|enterprise|admin/i.test(text);
+        return /settings|profile|account|sign out|logout|free|plus|pro|enterprise|admin/i.test(text);
       });
 
     if (footerChild) {

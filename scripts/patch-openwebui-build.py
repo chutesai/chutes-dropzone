@@ -22,6 +22,7 @@ def with_subpath(path: str, subpath: str) -> str:
 
 def auth_gate_script(subpath: str) -> str:
     auth_path = with_subpath("/auth", subpath)
+    chat_auth_path = with_subpath("/chat/auth", subpath)
     account_summary_path = with_subpath("/api/v1/dropzone/account-summary", subpath)
     oauth_prefix = with_subpath("/oauth/oidc/", subpath)
 
@@ -31,12 +32,60 @@ def auth_gate_script(subpath: str) -> str:
 				if (window.__DROPZONE_AUTH_GATE__) return;
 
 				const AUTH_PATH = "{auth_path}";
+				const CHAT_AUTH_PATH = "{chat_auth_path}";
 				const ACCOUNT_SUMMARY_URL = "{account_summary_path}";
 				const OAUTH_PREFIX = "{oauth_prefix}";
 				const path = window.location.pathname || "/";
 
 				function isAuthRoute(currentPath) {{
-					return currentPath === AUTH_PATH || currentPath === `${{AUTH_PATH}}/` || currentPath.indexOf(OAUTH_PREFIX) === 0;
+					return (
+						currentPath === AUTH_PATH ||
+						currentPath === `${{AUTH_PATH}}/` ||
+						currentPath === CHAT_AUTH_PATH ||
+						currentPath === `${{CHAT_AUTH_PATH}}/` ||
+						currentPath.indexOf(OAUTH_PREFIX) === 0
+					);
+				}}
+
+				function stripWrappedCookieValue(value) {{
+					let text = String(value || "").trim();
+					if (!text) return "";
+
+					while (text.length >= 2 && text.charAt(0) === '"' && text.charAt(text.length - 1) === '"') {{
+						text = text.slice(1, -1).trim();
+					}}
+
+					return text
+						.replace(/\\\\\\//g, "/")
+						.replace(/\\\\"/g, '"')
+						.replace(/\\\\\\\\/g, "\\\\");
+				}}
+
+				function readCookie(name) {{
+					const prefix = `${{name}}=`;
+					const cookies = document.cookie ? document.cookie.split(";") : [];
+
+					for (let index = 0; index < cookies.length; index += 1) {{
+						const cookie = cookies[index].trim();
+						if (cookie.indexOf(prefix) === 0) {{
+							return stripWrappedCookieValue(decodeURIComponent(cookie.slice(prefix.length)));
+						}}
+					}}
+
+					return "";
+				}}
+
+				function syncFrontendToken() {{
+					const token = readCookie("token");
+					if (!token) return;
+
+					try {{
+						if (window.localStorage && window.localStorage.getItem("token") !== token) {{
+							window.localStorage.setItem("token", token);
+						}}
+					}} catch (error) {{
+						// Ignore localStorage failures; the server-side auth gate still protects the app.
+					}}
 				}}
 
 				function currentTarget() {{
@@ -47,6 +96,8 @@ def auth_gate_script(subpath: str) -> str:
 					window.location.replace(`${{AUTH_PATH}}?redirect=${{encodeURIComponent(currentTarget())}}`);
 					return new Promise(() => {{}});
 				}}
+
+				syncFrontendToken();
 
 				if (isAuthRoute(path)) {{
 					window.__DROPZONE_AUTH_GATE__ = Promise.resolve();

@@ -95,6 +95,17 @@ wait_for_service() {
     return 1
 }
 
+wait_attempts_for_service() {
+    case "${1:-}" in
+        openwebui|n8n)
+            printf '60'
+            ;;
+        *)
+            printf '30'
+            ;;
+    esac
+}
+
 curl_edge() {
     local -a host_args=()
 
@@ -245,7 +256,8 @@ if grep -Fq 'forceDropzoneAuthScreen' "$PROJECT_DIR/branding/openwebui/loader.js
    grep -Fq 'Continue with Chutes' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq '/auth?redirect=' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'dropzone-auth-redirect' "$PROJECT_DIR/branding/openwebui/loader.js" && \
-   grep -Fq 'stripWrappedCookieValue' "$PROJECT_DIR/branding/openwebui/loader.js"; then
+   grep -Fq 'stripWrappedCookieValue' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   ! grep -Fq 'sirouk2' "$PROJECT_DIR/branding/openwebui/loader.js"; then
     pass "OpenWebUI loader replaces legacy auth screens with Dropzone auth"
 else
     fail "OpenWebUI loader is missing the legacy auth redirect guard"
@@ -253,6 +265,8 @@ fi
 
 if grep -Fq 'window.__DROPZONE_AUTH_GATE__' "$PROJECT_DIR/scripts/patch-openwebui-build.py" && \
    grep -Fq '/api/v1/dropzone/account-summary' "$PROJECT_DIR/scripts/patch-openwebui-build.py" && \
+   grep -Fq 'CHAT_AUTH_PATH' "$PROJECT_DIR/scripts/patch-openwebui-build.py" && \
+   grep -Fq 'localStorage.setItem("token", token)' "$PROJECT_DIR/scripts/patch-openwebui-build.py" && \
    grep -Fq 'encodeURIComponent(currentTarget())' "$PROJECT_DIR/scripts/patch-openwebui-build.py" && \
    ! grep -Fq "return /(?:^|;\\s*)token=/.test(document.cookie || \"\");" "$PROJECT_DIR/scripts/patch-openwebui-build.py" && \
    grep -Fq 'window.location.replace' "$PROJECT_DIR/scripts/patch-openwebui-build.py"; then
@@ -584,7 +598,7 @@ if [ "${CHUTES_TRAFFIC_MODE:-direct}" = "e2ee-proxy" ]; then
 fi
 
 for service in $WAIT_SERVICES; do
-    status="$(wait_for_service "$service" 30 || true)"
+    status="$(wait_for_service "$service" "$(wait_attempts_for_service "$service")" || true)"
     if [ "$status" = "healthy" ] || [ "$status" = "running" ]; then
         pass "$service container $status"
     else
