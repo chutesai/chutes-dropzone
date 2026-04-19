@@ -8,6 +8,7 @@ import requests
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from open_webui.dropzone_oauth import get_preferred_oauth_session
 from open_webui.models.oauth_sessions import OAuthSessionModel, OAuthSessions
 from open_webui.models.users import UserModel
 
@@ -263,12 +264,7 @@ def _refresh_oauth_session(
 
 
 def _current_oauth_session(user_id: str, db: Session) -> OAuthSessionModel | None:
-    session = OAuthSessions.get_session_by_provider_and_user_id("oidc", user_id, db=db)
-    if session:
-        return session
-
-    sessions = OAuthSessions.get_sessions_by_user_id(user_id, db=db)
-    return sessions[0] if sessions else None
+    return get_preferred_oauth_session(user_id, db=db, provider="oidc")
 
 
 def _fetch_account_bundle(

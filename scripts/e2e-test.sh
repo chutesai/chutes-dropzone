@@ -763,6 +763,58 @@ assert summary["links"]["accountUrl"] == "https://chutes.ai/app/api/billing-bala
 assert summary["links"]["homeUrl"] == "https://chutes.ai/"
 PY
 
+if compose exec -T openwebui python - <<'PY'
+import asyncio
+from types import SimpleNamespace
+
+from open_webui.internal.db import get_db_context
+from open_webui.models.oauth_sessions import OAuthSession
+from open_webui.models.users import Users
+from open_webui.routers.openai import get_headers_and_cookies
+
+with get_db_context() as db:
+    oauth_session = (
+        db.query(OAuthSession)
+        .filter_by(provider="oidc")
+        .order_by(OAuthSession.created_at.desc())
+        .first()
+    )
+    member_user = Users.get_user_by_id(oauth_session.user_id, db) if oauth_session else None
+
+if not oauth_session:
+    raise SystemExit("missing OpenWebUI oauth session for oauth fallback check")
+if not member_user:
+    raise SystemExit("missing OpenWebUI user for oauth fallback check")
+
+request = SimpleNamespace(
+    cookies={},
+    app=SimpleNamespace(state=SimpleNamespace(oauth_manager=None)),
+    state=SimpleNamespace(token=None),
+)
+
+headers, cookies = asyncio.run(
+    get_headers_and_cookies(
+        request,
+        "http://test-chutes-idp:8080/v1/chat/completions",
+        key="",
+        config={"auth_type": "system_oauth"},
+        user=member_user,
+    )
+)
+
+auth_header = headers.get("Authorization", "")
+if not auth_header.startswith("Bearer token:member-code"):
+    raise SystemExit(f"unexpected authorization header: {auth_header!r}")
+if cookies:
+    raise SystemExit(f"system_oauth should not require cookies here: {cookies!r}")
+PY
+then
+    :
+else
+    echo "FAIL: OpenWebUI chat completion did not survive a missing oauth_session_id cookie" >&2
+    exit 1
+fi
+
 member_cookie_2="$COOKIE_DIR/member-repeat.cookies"
 member_headers_2="$COOKIE_DIR/member-repeat.headers"
 member_callback_headers_2="$COOKIE_DIR/member-repeat.callback.headers"

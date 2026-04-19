@@ -104,16 +104,31 @@ def patch_main(path: Path) -> None:
 
 def patch_openai_router(path: Path) -> None:
     original = path.read_text(encoding="utf-8")
+    patched = insert_after_one_of(
+        original,
+        ["from open_webui.models.models import Models\n"],
+        "from open_webui.dropzone_oauth import get_request_oauth_token\n",
+        "dropzone oauth import for openai router",
+    )
     # When model_id is a comma-delimited routing string, use the first model
     # for backend resolution (urlIdx) while keeping the full string in the payload.
     patched = replace_one_of_or_keep(
-        original,
+        patched,
         [
             "    model = models.get(model_id)\n\n    if model:\n        idx = model[\"urlIdx\"]\n    else:\n        raise HTTPException(\n            status_code=404,\n            detail=\"Model not found\",\n        )\n",
             "    model = models.get(model_id)\n\n    if model:\n        idx = model['urlIdx']\n    else:\n        raise HTTPException(\n            status_code=404,\n            detail='Model not found',\n        )\n",
         ],
         '    model = models.get(model_id)\n    if not model and "," in model_id:\n        model = models.get(model_id.split(",")[0])\n\n    if model:\n        idx = model["urlIdx"]\n    else:\n        raise HTTPException(\n            status_code=404,\n            detail="Model not found",\n        )\n',
         "multi-model urlIdx resolution",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "    elif auth_type == 'system_oauth':\n        cookies = request.cookies\n\n        oauth_token = None\n        try:\n            if request.cookies.get('oauth_session_id', None):\n                oauth_token = await request.app.state.oauth_manager.get_oauth_token(\n                    user.id,\n                    request.cookies.get('oauth_session_id', None),\n                )\n        except Exception as e:\n            log.error(f'Error getting OAuth token: {e}')\n\n        if oauth_token:\n            token = f'{oauth_token.get(\"access_token\", \"\")}'\n",
+            '    elif auth_type == "system_oauth":\n        cookies = request.cookies\n\n        oauth_token = None\n        try:\n            if request.cookies.get("oauth_session_id", None):\n                oauth_token = await request.app.state.oauth_manager.get_oauth_token(\n                    user.id,\n                    request.cookies.get("oauth_session_id", None),\n                )\n        except Exception as e:\n            log.error(f"Error getting OAuth token: {e}")\n\n        if oauth_token:\n            token = f"{oauth_token.get(\'access_token\', \'\')}"\n',
+        ],
+        "    elif auth_type == 'system_oauth':\n        cookies = request.cookies\n\n        oauth_token = await get_request_oauth_token(request, user)\n        if oauth_token:\n            token = f'{oauth_token.get(\"access_token\", \"\")}'\n",
+        "system oauth token fallback for openai router",
     )
     patched = replace_one_of_or_keep(
         patched,
@@ -132,6 +147,75 @@ def patch_openai_router(path: Path) -> None:
         ],
         '                            **({"connection_type": model["connection_type"]} if model.get("connection_type") else {}),\n',
         "OpenAI merged connection type default",
+    )
+    path.write_text(patched, encoding="utf-8")
+
+
+def patch_functions(path: Path) -> None:
+    original = path.read_text(encoding="utf-8")
+    patched = insert_after_one_of(
+        original,
+        ["from open_webui.models.models import Models\n"],
+        "from open_webui.dropzone_oauth import get_request_oauth_token\n",
+        "dropzone oauth import for functions",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "    oauth_token = None\n    try:\n        if request.cookies.get('oauth_session_id', None):\n            oauth_token = await request.app.state.oauth_manager.get_oauth_token(\n                user.id,\n                request.cookies.get('oauth_session_id', None),\n            )\n    except Exception as e:\n        log.error(f'Error getting OAuth token: {e}')\n",
+            '    oauth_token = None\n    try:\n        if request.cookies.get("oauth_session_id", None):\n            oauth_token = await request.app.state.oauth_manager.get_oauth_token(\n                user.id,\n                request.cookies.get("oauth_session_id", None),\n            )\n    except Exception as e:\n        log.error(f"Error getting OAuth token: {e}")\n',
+        ],
+        "    oauth_token = await get_request_oauth_token(request, user)\n",
+        "system oauth token fallback for functions",
+    )
+    path.write_text(patched, encoding="utf-8")
+
+
+def patch_middleware(path: Path) -> None:
+    original = path.read_text(encoding="utf-8")
+    patched = insert_after_one_of(
+        original,
+        ["from open_webui.models.oauth_sessions import OAuthSessions\n"],
+        "from open_webui.dropzone_oauth import get_request_oauth_token\n",
+        "dropzone oauth import for middleware",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "async def get_system_oauth_token(request, user):\n    oauth_token = None\n    try:\n        if request.cookies.get('oauth_session_id', None):\n            oauth_token = await request.app.state.oauth_manager.get_oauth_token(\n                user.id,\n                request.cookies.get('oauth_session_id', None),\n            )\n    except Exception as e:\n        log.error(f'Error getting OAuth token: {e}')\n    return oauth_token\n",
+            'async def get_system_oauth_token(request, user):\n    oauth_token = None\n    try:\n        if request.cookies.get("oauth_session_id", None):\n            oauth_token = await request.app.state.oauth_manager.get_oauth_token(\n                user.id,\n                request.cookies.get("oauth_session_id", None),\n            )\n    except Exception as e:\n        log.error(f"Error getting OAuth token: {e}")\n    return oauth_token\n',
+        ],
+        "async def get_system_oauth_token(request, user):\n    return await get_request_oauth_token(request, user)\n",
+        "system oauth token fallback for middleware",
+    )
+    path.write_text(patched, encoding="utf-8")
+
+
+def patch_configs(path: Path) -> None:
+    original = path.read_text(encoding="utf-8")
+    patched = insert_after_one_of(
+        original,
+        ["from open_webui.models.oauth_sessions import OAuthSessions\n"],
+        "from open_webui.dropzone_oauth import get_request_oauth_token\n",
+        "dropzone oauth import for configs",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "                    elif form_data.auth_type == 'system_oauth':\n                        oauth_token = None\n                        try:\n                            if request.cookies.get('oauth_session_id', None):\n                                oauth_token = await request.app.state.oauth_manager.get_oauth_token(\n                                    user.id,\n                                    request.cookies.get('oauth_session_id', None),\n                                )\n\n                                if oauth_token:\n                                    token = oauth_token.get('access_token', '')\n                        except Exception as e:\n                            pass\n",
+            '                    elif form_data.auth_type == "system_oauth":\n                        oauth_token = None\n                        try:\n                            if request.cookies.get("oauth_session_id", None):\n                                oauth_token = await request.app.state.oauth_manager.get_oauth_token(\n                                    user.id,\n                                    request.cookies.get("oauth_session_id", None),\n                                )\n\n                                if oauth_token:\n                                    token = oauth_token.get("access_token", "")\n                        except Exception as e:\n                            pass\n',
+        ],
+        "                    elif form_data.auth_type == 'system_oauth':\n                        oauth_token = await get_request_oauth_token(request, user)\n                        if oauth_token:\n                            token = oauth_token.get('access_token', '')\n",
+        "system oauth token fallback for MCP configs",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "            elif form_data.auth_type == 'system_oauth':\n                try:\n                    if request.cookies.get('oauth_session_id', None):\n                        oauth_token = await request.app.state.oauth_manager.get_oauth_token(\n                            user.id,\n                            request.cookies.get('oauth_session_id', None),\n                        )\n\n                        if oauth_token:\n                            token = oauth_token.get('access_token', '')\n\n                except Exception as e:\n                    pass\n",
+            '            elif form_data.auth_type == "system_oauth":\n                try:\n                    if request.cookies.get("oauth_session_id", None):\n                        oauth_token = await request.app.state.oauth_manager.get_oauth_token(\n                            user.id,\n                            request.cookies.get("oauth_session_id", None),\n                        )\n\n                        if oauth_token:\n                            token = oauth_token.get("access_token", "")\n\n                except Exception as e:\n                    pass\n',
+        ],
+        "            elif form_data.auth_type == 'system_oauth':\n                oauth_token = await get_request_oauth_token(request, user)\n                if oauth_token:\n                    token = oauth_token.get('access_token', '')\n",
+        "system oauth token fallback for OpenAPI configs",
     )
     path.write_text(patched, encoding="utf-8")
 
@@ -166,6 +250,9 @@ def main() -> int:
     patch_env(root / "backend" / "open_webui" / "env.py")
     patch_main(root / "backend" / "open_webui" / "main.py")
     patch_openai_router(root / "backend" / "open_webui" / "routers" / "openai.py")
+    patch_functions(root / "backend" / "open_webui" / "functions.py")
+    patch_middleware(root / "backend" / "open_webui" / "utils" / "middleware.py")
+    patch_configs(root / "backend" / "open_webui" / "routers" / "configs.py")
     patch_auths_router(root / "backend" / "open_webui" / "routers" / "auths.py")
     return 0
 

@@ -209,6 +209,12 @@ if command -v python3 >/dev/null 2>&1; then
         fail "python3 -m py_compile branding/openwebui/dropzone_account.py"
     fi
 
+    if python3 -m py_compile "$PROJECT_DIR/branding/openwebui/dropzone_oauth.py" >/dev/null 2>&1; then
+        pass "python3 -m py_compile branding/openwebui/dropzone_oauth.py"
+    else
+        fail "python3 -m py_compile branding/openwebui/dropzone_oauth.py"
+    fi
+
     if python3 -m py_compile "$PROJECT_DIR/branding/openwebui/dropzone_auth.py" >/dev/null 2>&1; then
         pass "python3 -m py_compile branding/openwebui/dropzone_auth.py"
     else
@@ -259,6 +265,13 @@ if grep -Fq "request.cookies.get('token')" "$PROJECT_DIR/scripts/patch-openwebui
     pass "OpenWebUI runtime patch makes session bootstrap cookie-aware"
 else
     fail "OpenWebUI runtime patch is missing the cookie-aware session bootstrap fix"
+fi
+
+if grep -Fq 'get_request_oauth_token' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq 'COPY branding/openwebui/dropzone_oauth.py /app/backend/open_webui/dropzone_oauth.py' "$PROJECT_DIR/Dockerfile.local-repo"; then
+    pass "OpenWebUI runtime patch preserves OAuth-backed chat completions without the browser oauth cookie"
+else
+    fail "OpenWebUI runtime patch is missing the OAuth session fallback"
 fi
 
 if grep -Fq 'ENABLE_OLLAMA_API=false' "$PROJECT_DIR/standalone/entrypoint.sh" && \
