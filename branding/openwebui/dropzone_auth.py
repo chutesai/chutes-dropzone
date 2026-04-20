@@ -47,6 +47,10 @@ def _resolve_redirect_path(value: str | None) -> str:
     return _normalize_redirect_path(value) or DEFAULT_AUTH_REDIRECT
 
 
+def get_request_auth_redirect_path(request: Request) -> str:
+    return _resolve_redirect_path(request.cookies.get(AUTH_REDIRECT_COOKIE_NAME))
+
+
 def _copy_passthrough_headers(response, upstream_response) -> None:
     for key, value in upstream_response.raw_headers:
         header_name = key.decode("latin-1").lower()

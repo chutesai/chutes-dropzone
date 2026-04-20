@@ -277,6 +277,14 @@ else
     fail "OpenWebUI build patch is missing the early auth gate"
 fi
 
+if grep -Fq 'from open_webui.dropzone_auth import get_request_auth_redirect_path' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq "success_redirect_url = f'{redirect_base_url}{get_request_auth_redirect_path(request)}'" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq "error_redirect_url = f'{redirect_base_url}/auth'" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
+    pass "OpenWebUI runtime patch sends successful OAuth callbacks straight to the app target"
+else
+    fail "OpenWebUI runtime patch still routes successful OAuth callbacks through the legacy auth finalizer"
+fi
+
 if grep -Fq "request.cookies.get('token')" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
     pass "OpenWebUI runtime patch makes session bootstrap cookie-aware"
 else

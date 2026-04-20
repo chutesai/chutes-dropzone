@@ -191,6 +191,26 @@ def patch_middleware(path: Path) -> None:
     path.write_text(patched, encoding="utf-8")
 
 
+def patch_utils_oauth(path: Path) -> None:
+    original = path.read_text(encoding="utf-8")
+    patched = insert_after_one_of(
+        original,
+        ["from open_webui.utils.auth import get_password_hash, create_token\n"],
+        "from open_webui.dropzone_auth import get_request_auth_redirect_path\n",
+        "dropzone auth redirect import for oauth utils",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "        redirect_base_url = (str(request.app.state.config.WEBUI_URL or request.base_url)).rstrip('/')\n        redirect_url = f'{redirect_base_url}/auth'\n\n        if error_message:\n            redirect_url = f'{redirect_url}?error={urllib.parse.quote_plus(error_message)}'\n            return RedirectResponse(url=redirect_url, headers=response.headers)\n\n        response = RedirectResponse(url=redirect_url, headers=response.headers)\n",
+            '        redirect_base_url = (str(request.app.state.config.WEBUI_URL or request.base_url)).rstrip("/")\n        redirect_url = f"{redirect_base_url}/auth"\n\n        if error_message:\n            redirect_url = f"{redirect_url}?error={urllib.parse.quote_plus(error_message)}"\n            return RedirectResponse(url=redirect_url, headers=response.headers)\n\n        response = RedirectResponse(url=redirect_url, headers=response.headers)\n',
+        ],
+        "        redirect_base_url = str(request.base_url).rstrip('/')\n        error_redirect_url = f'{redirect_base_url}/auth'\n        success_redirect_url = f'{redirect_base_url}{get_request_auth_redirect_path(request)}'\n\n        if error_message:\n            error_redirect_url = f'{error_redirect_url}?error={urllib.parse.quote_plus(error_message)}'\n            return RedirectResponse(url=error_redirect_url, headers=response.headers)\n\n        response = RedirectResponse(url=success_redirect_url, headers=response.headers)\n",
+        "dropzone oauth callback redirect target",
+    )
+    path.write_text(patched, encoding="utf-8")
+
+
 def patch_configs(path: Path) -> None:
     original = path.read_text(encoding="utf-8")
     patched = insert_after_one_of(
@@ -252,6 +272,7 @@ def main() -> int:
     patch_openai_router(root / "backend" / "open_webui" / "routers" / "openai.py")
     patch_functions(root / "backend" / "open_webui" / "functions.py")
     patch_middleware(root / "backend" / "open_webui" / "utils" / "middleware.py")
+    patch_utils_oauth(root / "backend" / "open_webui" / "utils" / "oauth.py")
     patch_configs(root / "backend" / "open_webui" / "routers" / "configs.py")
     patch_auths_router(root / "backend" / "open_webui" / "routers" / "auths.py")
     return 0

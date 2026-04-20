@@ -708,8 +708,8 @@ member_openwebui_chat_auth_headers="$COOKIE_DIR/member-openwebui-chat-auth.heade
 member_openwebui_auths_headers="$COOKIE_DIR/member-openwebui-auths.headers"
 member_openwebui_auths_body="$COOKIE_DIR/member-openwebui-auths.json"
 complete_openwebui_sso_login "$member_openwebui_cookie" "$member_openwebui_headers" "$member_openwebui_final_url"
-if ! grep -Eq '/(home|auth)' "$member_openwebui_final_url"; then
-    echo "FAIL: OpenWebUI SSO did not finish on an app route" >&2
+if ! grep -Eq '/c/new/?$' "$member_openwebui_final_url"; then
+    echo "FAIL: OpenWebUI SSO did not finish on /c/new" >&2
     cat "$member_openwebui_final_url" >&2
     exit 1
 fi
