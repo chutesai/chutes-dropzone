@@ -308,6 +308,24 @@ else
     fail "OpenWebUI Ollama/model-grouping protections are missing"
 fi
 
+if grep -Fq 'findNamedUserAnchor' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'syncCurrentUserAvatar(summary);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'Users.update_user_profile_image_url_by_id' "$PROJECT_DIR/branding/openwebui/dropzone_account.py" && \
+   grep -Fq '"userId": user.id' "$PROJECT_DIR/branding/openwebui/dropzone_account.py"; then
+    pass "OpenWebUI sidebar card anchors to the native footer and syncs Chutes avatars"
+else
+    fail "OpenWebUI sidebar footer/avatar sync protections are missing"
+fi
+
+if grep -Fq 'OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'Now using {best_model_name}. Refreshes every {refresh_interval}.' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'tooltip_lines.extend(f"- {model_name}" for model_name in routing_models)' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'normalizeTooltipText(meta.routing_tooltip || "")' "$PROJECT_DIR/branding/openwebui/loader.js"; then
+    pass "Chutes Auto metadata shows the current best model and full routing tooltip"
+else
+    fail "Chutes Auto metadata is missing the best-model description or routing tooltip list"
+fi
+
 if command -v jq >/dev/null 2>&1; then
     for file in "$PROJECT_DIR/workflows/"*.json; do
         if jq empty "$file" >/dev/null 2>&1; then

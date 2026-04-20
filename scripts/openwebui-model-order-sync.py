@@ -128,6 +128,44 @@ def base_url() -> str:
     return os.environ.get("OPENWEBUI_SYNC_BASE_URL", "http://127.0.0.1:8080").rstrip("/")
 
 
+def auto_model_refresh_interval_seconds() -> int:
+    for env_name in ("OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL", "MODELS_CACHE_TTL"):
+        raw = (os.environ.get(env_name) or "").strip()
+        if not raw:
+            continue
+        try:
+            value = int(raw)
+        except ValueError:
+            continue
+        if value >= 0:
+            return value
+    return 300
+
+
+def format_refresh_interval(seconds: int) -> str:
+    if seconds <= 0:
+        return "on demand"
+    if seconds % 3600 == 0:
+        amount = seconds // 3600
+        unit = "hour"
+    elif seconds % 60 == 0:
+        amount = seconds // 60
+        unit = "minute"
+    else:
+        amount = seconds
+        unit = "second"
+    suffix = "" if amount == 1 else "s"
+    return f"{amount} {unit}{suffix}"
+
+
+def friendly_auto_model_name(model_id: str) -> str:
+    label = model_slug(model_id)
+    label = label.split(":", 1)[0]
+    label = re.sub(r"-TEE\b", "", label, flags=re.IGNORECASE)
+    label = label.strip(" -")
+    return label or model_id
+
+
 def admin_email() -> str:
     return (
         os.environ.get("ADMIN_EMAIL")
@@ -541,10 +579,12 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
         is_proxy = os.environ.get("CHUTES_TRAFFIC_MODE", "direct").strip().lower() == "e2ee-proxy"
         if is_proxy:
             auto_base = ranked[0]
+            auto_models = ranked[:1]
         else:
             auto_base = ",".join(ranked[:5])
+            auto_models = ranked[:5]
 
-        auto_updated = sync_auto_model(token, auto_model_id, auto_base, ranked[:5])
+        auto_updated = sync_auto_model(token, auto_model_id, auto_base, auto_models)
         if auto_updated:
             updates.append(f"CHUTES_AUTO({ranked[0]}...)")
 
@@ -713,9 +753,19 @@ def sync_auto_model(
 
     ranked_key = hashlib.sha256(",".join(ranked).encode()).hexdigest()[:16]
     name = "Chutes Auto"
-    description = AUTO_MODEL_DESCRIPTION
-    routing_models = [model_name.split("/", 1)[-1] for model_name in ranked]
-    routing_tooltip = f"Routing: {', '.join(routing_models)}" if routing_models else ""
+    refresh_interval = format_refresh_interval(auto_model_refresh_interval_seconds())
+    best_model_name = friendly_auto_model_name(ranked[0]) if ranked else ""
+    description = (
+        f"Now using {best_model_name}. Refreshes every {refresh_interval}."
+        if best_model_name
+        else AUTO_MODEL_DESCRIPTION
+    )
+    routing_models = list(ranked)
+    routing_tooltip = ""
+    if routing_models:
+        tooltip_lines = [f"Updates every {refresh_interval}", "Models"]
+        tooltip_lines.extend(f"- {model_name}" for model_name in routing_models)
+        routing_tooltip = "\n".join(tooltip_lines)
 
     with get_db() as db:
         existing = Models.get_model_by_id(model_id, db)

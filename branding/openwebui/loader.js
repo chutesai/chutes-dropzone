@@ -464,6 +464,7 @@
         if (summary && summary.username) {
           accountSummary = summary;
           accountSummaryFailureCount = 0;
+          syncCurrentUserAvatar(summary);
           if (summary.links && summary.links.n8nUrl) {
             n8nConfirmed = true;
           }
@@ -512,7 +513,7 @@
           : null;
         var meta = (autoModel && ((autoModel.info && autoModel.info.meta) || autoModel.meta)) || {};
         autoModelDescription = normalizeText(meta.description || "");
-        autoModelTooltip = normalizeText(meta.routing_tooltip || "");
+        autoModelTooltip = normalizeTooltipText(meta.routing_tooltip || "");
       })
       .catch(function () {
         autoModelDescription = "";
@@ -870,9 +871,44 @@
     return (width > 0 && width < 150) || visibleLabelCount < 2;
   }
 
-  function updateCompactState(slot, sidebar, container) {
-    var compact = isCompactSidebar(container || sidebar);
+  function updateCompactState(slot, sidebar) {
+    var compact = isCompactSidebar(sidebar);
     slot.classList.toggle("is-compact", compact);
+  }
+
+  function isSidebarSlotNode(node) {
+    return !!(node && node.closest && node.closest('[data-chutes-nav-slot="n8n"]'));
+  }
+
+  function isUserPlaceholderAvatar(src) {
+    return /(?:^|\/)user\.(?:png|svg)(?:$|[?#])/i.test(String(src || ""));
+  }
+
+  function syncCurrentUserAvatar(summary) {
+    var avatarUrl = String((summary && summary.avatarUrl) || "").trim();
+    if (!avatarUrl) return;
+
+    var username = normalizeText(summary && summary.username);
+    var userId = String((summary && summary.userId) || "").trim();
+
+    Array.prototype.forEach.call(document.querySelectorAll("img"), function (image) {
+      if (!image || isSidebarSlotNode(image)) return;
+
+      var src = String(image.getAttribute("src") || image.currentSrc || image.src || "");
+      var owner = image.closest ? image.closest("button, a, [role='button'], li, div") : image.parentElement;
+      var ownerText = normalizeText(owner && owner.textContent);
+      var matchesUserEndpoint = !!(userId && src.indexOf("/users/" + userId + "/profile/image") !== -1);
+      var matchesPlaceholder = !!(username && ownerText.indexOf(username) !== -1 && isUserPlaceholderAvatar(src));
+
+      if (!matchesUserEndpoint && !matchesPlaceholder) return;
+
+      image.src = avatarUrl;
+      image.alt = username || "Chutes User";
+      image.decoding = "async";
+      image.referrerPolicy = "no-referrer";
+      image.style.objectFit = "cover";
+      image.style.objectPosition = "center";
+    });
   }
 
   function findSidebar() {
@@ -946,12 +982,64 @@
     return sidebar;
   }
 
-  function findFooterAnchor(parent, slot) {
+  function findNamedUserAnchor(root, summary) {
+    if (!root || !(summary && summary.username)) return null;
+
+    var username = normalizeText(summary.username);
+    if (!username) return null;
+
+    var rootRect = root.getBoundingClientRect ? root.getBoundingClientRect() : { top: 0, height: 0 };
+    var minTop = rootRect.top + rootRect.height * 0.45;
+    var candidates = Array.prototype.slice
+      .call(root.querySelectorAll("button, a, [role='button'], div, li, span"))
+      .filter(function (node) {
+        if (!isVisible(node) || isSidebarSlotNode(node)) return false;
+
+        var text = normalizeText(node.textContent);
+        if (!text || (text !== username && (text.indexOf(username) === -1 || text.length > username.length + 24))) {
+          return false;
+        }
+
+        var rect = node.getBoundingClientRect ? node.getBoundingClientRect() : { top: 0 };
+        return rect.top >= minTop;
+      })
+      .sort(function (left, right) {
+        var leftRect = left.getBoundingClientRect ? left.getBoundingClientRect() : { top: 0 };
+        var rightRect = right.getBoundingClientRect ? right.getBoundingClientRect() : { top: 0 };
+        return rightRect.top - leftRect.top;
+      });
+
+    for (var index = 0; index < candidates.length; index += 1) {
+      var candidate = candidates[index];
+      var anchor = candidate.closest ? candidate.closest("button, a, [role='button']") || candidate : candidate;
+      if (anchor && !isSidebarSlotNode(anchor) && anchor.parentElement) {
+        return anchor;
+      }
+    }
+
+    return null;
+  }
+
+  function findFooterAnchor(parent, slot, summary) {
     if (!parent) return null;
 
     var directChildren = Array.prototype.slice.call(parent.children).filter(function (child) {
       return child !== slot && isVisible(child);
     });
+
+    var username = normalizeText(summary && summary.username);
+    if (username) {
+      var userChild = directChildren
+        .slice()
+        .reverse()
+        .find(function (child) {
+          return normalizeText(child.textContent).indexOf(username) !== -1;
+        });
+
+      if (userChild) {
+        return userChild;
+      }
+    }
 
     var footerChild = directChildren
       .slice()
@@ -965,15 +1053,7 @@
       return footerChild;
     }
 
-    var stickyChildren = directChildren.filter(function (child) {
-      return String(child.className || "").indexOf("sticky") !== -1;
-    });
-
-    if (stickyChildren.length) {
-      return stickyChildren[stickyChildren.length - 1];
-    }
-
-    return directChildren.length ? directChildren[directChildren.length - 1] : null;
+    return null;
   }
 
   function cleanupDuplicateSlots(kind, keepSlot) {
@@ -1009,10 +1089,12 @@
       return;
     }
 
-    var container = findInsertionParent(sidebar);
+    var compact = isCompactSidebar(sidebar);
+    var footerAnchor = !compact && hasSummary ? findNamedUserAnchor(sidebar, accountSummary) : null;
+    var container = footerAnchor && footerAnchor.parentElement ? footerAnchor.parentElement : findInsertionParent(sidebar);
     if (!container) return;
 
-    var slot = container.querySelector('[data-chutes-nav-slot="n8n"]');
+    var slot = sidebar.querySelector('[data-chutes-nav-slot="n8n"]');
     if (!slot) {
       slot = document.createElement("div");
       slot.setAttribute("data-chutes-nav-slot", "n8n");
@@ -1036,22 +1118,26 @@
       slot.appendChild(buildSummaryCard(accountSummary));
     }
 
-    var anchor = findFooterAnchor(container, slot);
+    var anchor = footerAnchor || findFooterAnchor(container, slot, accountSummary);
     cleanupDuplicateSlots("n8n", slot);
 
     if (anchor) {
       if (slot.parentNode !== container || slot.nextElementSibling !== anchor) {
         container.insertBefore(slot, anchor);
       }
-    } else if (slot.parentNode !== container) {
+    } else if (slot.parentNode !== container || slot.nextElementSibling) {
       container.appendChild(slot);
     }
 
-    updateCompactState(slot, sidebar, container);
+    updateCompactState(slot, sidebar);
   }
 
   function normalizeText(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function normalizeTooltipText(value) {
+    return String(value || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   }
 
   function refresh() {
@@ -1059,6 +1145,9 @@
     if (forceDropzoneAuthScreen()) return;
     if (maybeFinishAuthRedirect()) return;
     patchBranding();
+    if (accountSummary && accountSummary.username) {
+      syncCurrentUserAvatar(accountSummary);
+    }
     ensureChutesAutoHint();
     ensureSidebarCard();
   }

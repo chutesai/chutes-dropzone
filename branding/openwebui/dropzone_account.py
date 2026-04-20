@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from open_webui.dropzone_oauth import get_preferred_oauth_session
 from open_webui.models.oauth_sessions import OAuthSessionModel, OAuthSessions
-from open_webui.models.users import UserModel
+from open_webui.models.users import UserModel, Users
 
 CHUTES_API_BASE_URL = (
     os.environ.get("CHUTES_IDP_BASE_URL", "https://api.chutes.ai").rstrip("/")
@@ -155,6 +155,27 @@ def _normalize_avatar_url(
             return avatar
 
     return None
+
+
+def _sync_user_avatar_url(
+    user: UserModel,
+    avatar_url: str | None,
+    db: Session,
+) -> str | None:
+    if not avatar_url:
+        return getattr(user, "profile_image_url", None)
+
+    current = getattr(user, "profile_image_url", None)
+    if current == avatar_url:
+        return current
+
+    updated = Users.update_user_profile_image_url_by_id(user.id, avatar_url, db=db)
+    if updated and getattr(updated, "profile_image_url", None):
+        user.profile_image_url = updated.profile_image_url
+        return updated.profile_image_url
+
+    user.profile_image_url = avatar_url
+    return avatar_url
 
 
 def _username_for(account: dict[str, Any], user: UserModel) -> str:
@@ -315,9 +336,16 @@ def get_chutes_account_summary(user: UserModel, db: Session) -> dict[str, Any]:
     if permissions_bitmask == ADMIN_PERMISSION_BITMASK:
         tier = "admin"
 
+    avatar_url = _sync_user_avatar_url(
+        user,
+        _normalize_avatar_url(account, user, userinfo, oauth_session),
+        db=db,
+    )
+
     return {
+        "userId": user.id,
         "username": _username_for(account, user),
-        "avatarUrl": _normalize_avatar_url(account, user, userinfo, oauth_session),
+        "avatarUrl": avatar_url,
         "tier": tier,
         "tierLabel": _get_tier_label(tier, permissions_bitmask),
         "balanceUsd": round(_coerce_float(account.get("balance")), 2),
