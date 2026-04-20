@@ -910,8 +910,9 @@ write_env_file() {
         env_line OPENWEBUI_API_KEY "${OPENWEBUI_API_KEY:-}"
         env_line OPENWEBUI_MODELS_CACHE_TTL "${OPENWEBUI_MODELS_CACHE_TTL:-300}"
         env_line OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL "${OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL:-300}"
-        echo '# Browser STT by default. Set DROPZONE_AUDIO_STT_ENGINE="openai" to route STT back through the Chutes Whisper bridge.'
-        env_line DROPZONE_AUDIO_STT_ENGINE "${DROPZONE_AUDIO_STT_ENGINE:-web}"
+        echo '# STT modes: "local" (container-local faster-whisper), "openai" (Chutes Whisper bridge), or "web" (browser speech API).'
+        env_line DROPZONE_AUDIO_STT_ENGINE "${DROPZONE_AUDIO_STT_ENGINE:-local}"
+        env_line DROPZONE_AUDIO_STT_LOCAL_MODEL "${DROPZONE_AUDIO_STT_LOCAL_MODEL:-tiny}"
         env_line DROPZONE_AUDIO_INTERNAL_API_KEY "${DROPZONE_AUDIO_INTERNAL_API_KEY:-}"
         echo
         env_line CHUTES_OAUTH_CLIENT_ID "$CHUTES_OAUTH_CLIENT_ID"
@@ -979,7 +980,8 @@ else
     OPENWEBUI_API_KEY="${OPENWEBUI_API_KEY:-}"
     OPENWEBUI_MODELS_CACHE_TTL="${OPENWEBUI_MODELS_CACHE_TTL:-300}"
     OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL="${OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL:-300}"
-    DROPZONE_AUDIO_STT_ENGINE="${DROPZONE_AUDIO_STT_ENGINE:-web}"
+    DROPZONE_AUDIO_STT_ENGINE="${DROPZONE_AUDIO_STT_ENGINE:-local}"
+    DROPZONE_AUDIO_STT_LOCAL_MODEL="${DROPZONE_AUDIO_STT_LOCAL_MODEL:-tiny}"
     DROPZONE_AUDIO_INTERNAL_API_KEY="${DROPZONE_AUDIO_INTERNAL_API_KEY:-}"
     TZ="${TZ:-UTC}"
 
@@ -1266,11 +1268,28 @@ export AUDIO_TTS_OPENAI_API_BASE_URL="http://127.0.0.1:8080/api/v1/dropzone"
 export AUDIO_TTS_OPENAI_API_KEY="${DROPZONE_AUDIO_INTERNAL_API_KEY}"
 export AUDIO_TTS_MODEL=kokoro
 export AUDIO_TTS_VOICE=af_heart
-export DROPZONE_AUDIO_STT_ENGINE="${DROPZONE_AUDIO_STT_ENGINE:-web}"
-export AUDIO_STT_ENGINE="${DROPZONE_AUDIO_STT_ENGINE}"
+export DROPZONE_AUDIO_STT_ENGINE="${DROPZONE_AUDIO_STT_ENGINE:-local}"
+export DROPZONE_AUDIO_STT_LOCAL_MODEL="${DROPZONE_AUDIO_STT_LOCAL_MODEL:-tiny}"
 export AUDIO_STT_OPENAI_API_BASE_URL="http://127.0.0.1:8080/api/v1/dropzone"
 export AUDIO_STT_OPENAI_API_KEY="${DROPZONE_AUDIO_INTERNAL_API_KEY}"
 export AUDIO_STT_MODEL=whisper-large-v3
+export WHISPER_MODEL="${DROPZONE_AUDIO_STT_LOCAL_MODEL}"
+case "${DROPZONE_AUDIO_STT_ENGINE}" in
+    local)
+        export AUDIO_STT_ENGINE=""
+        ;;
+    web)
+        export AUDIO_STT_ENGINE="web"
+        ;;
+    openai)
+        export AUDIO_STT_ENGINE="openai"
+        ;;
+    *)
+        echo "warning: unsupported DROPZONE_AUDIO_STT_ENGINE=${DROPZONE_AUDIO_STT_ENGINE}; falling back to local" >&2
+        export DROPZONE_AUDIO_STT_ENGINE="local"
+        export AUDIO_STT_ENGINE=""
+        ;;
+esac
 export DROPZONE_AUDIO_INTERNAL_API_KEY="${DROPZONE_AUDIO_INTERNAL_API_KEY}"
 
 # Standalone mode markers (read by s6 service scripts and configure)

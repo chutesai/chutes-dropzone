@@ -158,6 +158,36 @@ model_order = models_config.get("MODEL_ORDER_LIST")
 
 if not isinstance(model_order, list) or len(model_order) == 0:
     raise SystemExit("MODEL_ORDER_LIST is empty")
+
+audio_config = request_json("/api/v1/audio/config", token)
+stt_config = audio_config.get("stt", {}) if isinstance(audio_config, dict) else {}
+desired_mode = (os.environ.get("DROPZONE_AUDIO_STT_ENGINE") or "local").strip().lower()
+if desired_mode not in {"local", "web", "openai"}:
+    desired_mode = "local"
+
+expected_engine = "" if desired_mode == "local" else desired_mode
+expected_whisper_model = (
+    os.environ.get("DROPZONE_AUDIO_STT_LOCAL_MODEL")
+    or os.environ.get("WHISPER_MODEL")
+    or "tiny"
+).strip() or "tiny"
+
+if stt_config.get("ENGINE", "") != expected_engine:
+    raise SystemExit(
+        f"audio STT engine mismatch: expected {expected_engine or 'local'} got {stt_config.get('ENGINE', '') or 'local'}"
+    )
+
+if stt_config.get("WHISPER_MODEL", "") != expected_whisper_model:
+    raise SystemExit(
+        f"audio Whisper model mismatch: expected {expected_whisper_model} got {stt_config.get('WHISPER_MODEL', '')}"
+    )
+
+if desired_mode == "openai":
+    expected_remote_model = (os.environ.get("AUDIO_STT_MODEL") or "whisper-large-v3").strip()
+    if stt_config.get("MODEL", "") != expected_remote_model:
+        raise SystemExit(
+            f"audio remote STT model mismatch: expected {expected_remote_model} got {stt_config.get('MODEL', '')}"
+        )
 PY
 }
 

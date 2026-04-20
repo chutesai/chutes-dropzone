@@ -40,8 +40,10 @@ stringData:
   OPENWEBUI_API_KEY: ""
   OPENWEBUI_MODELS_CACHE_TTL: "300"
   OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL: "300"
-  # Use "openai" to send STT through the Chutes Whisper bridge again.
-  DROPZONE_AUDIO_STT_ENGINE: "web"
+  # STT modes: "local" (container-local faster-whisper), "openai" (Chutes
+  # Whisper bridge), or "web" (browser speech API).
+  DROPZONE_AUDIO_STT_ENGINE: "local"
+  DROPZONE_AUDIO_STT_LOCAL_MODEL: "tiny"
 
   ALLOW_NON_CONFIDENTIAL: "false"
   CHUTES_SSO_PROXY_BYPASS: "false"

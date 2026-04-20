@@ -426,6 +426,62 @@ def admin_allowlist() -> list[str]:
     return [u.strip().lower() for u in raw.split(",") if u.strip()]
 
 
+def desired_stt_engine_mode() -> str:
+    raw = (
+        os.environ.get("DROPZONE_AUDIO_STT_ENGINE")
+        or os.environ.get("AUDIO_STT_ENGINE")
+        or "local"
+    ).strip().lower()
+    if raw in {"local", "web", "openai"}:
+        return raw
+    if raw == "":
+        return "local"
+    return "local"
+
+
+def desired_local_whisper_model() -> str:
+    return (
+        os.environ.get("DROPZONE_AUDIO_STT_LOCAL_MODEL")
+        or os.environ.get("WHISPER_MODEL")
+        or "tiny"
+    ).strip() or "tiny"
+
+
+def sync_audio_config(token: str) -> bool:
+    """Keep OpenWebUI audio STT config aligned with the Dropzone deployment mode."""
+
+    audio_config = request_json("GET", "/api/v1/audio/config", token)
+    tts = audio_config.get("tts", {}) if isinstance(audio_config, dict) else {}
+    stt = audio_config.get("stt", {}) if isinstance(audio_config, dict) else {}
+    if not isinstance(tts, dict) or not isinstance(stt, dict):
+        return False
+
+    desired_mode = desired_stt_engine_mode()
+    desired_engine = "" if desired_mode == "local" else desired_mode
+    desired_whisper_model = desired_local_whisper_model()
+    desired_remote_model = (os.environ.get("AUDIO_STT_MODEL") or "whisper-large-v3").strip()
+
+    updated_stt = dict(stt)
+    updated_stt["ENGINE"] = desired_engine
+    updated_stt["WHISPER_MODEL"] = desired_whisper_model
+    updated_stt["MODEL"] = desired_remote_model if desired_mode == "openai" else ""
+
+    if (
+        stt.get("ENGINE", "") == updated_stt["ENGINE"]
+        and stt.get("WHISPER_MODEL", "") == updated_stt["WHISPER_MODEL"]
+        and stt.get("MODEL", "") == updated_stt["MODEL"]
+    ):
+        return False
+
+    request_json(
+        "POST",
+        "/api/v1/audio/config/update",
+        token,
+        {"tts": tts, "stt": updated_stt},
+    )
+    return True
+
+
 _userinfo_endpoint: str = ""
 
 
@@ -545,6 +601,9 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
         request_json("POST", "/openai/config/update", token, openai_config)
         updates.append("OPENAI_API_CONFIGS")
 
+    if sync_audio_config(token):
+        updates.append(f"AUDIO_STT({desired_stt_engine_mode()})")
+
     models_payload = request_json("GET", "/api/models?refresh=true", token)
     models = models_payload.get("data", []) if isinstance(models_payload, dict) else []
     used_backend_fallback = False
@@ -615,11 +674,7 @@ def configured_audio_chute_names() -> list[str]:
         if tts_model:
             names.append(tts_model)
 
-    stt_engine = (
-        os.environ.get("AUDIO_STT_ENGINE")
-        or os.environ.get("DROPZONE_AUDIO_STT_ENGINE")
-        or "web"
-    ).strip().lower()
+    stt_engine = desired_stt_engine_mode()
     if stt_engine == "openai":
         stt_model = (os.environ.get("AUDIO_STT_MODEL") or "whisper-large-v3").split(",", 1)[0].strip()
         if stt_model:
