@@ -373,6 +373,24 @@ else
     fail "direct mode did not render OpenWebUI against llm.chutes.ai"
 fi
 
+if printf '%s\n' "$direct_openwebui_config" | grep -q 'AUDIO_STT_ENGINE: web'; then
+    pass "OpenWebUI defaults STT to the browser Web API"
+else
+    fail "OpenWebUI did not default STT to the browser Web API"
+fi
+
+openai_stt_openwebui_config="$(
+    CHUTES_TRAFFIC_MODE=direct \
+    OPENWEBUI_API_BASE_URL="https://llm.chutes.ai/v1" \
+    DROPZONE_AUDIO_STT_ENGINE=openai \
+    docker compose -f "$PROJECT_DIR/docker-compose.yml" -f "$PROJECT_DIR/docker-compose.local.yml" config 2>/dev/null || true
+)"
+if printf '%s\n' "$openai_stt_openwebui_config" | grep -q 'AUDIO_STT_ENGINE: openai'; then
+    pass "OpenWebUI can switch STT back to the Chutes Whisper bridge"
+else
+    fail "OpenWebUI did not honor the STT override back to the Chutes Whisper bridge"
+fi
+
 proxy_openwebui_config="$(
     CHUTES_TRAFFIC_MODE=e2ee-proxy \
     OPENWEBUI_API_BASE_URL="https://llm.chutes.ai/v1" \
@@ -529,8 +547,26 @@ else
     fail ".env.example is missing DROPZONE_ENABLE_PUBLIC_LANDING"
 fi
 
+if grep -q '^DROPZONE_AUDIO_STT_ENGINE=' "$PROJECT_DIR/.env.example"; then
+    pass ".env.example exposes DROPZONE_AUDIO_STT_ENGINE"
+else
+    fail ".env.example is missing DROPZONE_AUDIO_STT_ENGINE"
+fi
+
+if grep -Fq "AUDIO_STT_ENGINE=\${DROPZONE_AUDIO_STT_ENGINE:-web}" "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq "env_line DROPZONE_AUDIO_STT_ENGINE \"\${DROPZONE_AUDIO_STT_ENGINE:-web}\"" "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq "DROPZONE_AUDIO_STT_ENGINE=\"\${DROPZONE_AUDIO_STT_ENGINE:-web}\"" "$PROJECT_DIR/deploy.sh" && \
+   grep -Fq 'AUDIO_STT_MODEL=whisper-large-v3' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'os.environ.get("DROPZONE_AUDIO_STT_ENGINE")' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'if stt_engine == "openai":' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py"; then
+    pass "OpenWebUI STT defaults to browser Web API and only warms Whisper when opted in"
+else
+    fail "OpenWebUI STT default/override wiring is incomplete"
+fi
+
 if grep -q 'DROPZONE_ENABLE_PUBLIC_LANDING: "false"' "$PROJECT_DIR/examples/kubernetes/standalone-domain-direct.yaml" && \
-   grep -q 'DROPZONE_HOST: "chat-beta.chutes.ai"' "$PROJECT_DIR/examples/kubernetes/standalone-domain-direct.yaml"; then
+   grep -q 'DROPZONE_HOST: "chat-beta.chutes.ai"' "$PROJECT_DIR/examples/kubernetes/standalone-domain-direct.yaml" && \
+   grep -q 'DROPZONE_AUDIO_STT_ENGINE: "web"' "$PROJECT_DIR/examples/kubernetes/standalone-domain-direct.yaml"; then
     pass "kubernetes standalone example defaults to chat-beta.chutes.ai with the landing page disabled"
 else
     fail "kubernetes standalone example is missing the chat-beta.chutes.ai private-entry defaults"
@@ -970,6 +1006,7 @@ if openwebui_enabled && compose exec -T openwebui sh -lc '
     test "${ENABLE_LOGIN_FORM:-}" = "false" &&
     test "${ENABLE_PASSWORD_AUTH:-}" = "false" &&
     test "${ENABLE_OLLAMA_API:-}" = "false" &&
+    test "${AUDIO_STT_ENGINE:-}" = "web" &&
     test "${MODELS_CACHE_TTL:-}" = "300"
 ' >/dev/null 2>&1; then
     pass "OpenWebUI env is pinned to /chat and SSO-only mode"

@@ -604,10 +604,28 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
     return len(api_urls), updates, len(ordered_ids), used_backend_fallback
 
 
-AUDIO_CHUTE_NAMES = [
-    "kokoro",
-    "whisper-large-v3",
-]
+def configured_audio_chute_names() -> list[str]:
+    """Return the Chutes-hosted audio models that need warmup in this deployment."""
+
+    names = []
+
+    tts_engine = (os.environ.get("AUDIO_TTS_ENGINE") or "openai").strip().lower()
+    if tts_engine == "openai":
+        tts_model = (os.environ.get("AUDIO_TTS_MODEL") or "kokoro").split(",", 1)[0].strip()
+        if tts_model:
+            names.append(tts_model)
+
+    stt_engine = (
+        os.environ.get("AUDIO_STT_ENGINE")
+        or os.environ.get("DROPZONE_AUDIO_STT_ENGINE")
+        or "web"
+    ).strip().lower()
+    if stt_engine == "openai":
+        stt_model = (os.environ.get("AUDIO_STT_MODEL") or "whisper-large-v3").split(",", 1)[0].strip()
+        if stt_model:
+            names.append(stt_model)
+
+    return list(dict.fromkeys(names))
 
 
 def _get_chutes_oauth_token() -> str:
@@ -637,6 +655,10 @@ def _get_chutes_oauth_token() -> str:
 
 def warmup_audio_chutes(token: str) -> int:
     """Warm up cold TTS/STT chutes so they're ready for users."""
+    audio_chute_names = configured_audio_chute_names()
+    if not audio_chute_names:
+        return 0
+
     utilization = fetch_utilization()
     if not utilization:
         return 0
@@ -645,7 +667,7 @@ def warmup_audio_chutes(token: str) -> int:
     for entry in utilization:
         active_by_name[entry.get("name", "")] = entry.get("active_instance_count", 0)
 
-    cold = [name for name in AUDIO_CHUTE_NAMES if active_by_name.get(name, 0) == 0]
+    cold = [name for name in audio_chute_names if active_by_name.get(name, 0) == 0]
     if not cold:
         return 0
 
