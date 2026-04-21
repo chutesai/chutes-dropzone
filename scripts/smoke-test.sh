@@ -492,7 +492,7 @@ sys.modules["open_webui.dropzone_oauth"] = oauth_mod
 
 spec = importlib.util.spec_from_file_location(
     "dropzone_images",
-    "/Users/chrisk/chutes-jumpmaster/chutes-dropzone/branding/openwebui/dropzone_images.py",
+    "branding/openwebui/dropzone_images.py",
 )
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
