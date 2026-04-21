@@ -797,8 +797,22 @@
     }
   }
 
+  function getDefaultImageModelId() {
+    var preferredModel =
+      imageModels.find(function (model) {
+        return model && model.id && model.id !== IMAGE_MODEL_DEFAULT_ID;
+      }) || null;
+
+    if (preferredModel && preferredModel.id) {
+      return preferredModel.id;
+    }
+
+    var fallbackModel = findImageModelById(IMAGE_MODEL_DEFAULT_ID) || imageModels[0] || null;
+    return (fallbackModel && fallbackModel.id) || IMAGE_MODEL_DEFAULT_ID;
+  }
+
   function persistImageModelId(value) {
-    var nextValue = normalizeText(value) || IMAGE_MODEL_DEFAULT_ID;
+    var nextValue = normalizeText(value) || getDefaultImageModelId();
     writeCookie(IMAGE_MODEL_COOKIE_NAME, nextValue, 31536000);
     try {
       window.localStorage.setItem(IMAGE_MODEL_STORAGE_KEY, nextValue);
@@ -845,8 +859,9 @@
         var models = (payload && payload.data) || payload || [];
         imageModels = Array.isArray(models) ? models : [];
 
-        if (!findImageModelById(getStoredImageModelId())) {
-          var fallbackModel = findImageModelById(IMAGE_MODEL_DEFAULT_ID) || imageModels[0] || null;
+        var storedModelId = getStoredImageModelId();
+        if (!findImageModelById(storedModelId) || storedModelId === IMAGE_MODEL_DEFAULT_ID) {
+          var fallbackModel = findImageModelById(getDefaultImageModelId()) || imageModels[0] || null;
           if (fallbackModel && fallbackModel.id) {
             persistImageModelId(fallbackModel.id);
           }
@@ -1074,7 +1089,7 @@
     if (!selectNode) return;
 
     var signature = getImageModelOptionSignature(imageModels);
-    var previousValue = selectNode.value || getStoredImageModelId() || IMAGE_MODEL_DEFAULT_ID;
+    var previousValue = selectNode.value || getStoredImageModelId() || getDefaultImageModelId();
     var needsOptionRefresh =
       imageModelOptionSignature !== signature ||
       selectNode.options.length !== imageModels.length;
@@ -1093,7 +1108,7 @@
     var selectedModel =
       findImageModelById(previousValue) ||
       findImageModelById(getStoredImageModelId()) ||
-      findImageModelById(IMAGE_MODEL_DEFAULT_ID) ||
+      findImageModelById(getDefaultImageModelId()) ||
       imageModels[0] ||
       null;
 

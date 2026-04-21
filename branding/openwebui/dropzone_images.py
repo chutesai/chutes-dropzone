@@ -32,7 +32,7 @@ log = logging.getLogger(__name__)
 
 AUTO_IMAGE_MODEL_ID = "chutes-auto-image"
 IMAGE_MODEL_COOKIE_NAME = "dropzone-image-model"
-PREFERRED_IMAGE_MODEL_KEYWORDS = ("hunyuan", "qwen", "z-image", "flux")
+PREFERRED_IMAGE_MODEL_ORDER = ("qwen", "hunyuan", "z-image", "flux")
 
 CHUTES_LIST_URL = os.environ.get(
     "CHUTES_LIST_URL", "https://api.chutes.ai/chutes/"
@@ -180,9 +180,12 @@ def _no_image_models_detail() -> str:
     return "No Chutes image models are available right now"
 
 
-def _preferred_image_bucket(model_name: str) -> int:
+def _preferred_image_rank(model_name: str) -> int:
     normalized = str(model_name or "").strip().lower()
-    return 0 if any(keyword in normalized for keyword in PREFERRED_IMAGE_MODEL_KEYWORDS) else 1
+    for index, keyword in enumerate(PREFERRED_IMAGE_MODEL_ORDER):
+        if keyword in normalized:
+            return index
+    return len(PREFERRED_IMAGE_MODEL_ORDER)
 
 
 def _build_auto_description(selected: Optional[dict[str, Any]]) -> str:
@@ -306,7 +309,7 @@ def _discover_models(token: str = "") -> dict[str, Any]:
 
     models.sort(
         key=lambda model: (
-            _preferred_image_bucket(model.get("name") or model.get("id") or ""),
+            _preferred_image_rank(model.get("name") or model.get("id") or ""),
             -int(model.get("active_instance_count", 0) or 0),
             -float(model.get("utilization_1h", 0.0) or 0.0),
             -int(model.get("total_instance_count", 0) or 0),
@@ -344,6 +347,13 @@ def is_chutes_image_backend(request: Request) -> bool:
     return hostname.endswith("chutes.ai") or ".chutes.ai" in hostname
 
 
+def _normalize_model_id(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return urllib.parse.unquote(text).strip()
+
+
 def get_chutes_image_model(request: Request, form_data=None) -> str:
     for candidate in (
         getattr(form_data, "model", None),
@@ -351,7 +361,7 @@ def get_chutes_image_model(request: Request, form_data=None) -> str:
         getattr(request.app.state.config, "IMAGE_GENERATION_MODEL", ""),
         AUTO_IMAGE_MODEL_ID,
     ):
-        value = str(candidate or "").strip()
+        value = _normalize_model_id(candidate)
         if value:
             return value
     return AUTO_IMAGE_MODEL_ID
@@ -372,19 +382,7 @@ def get_chutes_image_models(user=None) -> list[dict[str, Any]]:
     if not models:
         return []
 
-    rendered = [
-        {
-            "id": AUTO_IMAGE_MODEL_ID,
-            "name": "Chutes Auto Image",
-            "description": _build_auto_description(selected),
-            "meta": {
-                "description": "Chutes Auto Image",
-                "routing_tooltip": _build_auto_tooltip(selected, models),
-                "resolved_model": selected.get("id") if selected else "",
-            },
-        }
-    ]
-
+    rendered = []
     for model in models:
         rendered.append(
             {
@@ -400,10 +398,24 @@ def get_chutes_image_models(user=None) -> list[dict[str, Any]]:
             }
         )
 
+    rendered.append(
+        {
+            "id": AUTO_IMAGE_MODEL_ID,
+            "name": "Chutes Auto Image",
+            "description": _build_auto_description(selected),
+            "meta": {
+                "description": "Chutes Auto Image",
+                "routing_tooltip": _build_auto_tooltip(selected, models),
+                "resolved_model": selected.get("id") if selected else "",
+            },
+        }
+    )
+
     return rendered
 
 
 def _resolve_selected_model(model_id: str, token: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
+    model_id = _normalize_model_id(model_id)
     discovered = _discover_models(token)
     items = _routable_image_models(list(discovered.get("items") or []))
     auto_selected = items[0] if items else None

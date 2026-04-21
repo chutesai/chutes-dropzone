@@ -315,6 +315,84 @@ images = mod._decode_generated_images(
 )
 assert images == [(b"hello", "image/png")]
 
+mod._discovery_cache.clear()
+mod._fetch_diffusion_chutes = lambda token: [
+    {
+        "chute_id": "juggernaut",
+        "name": "JuggernautXL-Ragnarok",
+        "slug": "chutes-juggernautxl-ragnarok",
+        "user": {"username": "chutes"},
+    },
+    {
+        "chute_id": "flux",
+        "name": "FLUX.1-schnell",
+        "slug": "chutes-flux-1-schnell",
+        "user": {"username": "chutes"},
+    },
+    {
+        "chute_id": "hunyuan",
+        "name": "Hunyuan-Image",
+        "slug": "chutes-hunyuan-image",
+        "user": {"username": "chutes"},
+    },
+    {
+        "chute_id": "qwen",
+        "name": "Qwen-Image-2512",
+        "slug": "chutes-qwen-image-2512",
+        "user": {"username": "chutes"},
+    },
+]
+mod._fetch_utilization = lambda: [
+    {
+        "chute_id": "juggernaut",
+        "name": "JuggernautXL-Ragnarok",
+        "active_instance_count": 6,
+        "total_instance_count": 6,
+        "utilization_1h": 0.90,
+    },
+    {
+        "chute_id": "flux",
+        "name": "FLUX.1-schnell",
+        "active_instance_count": 3,
+        "total_instance_count": 3,
+        "utilization_1h": 0.40,
+    },
+    {
+        "chute_id": "hunyuan",
+        "name": "Hunyuan-Image",
+        "active_instance_count": 5,
+        "total_instance_count": 5,
+        "utilization_1h": 0.50,
+    },
+    {
+        "chute_id": "qwen",
+        "name": "Qwen-Image-2512",
+        "active_instance_count": 2,
+        "total_instance_count": 2,
+        "utilization_1h": 0.10,
+    },
+]
+ordered_ids = [model["id"] for model in mod._discover_models("")["items"]]
+assert ordered_ids[:4] == [
+    "chutes/Qwen-Image-2512",
+    "chutes/Hunyuan-Image",
+    "chutes/FLUX.1-schnell",
+    "chutes/JuggernautXL-Ragnarok",
+]
+rendered = mod.get_chutes_image_models()
+assert rendered[0]["id"] == "chutes/Qwen-Image-2512"
+assert rendered[-1]["id"] == mod.AUTO_IMAGE_MODEL_ID
+
+request = types.SimpleNamespace(
+    cookies={mod.IMAGE_MODEL_COOKIE_NAME: "chutes%2FJuggernautXL-Ragnarok"},
+    app=types.SimpleNamespace(
+        state=types.SimpleNamespace(
+            config=types.SimpleNamespace(IMAGE_GENERATION_MODEL="")
+        )
+    ),
+)
+assert mod.get_chutes_image_model(request) == "chutes/JuggernautXL-Ragnarok"
+
 os.environ["ALLOW_NON_CONFIDENTIAL"] = "false"
 try:
     mod._image_request_target(
@@ -330,9 +408,9 @@ except mod.HTTPException as exc:
     assert exc.status_code == 503
 PY
     then
-        pass "Dropzone image bridge keeps Chutes routing in proxy mode and parses JSON-wrapped images"
+        pass "Dropzone image bridge keeps Chutes routing in proxy mode, decodes encoded picker cookies, and prefers Qwen-first concrete defaults"
     else
-        fail "Dropzone image bridge proxy routing/response handling is incomplete"
+        fail "Dropzone image bridge proxy routing/default selection handling is incomplete"
     fi
 
     if python3 - <<'PY' >/dev/null 2>&1
