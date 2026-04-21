@@ -330,15 +330,27 @@ mod._fetch_diffusion_chutes = lambda token: [
         "user": {"username": "chutes"},
     },
     {
-        "chute_id": "hunyuan",
-        "name": "Hunyuan-Image",
-        "slug": "chutes-hunyuan-image",
-        "user": {"username": "chutes"},
-    },
-    {
         "chute_id": "qwen",
         "name": "Qwen-Image-2512",
         "slug": "chutes-qwen-image-2512",
+        "user": {"username": "chutes"},
+    },
+]
+mod._fetch_public_chutes = lambda token: [
+    {
+        "chute_id": "hunyuan",
+        "name": "hunyuan-image-3",
+        "slug": "chutes-hunyuan-image-3",
+        "readme": "Tencent Hunyuan Image 3.0",
+        "image": {"name": "hunyuan-image"},
+        "user": {"username": "chutes"},
+    },
+    {
+        "chute_id": "qwen-edit",
+        "name": "qwen-image-edit-2509",
+        "slug": "chutes-qwen-image-edit-2509",
+        "readme": "Qwen image edit model",
+        "image": {"name": "diffusion"},
         "user": {"username": "chutes"},
     },
 ]
@@ -359,7 +371,7 @@ mod._fetch_utilization = lambda: [
     },
     {
         "chute_id": "hunyuan",
-        "name": "Hunyuan-Image",
+        "name": "hunyuan-image-3",
         "active_instance_count": 5,
         "total_instance_count": 5,
         "utilization_1h": 0.50,
@@ -375,10 +387,11 @@ mod._fetch_utilization = lambda: [
 ordered_ids = [model["id"] for model in mod._discover_models("")["items"]]
 assert ordered_ids[:4] == [
     "chutes/Qwen-Image-2512",
-    "chutes/Hunyuan-Image",
+    "chutes/hunyuan-image-3",
     "chutes/FLUX.1-schnell",
     "chutes/JuggernautXL-Ragnarok",
 ]
+assert "chutes/qwen-image-edit-2509" not in ordered_ids
 rendered = mod.get_chutes_image_models()
 assert rendered[0]["id"] == "chutes/Qwen-Image-2512"
 assert rendered[-1]["id"] == mod.AUTO_IMAGE_MODEL_ID

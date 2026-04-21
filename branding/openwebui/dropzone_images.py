@@ -144,6 +144,14 @@ def _fetch_diffusion_chutes(token: str = "") -> list[dict[str, Any]]:
     return items if isinstance(items, list) else []
 
 
+def _fetch_public_chutes(token: str = "") -> list[dict[str, Any]]:
+    query = urllib.parse.urlencode({"include_public": "true", "limit": 500})
+    url = f"{CHUTES_LIST_URL}/?{query}" if not CHUTES_LIST_URL.endswith("/") else f"{CHUTES_LIST_URL}?{query}"
+    payload = _fetch_json(url, token=token)
+    items = payload.get("items", []) if isinstance(payload, dict) else payload
+    return items if isinstance(items, list) else []
+
+
 def _model_score(utilization: dict[str, Any]) -> float:
     active = int(utilization.get("active_instance_count", 0) or 0)
     total = int(utilization.get("total_instance_count", 0) or 0)
@@ -169,6 +177,27 @@ def _image_model_proxy_allowed(model: dict[str, Any]) -> bool:
 
 def _routable_image_models(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [model for model in models if _image_model_proxy_allowed(model)]
+
+
+def _is_rescued_public_image_candidate(item: dict[str, Any]) -> bool:
+    standard_template = str(item.get("standard_template") or "").strip().lower()
+    if standard_template == "diffusion":
+        return False
+
+    name = str(item.get("name") or "").strip().lower()
+    slug = str(item.get("slug") or "").strip().lower()
+    readme = str(item.get("readme") or "").strip().lower()
+    image = item.get("image") if isinstance(item.get("image"), dict) else {}
+    image_name = str(image.get("name") or "").strip().lower()
+    blob = " ".join(part for part in (name, slug, readme, image_name) if part)
+
+    if not any(keyword in blob for keyword in PREFERRED_IMAGE_MODEL_ORDER):
+        return False
+
+    if any(token in blob for token in ("edit", "i2v", "video", "classifier", "nsfw")):
+        return False
+
+    return True
 
 
 def _no_image_models_detail() -> str:
@@ -233,12 +262,40 @@ def _discover_models(token: str = "") -> dict[str, Any]:
             log.debug("authenticated diffusion discovery failed: %s", exc)
             items = []
 
+    rescued_items: list[dict[str, Any]] = []
+    if token:
+        try:
+            rescued_items = _fetch_public_chutes(token)
+        except Exception as exc:
+            log.debug("authenticated public image discovery failed: %s", exc)
+            rescued_items = []
+
     if not items:
         try:
             items = _fetch_diffusion_chutes("")
         except Exception as exc:
             log.debug("public diffusion discovery failed: %s", exc)
             items = []
+
+    if not rescued_items:
+        try:
+            rescued_items = _fetch_public_chutes("")
+        except Exception as exc:
+            log.debug("public image discovery failed: %s", exc)
+            rescued_items = []
+
+    if rescued_items:
+        merged_items: dict[str, dict[str, Any]] = {}
+        for item in items:
+            if isinstance(item, dict):
+                key = str(item.get("chute_id") or item.get("id") or "").strip() or str(id(item))
+                merged_items[key] = item
+        for item in rescued_items:
+            if not isinstance(item, dict) or not _is_rescued_public_image_candidate(item):
+                continue
+            key = str(item.get("chute_id") or item.get("id") or "").strip() or str(id(item))
+            merged_items.setdefault(key, item)
+        items = list(merged_items.values())
 
     utilization_items = _fetch_utilization()
     utilization_by_chute_id = {
