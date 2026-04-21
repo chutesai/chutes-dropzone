@@ -358,6 +358,7 @@ COPY branding/openwebui/chutas2.webp /app/backend/open_webui/static/chutas2.webp
 COPY branding/openwebui/dropzone_account.py /app/backend/open_webui/dropzone_account.py
 COPY branding/openwebui/dropzone_audio.py /app/backend/open_webui/dropzone_audio.py
 COPY branding/openwebui/dropzone_auth.py /app/backend/open_webui/dropzone_auth.py
+COPY branding/openwebui/dropzone_images.py /app/backend/open_webui/dropzone_images.py
 COPY branding/openwebui/dropzone_oauth.py /app/backend/open_webui/dropzone_oauth.py
 COPY branding/openwebui/dropzone_auth_page.html /app/backend/open_webui/dropzone_auth_page.html
 COPY branding/openwebui/site.webmanifest /app/backend/open_webui/static/site.webmanifest

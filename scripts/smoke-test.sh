@@ -454,6 +454,85 @@ url, body = mod._audio_request_target(
 assert url == "http://e2ee-proxy:80/v1/audio/speech"
 assert body == {"model": "4be47dee-7bee-53a4-a208-32a66f47a0b0"}
 
+assert mod._proxy_tts_payload(
+    {
+        "name": "kokoro",
+        "slug": "chutes-kokoro",
+        "chute_id": "4be47dee-7bee-53a4-a208-32a66f47a0b0",
+    },
+    {"text": "hello", "voice": "af_heart", "response_format": "mp3"},
+) == {
+    "model": "4be47dee-7bee-53a4-a208-32a66f47a0b0",
+    "input": "hello",
+    "voice": "af_heart",
+    "response_format": "mp3",
+}
+
+assert mod._proxy_stt_fields(
+    {
+        "name": "whisper-large-v3",
+        "slug": "chutes-whisper-large-v3",
+        "chute_id": "dbe2d8e5-6f27-45b1-a6a0-1d3fa4cfcb47",
+    }
+) == {
+    "model": "dbe2d8e5-6f27-45b1-a6a0-1d3fa4cfcb47",
+    "response_format": "json",
+}
+
+multipart_body, multipart_content_type = mod._encode_multipart_form_data(
+    {"model": "whisper-large-v3", "response_format": "json"},
+    "file",
+    "clip.webm",
+    "audio/webm",
+    b"audio-bytes",
+)
+assert multipart_content_type.startswith("multipart/form-data; boundary=")
+multipart_text = multipart_body.decode("utf-8", errors="replace")
+assert 'name="model"' in multipart_text
+assert 'name="response_format"' in multipart_text
+assert 'name="file"; filename="clip.webm"' in multipart_text
+
+discovery = {
+    "tts_items": [
+        {
+            "id": "publisher/kokoro",
+            "name": "kokoro",
+            "slug": "chutes-kokoro",
+            "chute_id": "4be47dee-7bee-53a4-a208-32a66f47a0b0",
+            "tee": False,
+            "score": 0.1,
+        },
+        {
+            "id": "publisher/spark-tts",
+            "name": "spark-tts",
+            "slug": "chutes-spark-tts",
+            "chute_id": "8b55d8ef-8636-4d09-b95c-1a6ec0bbd640",
+            "tee": True,
+            "score": 0.9,
+        },
+    ],
+    "tts_items_all": [
+        {
+            "id": "publisher/kokoro",
+            "name": "kokoro",
+            "slug": "chutes-kokoro",
+            "chute_id": "4be47dee-7bee-53a4-a208-32a66f47a0b0",
+            "tee": False,
+            "score": 0.1,
+        },
+        {
+            "id": "publisher/spark-tts",
+            "name": "spark-tts",
+            "slug": "chutes-spark-tts",
+            "chute_id": "8b55d8ef-8636-4d09-b95c-1a6ec0bbd640",
+            "tee": True,
+            "score": 0.9,
+        },
+    ],
+}
+assert mod._select_audio_chute("tts", "kokoro", discovery)["name"] == "kokoro"
+assert mod._select_audio_chute("tts", "publisher/spark-tts", discovery)["name"] == "spark-tts"
+
 os.environ["ALLOW_NON_CONFIDENTIAL"] = "false"
 try:
     mod._audio_request_target(
@@ -468,11 +547,47 @@ try:
     raise AssertionError("expected strict proxy audio rejection")
 except mod.HTTPException as exc:
     assert exc.status_code == 503
+
+strict_discovery = {
+    "tts_items": [
+        {
+            "id": "publisher/spark-tts",
+            "name": "spark-tts",
+            "slug": "chutes-spark-tts",
+            "chute_id": "8b55d8ef-8636-4d09-b95c-1a6ec0bbd640",
+            "tee": True,
+            "score": 0.9,
+        },
+    ],
+    "tts_items_all": [
+        {
+            "id": "publisher/kokoro",
+            "name": "kokoro",
+            "slug": "chutes-kokoro",
+            "chute_id": "4be47dee-7bee-53a4-a208-32a66f47a0b0",
+            "tee": False,
+            "score": 0.1,
+        },
+        {
+            "id": "publisher/spark-tts",
+            "name": "spark-tts",
+            "slug": "chutes-spark-tts",
+            "chute_id": "8b55d8ef-8636-4d09-b95c-1a6ec0bbd640",
+            "tee": True,
+            "score": 0.9,
+        },
+    ],
+}
+try:
+    mod._select_audio_chute("tts", "kokoro", strict_discovery)
+    raise AssertionError("expected strict proxy requested-model rejection")
+except mod.HTTPException as exc:
+    assert exc.status_code == 503
 PY
     then
-        pass "Dropzone audio bridge routes proxy requests by chute id and preserves strict-mode guardrails"
+        pass "Dropzone audio bridge honors proxy wire format, model selection, and strict-mode guardrails"
     else
-        fail "Dropzone audio bridge proxy routing/guardrails are incomplete"
+        fail "Dropzone audio bridge proxy wire format/model selection/guardrails are incomplete"
     fi
 else
     skip "python3 not installed - cannot validate OpenWebUI model-order sync helper"
@@ -766,7 +881,7 @@ else
     fail "OpenWebUI splash screen branding is incomplete"
 fi
 
-if grep -q 'COPY branding/openwebui/dropzone_images.py /app/backend/open_webui/dropzone_images.py' "$PROJECT_DIR/Dockerfile.local-repo" && \
+if [ "$(grep -c 'COPY branding/openwebui/dropzone_images.py /app/backend/open_webui/dropzone_images.py' "$PROJECT_DIR/Dockerfile.local-repo")" -ge 2 ] && \
    grep -q 'patch_images_router(root / "backend" / "open_webui" / "routers" / "images.py")' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
     pass "OpenWebUI image generation bridge is patched into the runtime"
 else
@@ -902,6 +1017,14 @@ if [ -n "$ci_nodes_ref" ] && [ "$ci_nodes_ref" = "$release_nodes_ref" ] && [ "$c
     pass "n8n-nodes-chutes pin matches across ci, release, and deploy"
 else
     fail "n8n-nodes-chutes pin drifted across ci, release, or deploy"
+fi
+
+if grep -Fq 'name: Build release image stage' "$PROJECT_DIR/.github/workflows/ci.yml" && \
+   grep -Fq "if: matrix.traffic_mode == 'direct'" "$PROJECT_DIR/.github/workflows/ci.yml" && \
+   grep -Fq 'tags: chutes-dropzone-ci-release:latest' "$PROJECT_DIR/.github/workflows/ci.yml"; then
+    pass "CI builds the release Docker stage before E2E"
+else
+    fail "CI is missing release-stage Docker build coverage"
 fi
 
 if [ "$SYNTAX_ONLY" = true ]; then

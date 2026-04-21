@@ -111,6 +111,20 @@ jobs:
           cache-from: type=gha,scope=local-e2e-openwebui-runtime
           cache-to: type=gha,mode=max,scope=local-e2e-openwebui-runtime
 
+      - name: Build release image stage
+        if: matrix.traffic_mode == 'direct'
+        uses: docker/build-push-action@v6
+        with:
+          context: chutes-dropzone
+          file: chutes-dropzone/Dockerfile.local-repo
+          load: true
+          tags: chutes-dropzone-ci-release:latest
+          cache-from: |
+            type=gha,scope=local-e2e-release-image
+            type=gha,scope=local-e2e-n8n-runtime
+            type=gha,scope=local-e2e-openwebui-runtime
+          cache-to: type=gha,mode=max,scope=local-e2e-release-image
+
       - name: Run destructive test-IdP E2E
         working-directory: chutes-dropzone
         env:
