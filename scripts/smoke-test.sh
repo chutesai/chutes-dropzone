@@ -850,6 +850,14 @@ else
     fail "Dropzone deploy scaffolding is missing native OpenWebUI web search or image generation wiring"
 fi
 
+if grep -Fq 'converge_openwebui_runtime_config()' "$PROJECT_DIR/scripts/configure-openwebui.sh" && \
+   grep -Fq "OpenWebUI runtime config is still converging (attempt \${attempt}/\${max_attempts})" "$PROJECT_DIR/scripts/configure-openwebui.sh" && \
+   grep -Fq "ERROR: OpenWebUI runtime config did not converge after \${max_attempts} attempt(s)" "$PROJECT_DIR/scripts/configure-openwebui.sh"; then
+    pass "OpenWebUI runtime verification retries convergence and prints the underlying mismatch"
+else
+    fail "OpenWebUI runtime verification is missing convergence retries or detailed mismatch output"
+fi
+
 if grep -Fq "DROPZONE_AUDIO_STT_ENGINE=\${DROPZONE_AUDIO_STT_ENGINE:-local}" "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq "DROPZONE_AUDIO_STT_LOCAL_MODEL=\${DROPZONE_AUDIO_STT_LOCAL_MODEL:-base}" "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq "WHISPER_MODEL=\${DROPZONE_AUDIO_STT_LOCAL_MODEL:-base}" "$PROJECT_DIR/docker-compose.yml" && \

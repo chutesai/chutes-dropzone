@@ -51,6 +51,43 @@ configure_openwebui_runtime() {
         'cd /app/backend && PYTHONPATH="/app/backend${PYTHONPATH:+:${PYTHONPATH}}" python /opt/dropzone/openwebui-model-order-sync.py --configure-openai-auth'
 }
 
+converge_openwebui_runtime_config() {
+    local attempt=1
+    local max_attempts="${1:-5}"
+    local runtime_output=""
+    local runtime_config_output=""
+
+    while [ "$attempt" -le "$max_attempts" ]; do
+        runtime_output="$(configure_openwebui_runtime)"
+        while IFS= read -r line; do
+            [ -n "$line" ] && echo "  $line"
+        done <<< "$runtime_output"
+
+        if runtime_config_output="$(assert_openwebui_runtime_config 2>&1)"; then
+            echo "  OpenWebUI runtime config uses system_oauth and a seeded model order"
+            return 0
+        fi
+
+        if [ "$attempt" -lt "$max_attempts" ]; then
+            echo "  OpenWebUI runtime config is still converging (attempt ${attempt}/${max_attempts})"
+            while IFS= read -r line; do
+                [ -n "$line" ] && echo "    $line"
+            done <<< "$runtime_config_output"
+            sleep 2
+        else
+            echo "  ERROR: OpenWebUI runtime config did not converge after ${max_attempts} attempt(s)" >&2
+            while IFS= read -r line; do
+                [ -n "$line" ] && echo "    $line" >&2
+            done <<< "$runtime_config_output"
+            return 1
+        fi
+
+        attempt=$((attempt + 1))
+    done
+
+    return 1
+}
+
 promote_pending_oauth_users() {
     local promoted=""
     promoted="$(
@@ -341,22 +378,15 @@ if [ "$promoted_users" -gt 0 ] 2>/dev/null; then
     echo "  Promoted ${promoted_users} pending OpenWebUI OAuth user(s) to role=user"
 fi
 
-runtime_output="$(configure_openwebui_runtime)"
-while IFS= read -r line; do
-    [ -n "$line" ] && echo "  $line"
-done <<< "$runtime_output"
-
 if ! assert_openwebui_env >/dev/null 2>&1; then
     echo "  ERROR: OpenWebUI runtime env does not match the /chat SSO-only configuration" >&2
     exit 1
 fi
 echo "  OpenWebUI runtime env is pinned to /chat and SSO-only mode"
 
-if ! assert_openwebui_runtime_config >/dev/null 2>&1; then
-    echo "  ERROR: OpenWebUI runtime config is missing system_oauth or model ordering" >&2
+if ! converge_openwebui_runtime_config 5; then
     exit 1
 fi
-echo "  OpenWebUI runtime config uses system_oauth and a seeded model order"
 
 validate_openwebui_model_backend
 
