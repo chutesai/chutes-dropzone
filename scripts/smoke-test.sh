@@ -456,10 +456,9 @@ PY
         fail "Dropzone image bridge proxy routing/default selection handling is incomplete"
     fi
 
-    if python3 - <<'PY' >/dev/null 2>&1
+if python3 - <<'PY' >/dev/null 2>&1
 import asyncio
 import sys
-import time
 import types
 import importlib.util
 
@@ -522,10 +521,16 @@ class FakeResponse:
     def __exit__(self, exc_type, exc, tb):
         return False
 
+to_thread_calls = []
+
+async def fake_to_thread(func, *args, **kwargs):
+    to_thread_calls.append(getattr(func, "__name__", ""))
+    return func(*args, **kwargs)
+
 def fake_urlopen(request, timeout=0):
-    time.sleep(0.5)
     return FakeResponse()
 
+mod.asyncio.to_thread = fake_to_thread
 mod.urllib.request.urlopen = fake_urlopen
 
 request = types.SimpleNamespace(
@@ -549,11 +554,8 @@ form_data = types.SimpleNamespace(
 )
 
 async def exercise():
-    generation = asyncio.create_task(mod.generate_chutes_images(request, form_data))
-    started = time.perf_counter()
-    await asyncio.sleep(0.05)
-    assert (time.perf_counter() - started) < 0.3
-    images, selected = await generation
+    images, selected = await mod.generate_chutes_images(request, form_data)
+    assert to_thread_calls == ["_generate_chutes_images_blocking"]
     assert selected["id"] == "chutes/Qwen-Image-2512"
     assert len(images) == 1
 
