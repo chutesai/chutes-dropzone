@@ -35,6 +35,7 @@
   var imageModels = [];
   var imageModelsLoaded = false;
   var imageModelsPromise = null;
+  var imageModelOptionSignature = "";
   var n8nConfirmed = false;
   var tooltipLayer = null;
   var activeTooltipTarget = null;
@@ -815,6 +816,15 @@
     );
   }
 
+  function getImageModelOptionSignature(models) {
+    if (!Array.isArray(models) || !models.length) return "";
+    return models
+      .map(function (model) {
+        return [normalizeText(model && model.id), normalizeText(model && model.name)].join(":");
+      })
+      .join("|");
+  }
+
   function queueImageModelFetch(force) {
     if (imageModelsPromise) return;
     if (!force && imageModelsLoaded) return;
@@ -1005,12 +1015,24 @@
   }
 
   function removeImageModelPicker() {
+    imageModelOptionSignature = "";
     Array.prototype.forEach.call(
       document.querySelectorAll('[data-chutes-image-model-slot="true"]'),
       function (slot) {
         slot.remove();
       },
     );
+  }
+
+  function clearTooltip(node) {
+    if (!node) return;
+    if (activeTooltipTarget === node) {
+      hideTooltip(node);
+    }
+    node.classList.remove("chutes-tooltip-anchor");
+    node.removeAttribute("data-chutes-tooltip");
+    node.removeAttribute("aria-label");
+    node.removeAttribute("data-chutes-tooltip-bound");
   }
 
   function ensureImageModelPicker() {
@@ -1051,15 +1073,22 @@
     var selectNode = slot.querySelector("select");
     if (!selectNode) return;
 
+    var signature = getImageModelOptionSignature(imageModels);
     var previousValue = selectNode.value || getStoredImageModelId() || IMAGE_MODEL_DEFAULT_ID;
-    selectNode.innerHTML = "";
-    imageModels.forEach(function (model) {
-      if (!model || !model.id) return;
-      var option = document.createElement("option");
-      option.value = model.id;
-      option.textContent = model.name || model.id;
-      selectNode.appendChild(option);
-    });
+    var needsOptionRefresh =
+      imageModelOptionSignature !== signature ||
+      selectNode.options.length !== imageModels.length;
+    if (needsOptionRefresh) {
+      imageModelOptionSignature = signature;
+      selectNode.innerHTML = "";
+      imageModels.forEach(function (model) {
+        if (!model || !model.id) return;
+        var option = document.createElement("option");
+        option.value = model.id;
+        option.textContent = model.name || model.id;
+        selectNode.appendChild(option);
+      });
+    }
 
     var selectedModel =
       findImageModelById(previousValue) ||
@@ -1076,15 +1105,7 @@
     selectNode.value = selectedModel.id;
     persistImageModelId(selectedModel.id);
     selectNode.setAttribute("title", selectedModel.description || selectedModel.name || "");
-
-    var meta = (selectedModel && selectedModel.meta) || {};
-    var tooltipText = normalizeTooltipText(meta.routing_tooltip || selectedModel.description || "");
-    if (tooltipText) {
-      applyTooltip(slot, tooltipText);
-    } else {
-      slot.removeAttribute("data-chutes-tooltip");
-      slot.removeAttribute("aria-label");
-    }
+    clearTooltip(slot);
 
     if (wrapper.parentNode && slot.parentNode !== wrapper.parentNode) {
       wrapper.parentNode.insertBefore(slot, wrapper.nextSibling);

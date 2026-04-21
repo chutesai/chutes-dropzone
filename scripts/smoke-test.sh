@@ -690,6 +690,19 @@ else
     fail "Chutes Auto metadata is missing the best-model description or routing tooltip list"
 fi
 
+if grep -Fq 'function getImageModelOptionSignature(models)' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'var needsOptionRefresh =' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'imageModelOptionSignature = "";' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'selectNode.options.length !== imageModels.length' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'clearTooltip(slot);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   ! grep -Fq 'applyTooltip(slot, tooltipText);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'lines.extend(["", "Top choices"])' "$PROJECT_DIR/branding/openwebui/dropzone_images.py" && \
+   grep -Fq 'lines.append(f"+ {len(models) - 4} more live model(s)")' "$PROJECT_DIR/branding/openwebui/dropzone_images.py"; then
+    pass "Image picker stays stable across refreshes and keeps auto-model tooltip lightweight"
+else
+    fail "Image picker stability or auto-model tooltip trimming is missing"
+fi
+
 if command -v jq >/dev/null 2>&1; then
     for file in "$PROJECT_DIR/workflows/"*.json; do
         if jq empty "$file" >/dev/null 2>&1; then

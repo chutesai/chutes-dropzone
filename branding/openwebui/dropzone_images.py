@@ -195,8 +195,8 @@ def _build_auto_description(selected: Optional[dict[str, Any]]) -> str:
 def _build_auto_tooltip(selected: Optional[dict[str, Any]], models: list[dict[str, Any]]) -> str:
     lines: list[str] = [_build_auto_description(selected)]
     if models:
-        lines.extend(["", "Models"])
-        for model in models[:12]:
+        lines.extend(["", "Top choices"])
+        for model in models[:4]:
             details = []
             active = int(model.get("active_instance_count", 0) or 0)
             if active > 0:
@@ -209,6 +209,8 @@ def _build_auto_tooltip(selected: Optional[dict[str, Any]], models: list[dict[st
             if details:
                 label += " (" + ", ".join(details) + ")"
             lines.append(label)
+        if len(models) > 4:
+            lines.append(f"+ {len(models) - 4} more live model(s)")
     return "\n".join(lines).strip()
 
 
