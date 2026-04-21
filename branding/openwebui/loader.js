@@ -1029,6 +1029,53 @@
     return buttons[0] || null;
   }
 
+  function imageToggleState(node) {
+    if (!node || !node.getAttribute) return null;
+
+    var truthy = ["true", "checked", "on", "active", "selected"];
+    var falsy = ["false", "unchecked", "off", "inactive", "unselected"];
+    var attributes = ["aria-pressed", "aria-checked", "aria-selected", "data-state", "data-selected"];
+
+    for (var i = 0; i < attributes.length; i += 1) {
+      var value = normalizeText(node.getAttribute(attributes[i])).toLowerCase();
+      if (!value) continue;
+      if (truthy.indexOf(value) !== -1) return true;
+      if (falsy.indexOf(value) !== -1) return false;
+    }
+
+    return null;
+  }
+
+  function hasImageToggleAccent(node) {
+    if (!node) return false;
+    var className = normalizeText(node.className);
+    if (!className) return false;
+
+    return /(^|\s)(bg|text|border|ring)-(blue|sky|cyan|indigo|violet|purple|emerald|teal)-/i.test(className);
+  }
+
+  function isImageGenerationEnabled(button) {
+    if (!button) return false;
+
+    var nodes = [];
+    var current = button;
+    var sawExplicitFalse = false;
+    for (var depth = 0; current && depth < 4; depth += 1) {
+      nodes.push(current);
+      current = current.parentElement;
+    }
+
+    for (var i = 0; i < nodes.length; i += 1) {
+      var state = imageToggleState(nodes[i]);
+      if (state === true) return true;
+      if (state === false) sawExplicitFalse = true;
+    }
+
+    if (sawExplicitFalse) return false;
+
+    return nodes.some(hasImageToggleAccent);
+  }
+
   function removeImageModelPicker() {
     imageModelOptionSignature = "";
     Array.prototype.forEach.call(
@@ -1051,10 +1098,15 @@
   }
 
   function ensureImageModelPicker() {
+    var button = findImageGenerationButton();
+    if (!button || !isImageGenerationEnabled(button)) {
+      removeImageModelPicker();
+      return;
+    }
+
     queueImageModelFetch();
 
-    var button = findImageGenerationButton();
-    if (!button || !imageModelsLoaded || !imageModels.length) {
+    if (!imageModelsLoaded || !imageModels.length) {
       removeImageModelPicker();
       return;
     }

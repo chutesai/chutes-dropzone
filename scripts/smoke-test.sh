@@ -812,6 +812,8 @@ else
 fi
 
 if grep -Fq 'function getImageModelOptionSignature(models)' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'function isImageGenerationEnabled(button)' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq '!button || !isImageGenerationEnabled(button)' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'var needsOptionRefresh =' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'imageModelOptionSignature = "";' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'selectNode.options.length !== imageModels.length' "$PROJECT_DIR/branding/openwebui/loader.js" && \
@@ -819,9 +821,9 @@ if grep -Fq 'function getImageModelOptionSignature(models)' "$PROJECT_DIR/brandi
    ! grep -Fq 'applyTooltip(slot, tooltipText);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'lines.extend(["", "Top choices"])' "$PROJECT_DIR/branding/openwebui/dropzone_images.py" && \
    grep -Fq 'lines.append(f"+ {len(models) - 4} more live model(s)")' "$PROJECT_DIR/branding/openwebui/dropzone_images.py"; then
-    pass "Image picker stays stable across refreshes and keeps auto-model tooltip lightweight"
+    pass "Image picker waits for active image mode, stays stable across refreshes, and keeps auto-model tooltip lightweight"
 else
-    fail "Image picker stability or auto-model tooltip trimming is missing"
+    fail "Image picker active-mode gating, stability, or auto-model tooltip trimming is missing"
 fi
 
 if command -v jq >/dev/null 2>&1; then
