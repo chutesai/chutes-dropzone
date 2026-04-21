@@ -523,7 +523,7 @@ class FakeResponse:
         return False
 
 def fake_urlopen(request, timeout=0):
-    time.sleep(0.35)
+    time.sleep(0.5)
     return FakeResponse()
 
 mod.urllib.request.urlopen = fake_urlopen
@@ -552,7 +552,7 @@ async def exercise():
     generation = asyncio.create_task(mod.generate_chutes_images(request, form_data))
     started = time.perf_counter()
     await asyncio.sleep(0.05)
-    assert (time.perf_counter() - started) < 0.2
+    assert (time.perf_counter() - started) < 0.3
     images, selected = await generation
     assert selected["id"] == "chutes/Qwen-Image-2512"
     assert len(images) == 1
