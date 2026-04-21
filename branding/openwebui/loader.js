@@ -1112,6 +1112,7 @@
     }
 
     var wrapper = button.parentElement || button;
+    var controlRow = wrapper.parentNode || null;
     var slot = document.querySelector('[data-chutes-image-model-slot="true"]');
     if (!slot) {
       slot = createElement("div", "chutes-image-model-picker");
@@ -1174,10 +1175,8 @@
     selectNode.setAttribute("title", selectedModel.description || selectedModel.name || "");
     clearTooltip(slot);
 
-    if (wrapper.parentNode && slot.parentNode !== wrapper.parentNode) {
-      wrapper.parentNode.insertBefore(slot, wrapper.nextSibling);
-    } else if (wrapper.parentNode && slot.previousElementSibling !== wrapper) {
-      wrapper.parentNode.insertBefore(slot, wrapper.nextSibling);
+    if (controlRow && (slot.parentNode !== controlRow || slot !== controlRow.lastElementChild)) {
+      controlRow.appendChild(slot);
     }
   }
 

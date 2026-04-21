@@ -333,8 +333,12 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
 .chutes-image-model-picker {
   display: inline-flex;
   align-items: center;
+  align-self: center;
+  flex: 0 0 auto;
   min-width: 0;
   max-width: min(12rem, 42vw);
+  margin-inline-start: 0.5rem;
+  order: 99;
 }
 
 .chutes-image-model-select {
