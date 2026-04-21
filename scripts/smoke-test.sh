@@ -1199,7 +1199,8 @@ if [ "$DROPZONE_ENABLE_PUBLIC_LANDING" = "true" ]; then
 else
     if echo "$landing_headers" | grep -qi '^HTTP/.* 302' && \
        { echo "$landing_headers" | grep -qi "^location: $(primary_launcher_path)$" || \
-         echo "$landing_headers" | grep -qi "^location: https\\?://${DROPZONE_HOST}$(primary_launcher_path)$"; }; then
+         echo "$landing_headers" | grep -qi "^location: https://${DROPZONE_HOST}$(primary_launcher_path)$"; } && \
+       ! echo "$landing_headers" | grep -qi "^location: http://${DROPZONE_HOST}"; then
         pass "root entry redirects straight to the enabled primary app when public landing is disabled"
     else
         fail "root entry did not redirect to the enabled primary app with DROPZONE_ENABLE_PUBLIC_LANDING=false"
@@ -1261,7 +1262,10 @@ if openwebui_enabled; then
     chat_status="$(curl_edge -sk -o /tmp/chutes-dropzone.chat.out -w '%{http_code}' "$CHAT_EDGE_URL/" 2>/dev/null || echo 000)"
     case "$chat_status" in
         302)
-            if curl_edge -skI "$CHAT_EDGE_URL/" 2>/dev/null | grep -qi "^location: .*/c/new\\|^location: /c/new"; then
+            chat_headers="$(curl_edge -skI "$CHAT_EDGE_URL/" 2>/dev/null | tr -d '\r' || true)"
+            if { echo "$chat_headers" | grep -qi '^location: /c/new$' || \
+                 echo "$chat_headers" | grep -qi "^location: https://${DROPZONE_HOST}/c/new$"; } && \
+               ! echo "$chat_headers" | grep -qi "^location: http://${DROPZONE_HOST}/c/new$"; then
                 pass "OpenWebUI /chat/ entrypoint redirects to new chat"
             else
                 fail "OpenWebUI /chat/ entrypoint did not redirect to /c/new"
@@ -1274,7 +1278,7 @@ if openwebui_enabled; then
 
     chat_alias_bad_headers="$(curl_edge -skI "https://${DROPZONE_HOST}/chat//evil.example" 2>/dev/null | tr -d '\r' || true)"
     if echo "$chat_alias_bad_headers" | grep -qi '^location: /c/new$' || \
-       echo "$chat_alias_bad_headers" | grep -qi "^location: https\\?://${DROPZONE_HOST}/c/new$"; then
+       echo "$chat_alias_bad_headers" | grep -qi "^location: https://${DROPZONE_HOST}/c/new$"; then
         pass "OpenWebUI chat alias sends malformed double-slash paths to /c/new"
     else
         fail "OpenWebUI chat alias did not safely normalize malformed double-slash paths"

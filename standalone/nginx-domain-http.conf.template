@@ -37,6 +37,7 @@ http {
     server {
         listen 80;
         server_name __SERVER_NAME__;
+        absolute_redirect off;
 
         location = /health {
             default_type text/plain;

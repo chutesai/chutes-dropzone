@@ -586,7 +586,10 @@ if [[ "$chat_status" != "302" ]]; then
     exit 1
 fi
 
-if ! curl_edge -skI "https://${DROPZONE_HOST}/chat/" | grep -qi "^location: .*/c/new\\|^location: /c/new"; then
+chat_headers="$(curl_edge -skI "https://${DROPZONE_HOST}/chat/" | tr -d '\r' || true)"
+if ! { echo "$chat_headers" | grep -qi '^location: /c/new$' || \
+       echo "$chat_headers" | grep -qi "^location: https://${DROPZONE_HOST}/c/new$"; } || \
+   echo "$chat_headers" | grep -qi "^location: http://${DROPZONE_HOST}/c/new$"; then
     echo "FAIL: OpenWebUI /chat/ entrypoint is not redirecting to /c/new" >&2
     exit 1
 fi

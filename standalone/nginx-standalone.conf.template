@@ -37,6 +37,7 @@ http {
     server {
         listen 443 ssl;
         server_name __SERVER_NAME__;
+        absolute_redirect off;
 
         ssl_certificate /tmp/dummy.crt;
         ssl_certificate_key /tmp/dummy.key;
