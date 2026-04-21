@@ -336,24 +336,37 @@ mod._fetch_diffusion_chutes = lambda token: [
         "user": {"username": "chutes"},
     },
 ]
-mod._fetch_public_chutes = lambda token: [
-    {
-        "chute_id": "hunyuan",
-        "name": "hunyuan-image-3",
-        "slug": "chutes-hunyuan-image-3",
-        "readme": "Tencent Hunyuan Image 3.0",
-        "image": {"name": "hunyuan-image"},
-        "user": {"username": "chutes"},
-    },
-    {
-        "chute_id": "qwen-edit",
-        "name": "qwen-image-edit-2509",
-        "slug": "chutes-qwen-image-edit-2509",
-        "readme": "Qwen image edit model",
-        "image": {"name": "diffusion"},
-        "user": {"username": "chutes"},
-    },
-]
+mod._fetch_public_chutes = lambda token: (
+    [
+        {
+            "chute_id": "qwen-edit",
+            "name": "qwen-image-edit-2509",
+            "slug": "chutes-qwen-image-edit-2509",
+            "readme": "Qwen image edit model",
+            "image": {"name": "diffusion"},
+            "user": {"username": "chutes"},
+        },
+    ]
+    if token
+    else [
+        {
+            "chute_id": "hunyuan",
+            "name": "hunyuan-image-3",
+            "slug": "chutes-hunyuan-image-3",
+            "readme": "Tencent Hunyuan Image 3.0",
+            "image": {"name": "hunyuan-image"},
+            "user": {"username": "chutes"},
+        },
+        {
+            "chute_id": "qwen-edit",
+            "name": "qwen-image-edit-2509",
+            "slug": "chutes-qwen-image-edit-2509",
+            "readme": "Qwen image edit model",
+            "image": {"name": "diffusion"},
+            "user": {"username": "chutes"},
+        },
+    ]
+)
 mod._fetch_utilization = lambda: [
     {
         "chute_id": "juggernaut",

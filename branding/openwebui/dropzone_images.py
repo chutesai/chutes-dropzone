@@ -262,6 +262,22 @@ def _discover_models(token: str = "") -> dict[str, Any]:
             log.debug("authenticated diffusion discovery failed: %s", exc)
             items = []
 
+    public_items: list[dict[str, Any]] = []
+    try:
+        public_items = _fetch_diffusion_chutes("")
+    except Exception as exc:
+        log.debug("public diffusion discovery failed: %s", exc)
+        public_items = []
+
+    if public_items:
+        merged_diffusion: dict[str, dict[str, Any]] = {}
+        for item in items + public_items:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("chute_id") or item.get("id") or "").strip() or str(id(item))
+            merged_diffusion[key] = item
+        items = list(merged_diffusion.values())
+
     rescued_items: list[dict[str, Any]] = []
     if token:
         try:
@@ -270,6 +286,13 @@ def _discover_models(token: str = "") -> dict[str, Any]:
             log.debug("authenticated public image discovery failed: %s", exc)
             rescued_items = []
 
+    public_rescued_items: list[dict[str, Any]] = []
+    try:
+        public_rescued_items = _fetch_public_chutes("")
+    except Exception as exc:
+        log.debug("public image discovery failed: %s", exc)
+        public_rescued_items = []
+
     if not items:
         try:
             items = _fetch_diffusion_chutes("")
@@ -277,12 +300,14 @@ def _discover_models(token: str = "") -> dict[str, Any]:
             log.debug("public diffusion discovery failed: %s", exc)
             items = []
 
-    if not rescued_items:
-        try:
-            rescued_items = _fetch_public_chutes("")
-        except Exception as exc:
-            log.debug("public image discovery failed: %s", exc)
-            rescued_items = []
+    if public_rescued_items:
+        merged_rescued: dict[str, dict[str, Any]] = {}
+        for item in rescued_items + public_rescued_items:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("chute_id") or item.get("id") or "").strip() or str(id(item))
+            merged_rescued[key] = item
+        rescued_items = list(merged_rescued.values())
 
     if rescued_items:
         merged_items: dict[str, dict[str, Any]] = {}
