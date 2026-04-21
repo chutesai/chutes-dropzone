@@ -457,6 +457,115 @@ PY
     fi
 
     if python3 - <<'PY' >/dev/null 2>&1
+import asyncio
+import sys
+import time
+import types
+import importlib.util
+
+fastapi_mod = types.ModuleType("fastapi")
+
+class HTTPException(Exception):
+    def __init__(self, status_code, detail=""):
+        self.status_code = status_code
+        self.detail = detail
+
+class Request:
+    pass
+
+fastapi_mod.HTTPException = HTTPException
+fastapi_mod.Request = Request
+sys.modules["fastapi"] = fastapi_mod
+
+pkg = types.ModuleType("open_webui")
+oauth_mod = types.ModuleType("open_webui.dropzone_oauth")
+
+async def _stub_get_request_oauth_token(*args, **kwargs):
+    return None
+
+def _stub_get_user_oauth_access_token(*args, **kwargs):
+    return ""
+
+oauth_mod.get_request_oauth_token = _stub_get_request_oauth_token
+oauth_mod.get_user_oauth_access_token = _stub_get_user_oauth_access_token
+sys.modules["open_webui"] = pkg
+sys.modules["open_webui.dropzone_oauth"] = oauth_mod
+
+spec = importlib.util.spec_from_file_location(
+    "dropzone_images",
+    "/Users/chrisk/chutes-jumpmaster/chutes-dropzone/branding/openwebui/dropzone_images.py",
+)
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+mod._resolve_selected_model = lambda model_id, token="": (
+    {
+        "id": "chutes/Qwen-Image-2512",
+        "slug": "chutes-qwen-image-2512",
+        "chute_id": "qwen-image-2512",
+        "tee": True,
+    },
+    {"items": []},
+)
+mod._generation_payload = lambda request, form_data: {"prompt": "a tiger in the jungle"}
+
+class FakeResponse:
+    def __init__(self):
+        self.headers = {"Content-Type": "image/png"}
+
+    def read(self):
+        return b"\x89PNG\r\n\x1a\n"
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+def fake_urlopen(request, timeout=0):
+    time.sleep(0.35)
+    return FakeResponse()
+
+mod.urllib.request.urlopen = fake_urlopen
+
+request = types.SimpleNamespace(
+    cookies={},
+    app=types.SimpleNamespace(
+        state=types.SimpleNamespace(
+            config=types.SimpleNamespace(
+                IMAGES_OPENAI_API_KEY="token",
+                IMAGE_SIZE="",
+            )
+        )
+    ),
+)
+form_data = types.SimpleNamespace(
+    prompt="a tiger in the jungle",
+    n=1,
+    size=None,
+    negative_prompt=None,
+    steps=None,
+    model="chutes/Qwen-Image-2512",
+)
+
+async def exercise():
+    generation = asyncio.create_task(mod.generate_chutes_images(request, form_data))
+    started = time.perf_counter()
+    await asyncio.sleep(0.05)
+    assert (time.perf_counter() - started) < 0.2
+    images, selected = await generation
+    assert selected["id"] == "chutes/Qwen-Image-2512"
+    assert len(images) == 1
+
+asyncio.run(exercise())
+PY
+    then
+        pass "Dropzone image generation keeps blocking chute I/O off the async event loop"
+    else
+        fail "Dropzone image generation can still block the async event loop"
+    fi
+
+    if python3 - <<'PY' >/dev/null 2>&1
 import os
 import sys
 import types

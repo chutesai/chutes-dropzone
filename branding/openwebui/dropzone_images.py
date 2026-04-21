@@ -7,6 +7,7 @@ requests to live Chutes diffusion chutes discovered from the Chutes API.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import hashlib
@@ -713,25 +714,13 @@ def _decode_generated_images(raw: bytes, content_type: str, access_token: str) -
     return [(raw, content_type or "image/jpeg")]
 
 
-async def generate_chutes_images(request: Request, form_data, user=None) -> tuple[list[tuple[bytes, str]], dict[str, Any]]:
-    oauth_token = await get_request_oauth_token(request, user) if user else None
-    access_token = (
-        str(oauth_token.get("access_token") or "").strip() if isinstance(oauth_token, dict) else ""
-    )
-    if not access_token:
-        access_token = str(getattr(request.app.state.config, "IMAGES_OPENAI_API_KEY", "") or "").strip()
-
-    if not access_token:
-        raise HTTPException(
-            status_code=502,
-            detail="No Chutes image authorization is available for this request",
-        )
-
-    requested_model = get_chutes_image_model(request, form_data)
+def _generate_chutes_images_blocking(
+    requested_model: str,
+    access_token: str,
+    base_payload: dict[str, Any],
+    image_count: int,
+) -> tuple[list[tuple[bytes, str]], dict[str, Any]]:
     selected_model, _ = _resolve_selected_model(requested_model, access_token)
-    base_payload = _generation_payload(request, form_data)
-    image_count = max(1, int(getattr(form_data, "n", 1) or 1))
-
     url, extra_body, accept_header = _image_request_target(selected_model)
     payload = {**extra_body, **base_payload}
 
@@ -774,3 +763,29 @@ async def generate_chutes_images(request: Request, form_data, user=None) -> tupl
             ) from exc
 
     return images[:image_count], selected_model
+
+
+async def generate_chutes_images(request: Request, form_data, user=None) -> tuple[list[tuple[bytes, str]], dict[str, Any]]:
+    oauth_token = await get_request_oauth_token(request, user) if user else None
+    access_token = (
+        str(oauth_token.get("access_token") or "").strip() if isinstance(oauth_token, dict) else ""
+    )
+    if not access_token:
+        access_token = str(getattr(request.app.state.config, "IMAGES_OPENAI_API_KEY", "") or "").strip()
+
+    if not access_token:
+        raise HTTPException(
+            status_code=502,
+            detail="No Chutes image authorization is available for this request",
+        )
+
+    requested_model = get_chutes_image_model(request, form_data)
+    base_payload = _generation_payload(request, form_data)
+    image_count = max(1, int(getattr(form_data, "n", 1) or 1))
+    return await asyncio.to_thread(
+        _generate_chutes_images_blocking,
+        requested_model,
+        access_token,
+        base_payload,
+        image_count,
+    )
