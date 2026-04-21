@@ -339,6 +339,14 @@ mod._fetch_diffusion_chutes = lambda token: [
 mod._fetch_public_chutes = lambda token: (
     [
         {
+            "chute_id": "qwen-text",
+            "name": "Qwen3-32B",
+            "slug": "chutes-qwen3-32b",
+            "readme": "Qwen text model",
+            "image": {"name": "sglang"},
+            "user": {"username": "chutes"},
+        },
+        {
             "chute_id": "qwen-edit",
             "name": "qwen-image-edit-2509",
             "slug": "chutes-qwen-image-edit-2509",
@@ -363,6 +371,14 @@ mod._fetch_public_chutes = lambda token: (
             "slug": "chutes-qwen-image-edit-2509",
             "readme": "Qwen image edit model",
             "image": {"name": "diffusion"},
+            "user": {"username": "chutes"},
+        },
+        {
+            "chute_id": "qwen-text",
+            "name": "Qwen3-32B",
+            "slug": "chutes-qwen3-32b",
+            "readme": "Qwen text model",
+            "image": {"name": "sglang"},
             "user": {"username": "chutes"},
         },
     ]
@@ -405,6 +421,7 @@ assert ordered_ids[:4] == [
     "chutes/JuggernautXL-Ragnarok",
 ]
 assert "chutes/qwen-image-edit-2509" not in ordered_ids
+assert "chutes/Qwen3-32B" not in ordered_ids
 rendered = mod.get_chutes_image_models()
 assert rendered[0]["id"] == "chutes/Qwen-Image-2512"
 assert rendered[-1]["id"] == mod.AUTO_IMAGE_MODEL_ID

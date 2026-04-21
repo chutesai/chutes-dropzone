@@ -197,6 +197,12 @@ def _is_rescued_public_image_candidate(item: dict[str, Any]) -> bool:
     if any(token in blob for token in ("edit", "i2v", "video", "classifier", "nsfw")):
         return False
 
+    if image_name in {"vllm", "sglang", "tei", "tgi", "text-embeddings-inference", "nfsw-classifier"}:
+        return False
+
+    if not any(token in image_name for token in ("image", "diffusion", "comfyui", "wan")):
+        return False
+
     return True
 
 
