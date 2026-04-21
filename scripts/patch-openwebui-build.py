@@ -122,6 +122,10 @@ def auth_gate_script(subpath: str) -> str:
 def patch_text(text: str, subpath: str) -> str:
     replacements = [
         (
+            "localStorage.theme = 'system';",
+            "localStorage.theme = 'dark';",
+        ),
+        (
             "logo.src = isDarkMode ? '/static/splash-dark.svg' : '/static/splash.svg';",
             f"logo.src = isDarkMode ? '{with_subpath('/static/splash-dark.svg', subpath)}' : '{with_subpath('/static/splash.svg', subpath)}';",
         ),

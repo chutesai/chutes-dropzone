@@ -220,6 +220,12 @@ if command -v python3 >/dev/null 2>&1; then
         fail "python3 -m py_compile branding/openwebui/dropzone_account.py"
     fi
 
+    if python3 -m py_compile "$PROJECT_DIR/branding/openwebui/dropzone_images.py" >/dev/null 2>&1; then
+        pass "python3 -m py_compile branding/openwebui/dropzone_images.py"
+    else
+        fail "python3 -m py_compile branding/openwebui/dropzone_images.py"
+    fi
+
     if python3 -m py_compile "$PROJECT_DIR/branding/openwebui/dropzone_oauth.py" >/dev/null 2>&1; then
         pass "python3 -m py_compile branding/openwebui/dropzone_oauth.py"
     else
@@ -230,6 +236,243 @@ if command -v python3 >/dev/null 2>&1; then
         pass "python3 -m py_compile branding/openwebui/dropzone_auth.py"
     else
         fail "python3 -m py_compile branding/openwebui/dropzone_auth.py"
+    fi
+
+    if python3 - <<'PY' >/dev/null 2>&1
+import os
+import sys
+import types
+import importlib.util
+
+fastapi_mod = types.ModuleType("fastapi")
+
+class HTTPException(Exception):
+    def __init__(self, status_code, detail=""):
+        self.status_code = status_code
+        self.detail = detail
+        super().__init__(detail)
+
+class Request:
+    pass
+
+fastapi_mod.HTTPException = HTTPException
+fastapi_mod.Request = Request
+sys.modules["fastapi"] = fastapi_mod
+
+pkg = types.ModuleType("open_webui")
+oauth_mod = types.ModuleType("open_webui.dropzone_oauth")
+
+async def _stub_get_request_oauth_token(*args, **kwargs):
+    return None
+
+def _stub_get_user_oauth_access_token(*args, **kwargs):
+    return ""
+
+oauth_mod.get_request_oauth_token = _stub_get_request_oauth_token
+oauth_mod.get_user_oauth_access_token = _stub_get_user_oauth_access_token
+sys.modules["open_webui"] = pkg
+sys.modules["open_webui.dropzone_oauth"] = oauth_mod
+
+spec = importlib.util.spec_from_file_location(
+    "dropzone_images", "branding/openwebui/dropzone_images.py"
+)
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+req = types.SimpleNamespace(
+    app=types.SimpleNamespace(
+        state=types.SimpleNamespace(
+            config=types.SimpleNamespace(
+                IMAGE_GENERATION_ENGINE="openai",
+                IMAGES_OPENAI_API_BASE_URL="https://chat.example.com/v1",
+            )
+        )
+    )
+)
+
+os.environ["DROPZONE_IMAGE_GENERATION_PROVIDER"] = "chutes"
+assert mod.is_chutes_image_backend(req) is True
+
+os.environ["CHUTES_TRAFFIC_MODE"] = "e2ee-proxy"
+os.environ["CHUTES_PROXY_INTERNAL_URL"] = "http://e2ee-proxy:80"
+os.environ["ALLOW_NON_CONFIDENTIAL"] = "true"
+url, body, accept = mod._image_request_target(
+    {
+        "id": "chutes/Qwen-Image-2512",
+        "chute_id": "086ae0cf-e7dc-5596-bd6d-20d4fb99103a",
+        "slug": "chutes-qwen-image-2512",
+        "tee": False,
+    }
+)
+assert url == "http://e2ee-proxy:80/v1/images/generations"
+assert body == {"model": "086ae0cf-e7dc-5596-bd6d-20d4fb99103a"}
+assert "application/json" in accept
+
+images = mod._decode_generated_images(
+    b'{"data":[{"b64_json":"aGVsbG8=","mime_type":"image/png"}]}',
+    "application/json",
+    "",
+)
+assert images == [(b"hello", "image/png")]
+
+os.environ["ALLOW_NON_CONFIDENTIAL"] = "false"
+try:
+    mod._image_request_target(
+        {
+            "id": "chutes/Qwen-Image-2512",
+            "chute_id": "086ae0cf-e7dc-5596-bd6d-20d4fb99103a",
+            "slug": "chutes-qwen-image-2512",
+            "tee": False,
+        }
+    )
+    raise AssertionError("expected strict proxy image rejection")
+except mod.HTTPException as exc:
+    assert exc.status_code == 503
+PY
+    then
+        pass "Dropzone image bridge keeps Chutes routing in proxy mode and parses JSON-wrapped images"
+    else
+        fail "Dropzone image bridge proxy routing/response handling is incomplete"
+    fi
+
+    if python3 - <<'PY' >/dev/null 2>&1
+import os
+import sys
+import types
+import importlib.util
+
+fastapi_mod = types.ModuleType("fastapi")
+
+class HTTPException(Exception):
+    def __init__(self, status_code, detail=""):
+        self.status_code = status_code
+        self.detail = detail
+        super().__init__(detail)
+
+class Request:
+    pass
+
+class UploadFile:
+    pass
+
+def File(*args, **kwargs):
+    return None
+
+def Form(*args, **kwargs):
+    return None
+
+def Depends(*args, **kwargs):
+    return None
+
+class APIRouter:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def post(self, *args, **kwargs):
+        return lambda func: func
+
+    def get(self, *args, **kwargs):
+        return lambda func: func
+
+fastapi_mod.HTTPException = HTTPException
+fastapi_mod.Request = Request
+fastapi_mod.UploadFile = UploadFile
+fastapi_mod.File = File
+fastapi_mod.Form = Form
+fastapi_mod.Depends = Depends
+fastapi_mod.APIRouter = APIRouter
+sys.modules["fastapi"] = fastapi_mod
+
+responses_mod = types.ModuleType("fastapi.responses")
+
+class Response:
+    pass
+
+responses_mod.Response = Response
+sys.modules["fastapi.responses"] = responses_mod
+
+pydantic_mod = types.ModuleType("pydantic")
+
+class BaseModel:
+    pass
+
+pydantic_mod.BaseModel = BaseModel
+sys.modules["pydantic"] = pydantic_mod
+
+sqlalchemy_mod = types.ModuleType("sqlalchemy")
+sqlalchemy_orm_mod = types.ModuleType("sqlalchemy.orm")
+
+class Session:
+    pass
+
+sqlalchemy_orm_mod.Session = Session
+sys.modules["sqlalchemy"] = sqlalchemy_mod
+sys.modules["sqlalchemy.orm"] = sqlalchemy_orm_mod
+
+pkg = types.ModuleType("open_webui")
+oauth_mod = types.ModuleType("open_webui.dropzone_oauth")
+oauth_mod.get_user_oauth_access_token = lambda *args, **kwargs: ""
+internal_mod = types.ModuleType("open_webui.internal")
+db_mod = types.ModuleType("open_webui.internal.db")
+db_mod.get_session = lambda *args, **kwargs: None
+utils_mod = types.ModuleType("open_webui.utils")
+auth_mod = types.ModuleType("open_webui.utils.auth")
+auth_mod.get_verified_user = lambda *args, **kwargs: None
+models_mod = types.ModuleType("open_webui.models")
+users_mod = types.ModuleType("open_webui.models.users")
+users_mod.Users = type("Users", (), {"get_user_by_id": staticmethod(lambda *args, **kwargs: None)})
+users_mod.UserModel = type("UserModel", (), {})
+
+sys.modules["open_webui"] = pkg
+sys.modules["open_webui.dropzone_oauth"] = oauth_mod
+sys.modules["open_webui.internal"] = internal_mod
+sys.modules["open_webui.internal.db"] = db_mod
+sys.modules["open_webui.utils"] = utils_mod
+sys.modules["open_webui.utils.auth"] = auth_mod
+sys.modules["open_webui.models"] = models_mod
+sys.modules["open_webui.models.users"] = users_mod
+
+spec = importlib.util.spec_from_file_location(
+    "dropzone_audio", "branding/openwebui/dropzone_audio.py"
+)
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+os.environ["CHUTES_TRAFFIC_MODE"] = "e2ee-proxy"
+os.environ["CHUTES_PROXY_INTERNAL_URL"] = "http://e2ee-proxy:80"
+os.environ["ALLOW_NON_CONFIDENTIAL"] = "true"
+
+url, body = mod._audio_request_target(
+    {
+        "name": "kokoro",
+        "slug": "chutes-kokoro",
+        "chute_id": "4be47dee-7bee-53a4-a208-32a66f47a0b0",
+        "tee": False,
+    },
+    mod.TTS_CORD,
+)
+assert url == "http://e2ee-proxy:80/v1/audio/speech"
+assert body == {"model": "4be47dee-7bee-53a4-a208-32a66f47a0b0"}
+
+os.environ["ALLOW_NON_CONFIDENTIAL"] = "false"
+try:
+    mod._audio_request_target(
+        {
+            "name": "kokoro",
+            "slug": "chutes-kokoro",
+            "chute_id": "4be47dee-7bee-53a4-a208-32a66f47a0b0",
+            "tee": False,
+        },
+        mod.TTS_CORD,
+    )
+    raise AssertionError("expected strict proxy audio rejection")
+except mod.HTTPException as exc:
+    assert exc.status_code == 503
+PY
+    then
+        pass "Dropzone audio bridge routes proxy requests by chute id and preserves strict-mode guardrails"
+    else
+        fail "Dropzone audio bridge proxy routing/guardrails are incomplete"
     fi
 else
     skip "python3 not installed - cannot validate OpenWebUI model-order sync helper"
@@ -275,6 +518,12 @@ if grep -Fq 'window.__DROPZONE_AUTH_GATE__' "$PROJECT_DIR/scripts/patch-openwebu
     pass "OpenWebUI build patch injects an early auth gate before app boot"
 else
     fail "OpenWebUI build patch is missing the early auth gate"
+fi
+
+if grep -Fq "localStorage.theme = 'dark';" "$PROJECT_DIR/scripts/patch-openwebui-build.py"; then
+    pass "OpenWebUI defaults first-load theme to dark"
+else
+    fail "OpenWebUI first-load theme default is not pinned to dark"
 fi
 
 if grep -Fq 'from open_webui.dropzone_auth import get_request_auth_redirect_path' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
@@ -374,10 +623,10 @@ else
 fi
 
 if printf '%s\n' "$direct_openwebui_config" | grep -q 'DROPZONE_AUDIO_STT_ENGINE: local' && \
-   printf '%s\n' "$direct_openwebui_config" | grep -q 'WHISPER_MODEL: tiny'; then
-    pass "OpenWebUI defaults STT to container-local faster-whisper tiny"
+   printf '%s\n' "$direct_openwebui_config" | grep -q 'WHISPER_MODEL: base'; then
+    pass "OpenWebUI defaults STT to container-local faster-whisper base"
 else
-    fail "OpenWebUI did not default STT to container-local faster-whisper tiny"
+    fail "OpenWebUI did not default STT to container-local faster-whisper base"
 fi
 
 openai_stt_openwebui_config="$(
@@ -517,6 +766,13 @@ else
     fail "OpenWebUI splash screen branding is incomplete"
 fi
 
+if grep -q 'COPY branding/openwebui/dropzone_images.py /app/backend/open_webui/dropzone_images.py' "$PROJECT_DIR/Dockerfile.local-repo" && \
+   grep -q 'patch_images_router(root / "backend" / "open_webui" / "routers" / "images.py")' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
+    pass "OpenWebUI image generation bridge is patched into the runtime"
+else
+    fail "OpenWebUI image generation bridge wiring is incomplete"
+fi
+
 for placeholder in __INSTALL_MODE__ __CHUTES_TRAFFIC_MODE__ __DROPZONE_HOST__; do
     if grep -q "$placeholder" "$PROJECT_DIR/landing/index.template.html"; then
         pass "landing template has $placeholder"
@@ -554,22 +810,56 @@ else
     fail ".env.example is missing DROPZONE_AUDIO_STT_ENGINE"
 fi
 
+if grep -q '^ENABLE_WEB_SEARCH=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^WEB_SEARCH_ENGINE=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^ENABLE_IMAGE_GENERATION=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^IMAGE_GENERATION_ENGINE=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^IMAGE_GENERATION_MODEL=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^IMAGES_OPENAI_API_BASE_URL=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^IMAGES_OPENAI_API_KEY=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^DROPZONE_IMAGE_GENERATION_PROVIDER=' "$PROJECT_DIR/.env.example"; then
+    pass ".env.example exposes native OpenWebUI web search and image generation knobs"
+else
+    fail ".env.example is missing native OpenWebUI web search or image generation settings"
+fi
+
 if grep -q '^DROPZONE_AUDIO_STT_LOCAL_MODEL=' "$PROJECT_DIR/.env.example"; then
     pass ".env.example exposes DROPZONE_AUDIO_STT_LOCAL_MODEL"
 else
     fail ".env.example is missing DROPZONE_AUDIO_STT_LOCAL_MODEL"
 fi
 
+# shellcheck disable=SC2016
+if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-false}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'WEB_SEARCH_ENGINE=${WEB_SEARCH_ENGINE:-duckduckgo}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'ENABLE_IMAGE_GENERATION=${ENABLE_IMAGE_GENERATION:-true}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'IMAGE_GENERATION_ENGINE=${IMAGE_GENERATION_ENGINE:-openai}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'IMAGE_GENERATION_MODEL=${IMAGE_GENERATION_MODEL:-chutes-auto-image}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'IMAGES_OPENAI_API_BASE_URL=${IMAGES_OPENAI_API_BASE_URL:-https://llm.chutes.ai/v1}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'DROPZONE_IMAGE_GENERATION_PROVIDER=${DROPZONE_IMAGE_GENERATION_PROVIDER:-chutes}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'env_line ENABLE_WEB_SEARCH' "$PROJECT_DIR/deploy.sh" && \
+   grep -Fq 'env_line IMAGE_GENERATION_MODEL' "$PROJECT_DIR/deploy.sh" && \
+   grep -Fq 'env_line DROPZONE_IMAGE_GENERATION_PROVIDER' "$PROJECT_DIR/deploy.sh" && \
+   grep -Fq 'env_line ENABLE_WEB_SEARCH' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'export ENABLE_WEB_SEARCH="${ENABLE_WEB_SEARCH:-false}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'export ENABLE_IMAGE_GENERATION="${ENABLE_IMAGE_GENERATION:-true}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'export IMAGE_GENERATION_MODEL="${IMAGE_GENERATION_MODEL:-chutes-auto-image}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'export DROPZONE_IMAGE_GENERATION_PROVIDER="${DROPZONE_IMAGE_GENERATION_PROVIDER:-chutes}"' "$PROJECT_DIR/standalone/entrypoint.sh"; then
+    pass "Dropzone deploy scaffolding exposes native OpenWebUI web search and image generation"
+else
+    fail "Dropzone deploy scaffolding is missing native OpenWebUI web search or image generation wiring"
+fi
+
 if grep -Fq "DROPZONE_AUDIO_STT_ENGINE=\${DROPZONE_AUDIO_STT_ENGINE:-local}" "$PROJECT_DIR/docker-compose.yml" && \
-   grep -Fq "DROPZONE_AUDIO_STT_LOCAL_MODEL=\${DROPZONE_AUDIO_STT_LOCAL_MODEL:-tiny}" "$PROJECT_DIR/docker-compose.yml" && \
-   grep -Fq "WHISPER_MODEL=\${DROPZONE_AUDIO_STT_LOCAL_MODEL:-tiny}" "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq "DROPZONE_AUDIO_STT_LOCAL_MODEL=\${DROPZONE_AUDIO_STT_LOCAL_MODEL:-base}" "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq "WHISPER_MODEL=\${DROPZONE_AUDIO_STT_LOCAL_MODEL:-base}" "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq "env_line DROPZONE_AUDIO_STT_ENGINE \"\${DROPZONE_AUDIO_STT_ENGINE:-local}\"" "$PROJECT_DIR/standalone/entrypoint.sh" && \
-   grep -Fq "env_line DROPZONE_AUDIO_STT_LOCAL_MODEL \"\${DROPZONE_AUDIO_STT_LOCAL_MODEL:-tiny}\"" "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq "env_line DROPZONE_AUDIO_STT_LOCAL_MODEL \"\${DROPZONE_AUDIO_STT_LOCAL_MODEL:-base}\"" "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq "DROPZONE_AUDIO_STT_ENGINE=\"\${DROPZONE_AUDIO_STT_ENGINE:-local}\"" "$PROJECT_DIR/deploy.sh" && \
-   grep -Fq "DROPZONE_AUDIO_STT_LOCAL_MODEL=\"\${DROPZONE_AUDIO_STT_LOCAL_MODEL:-tiny}\"" "$PROJECT_DIR/deploy.sh" && \
+   grep -Fq "DROPZONE_AUDIO_STT_LOCAL_MODEL=\"\${DROPZONE_AUDIO_STT_LOCAL_MODEL:-base}\"" "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'desired_stt_engine_mode()' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq 'sync_audio_config(token)' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py"; then
-    pass "OpenWebUI STT defaults to local Whisper tiny and runtime-syncs web/openai overrides"
+    pass "OpenWebUI STT defaults to local Whisper base and runtime-syncs web/openai overrides"
 else
     fail "OpenWebUI STT default/override wiring is incomplete"
 fi
@@ -577,7 +867,7 @@ fi
 if grep -q 'DROPZONE_ENABLE_PUBLIC_LANDING: "false"' "$PROJECT_DIR/examples/kubernetes/standalone-domain-direct.yaml" && \
    grep -q 'DROPZONE_HOST: "chat-beta.chutes.ai"' "$PROJECT_DIR/examples/kubernetes/standalone-domain-direct.yaml" && \
    grep -q 'DROPZONE_AUDIO_STT_ENGINE: "local"' "$PROJECT_DIR/examples/kubernetes/standalone-domain-direct.yaml" && \
-   grep -q 'DROPZONE_AUDIO_STT_LOCAL_MODEL: "tiny"' "$PROJECT_DIR/examples/kubernetes/standalone-domain-direct.yaml"; then
+   grep -q 'DROPZONE_AUDIO_STT_LOCAL_MODEL: "base"' "$PROJECT_DIR/examples/kubernetes/standalone-domain-direct.yaml"; then
     pass "kubernetes standalone example defaults to chat-beta.chutes.ai with the landing page disabled"
 else
     fail "kubernetes standalone example is missing the chat-beta.chutes.ai private-entry defaults"
@@ -1018,8 +1308,9 @@ if openwebui_enabled && compose exec -T openwebui sh -lc '
     test "${ENABLE_PASSWORD_AUTH:-}" = "false" &&
     test "${ENABLE_OLLAMA_API:-}" = "false" &&
     test "${DROPZONE_AUDIO_STT_ENGINE:-}" = "local" &&
-    test "${WHISPER_MODEL:-}" = "tiny" &&
-    test "${MODELS_CACHE_TTL:-}" = "300"
+    test "${WHISPER_MODEL:-}" = "base" &&
+    test "${MODELS_CACHE_TTL:-}" = "300" &&
+    test "${ALLOW_NON_CONFIDENTIAL:-}" = "false"
 ' >/dev/null 2>&1; then
     pass "OpenWebUI env is pinned to /chat and SSO-only mode"
 elif openwebui_enabled; then
@@ -1031,7 +1322,8 @@ fi
 # shellcheck disable=SC2016
 if openwebui_enabled && compose exec -T openwebui-order-sync sh -lc '
     test "${OPENWEBUI_SYNC_BASE_URL:-}" = "http://openwebui:8080" &&
-    test "${OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL:-}" = "300"
+    test "${OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL:-}" = "300" &&
+    test "${ALLOW_NON_CONFIDENTIAL:-}" = "false"
 ' >/dev/null 2>&1; then
     pass "OpenWebUI background model-order sync worker is configured for 5-minute refreshes"
 elif openwebui_enabled; then

@@ -169,8 +169,8 @@ expected_engine = "" if desired_mode == "local" else desired_mode
 expected_whisper_model = (
     os.environ.get("DROPZONE_AUDIO_STT_LOCAL_MODEL")
     or os.environ.get("WHISPER_MODEL")
-    or "tiny"
-).strip() or "tiny"
+    or "base"
+).strip() or "base"
 
 if stt_config.get("ENGINE", "") != expected_engine:
     raise SystemExit(
@@ -188,6 +188,41 @@ if desired_mode == "openai":
         raise SystemExit(
             f"audio remote STT model mismatch: expected {expected_remote_model} got {stt_config.get('MODEL', '')}"
         )
+
+image_config = request_json("/api/v1/images/config", token)
+if not isinstance(image_config, dict):
+    raise SystemExit("image generation config is unavailable")
+
+expected_image_enabled = (os.environ.get("ENABLE_IMAGE_GENERATION") or "true").strip().lower() == "true"
+expected_image_engine = (os.environ.get("IMAGE_GENERATION_ENGINE") or "openai").strip() or "openai"
+expected_image_model = (
+    os.environ.get("IMAGE_GENERATION_MODEL") or "chutes-auto-image"
+).strip() or "chutes-auto-image"
+expected_image_base_url = (
+    os.environ.get("IMAGES_OPENAI_API_BASE_URL")
+    or os.environ.get("OPENWEBUI_API_BASE_URL")
+    or "https://llm.chutes.ai/v1"
+).strip()
+
+if bool(image_config.get("ENABLE_IMAGE_GENERATION")) != expected_image_enabled:
+    raise SystemExit(
+        f"image generation enabled mismatch: expected {expected_image_enabled} got {bool(image_config.get('ENABLE_IMAGE_GENERATION'))}"
+    )
+
+if image_config.get("IMAGE_GENERATION_ENGINE", "") != expected_image_engine:
+    raise SystemExit(
+        f"image generation engine mismatch: expected {expected_image_engine} got {image_config.get('IMAGE_GENERATION_ENGINE', '')}"
+    )
+
+if image_config.get("IMAGE_GENERATION_MODEL", "") != expected_image_model:
+    raise SystemExit(
+        f"image generation model mismatch: expected {expected_image_model} got {image_config.get('IMAGE_GENERATION_MODEL', '')}"
+    )
+
+if expected_image_base_url and image_config.get("IMAGES_OPENAI_API_BASE_URL", "") != expected_image_base_url:
+    raise SystemExit(
+        f"image generation base URL mismatch: expected {expected_image_base_url} got {image_config.get('IMAGES_OPENAI_API_BASE_URL', '')}"
+    )
 PY
 }
 

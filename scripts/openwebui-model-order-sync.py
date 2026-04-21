@@ -443,8 +443,48 @@ def desired_local_whisper_model() -> str:
     return (
         os.environ.get("DROPZONE_AUDIO_STT_LOCAL_MODEL")
         or os.environ.get("WHISPER_MODEL")
-        or "tiny"
-    ).strip() or "tiny"
+        or "base"
+    ).strip() or "base"
+
+
+def desired_image_generation_enabled() -> bool:
+    return (os.environ.get("ENABLE_IMAGE_GENERATION") or "true").strip().lower() == "true"
+
+
+def desired_image_generation_engine() -> str:
+    return (os.environ.get("IMAGE_GENERATION_ENGINE") or "openai").strip() or "openai"
+
+
+def desired_image_generation_model() -> str:
+    return (
+        os.environ.get("IMAGE_GENERATION_MODEL")
+        or "chutes-auto-image"
+    ).strip() or "chutes-auto-image"
+
+
+def desired_images_openai_api_base_url() -> str:
+    explicit = (os.environ.get("IMAGES_OPENAI_API_BASE_URL") or "").strip()
+    if explicit:
+        return explicit
+
+    traffic_mode = (os.environ.get("CHUTES_TRAFFIC_MODE") or "direct").strip().lower()
+    if traffic_mode == "e2ee-proxy":
+        proxy = (os.environ.get("CHUTES_PROXY_INTERNAL_URL") or "").strip().rstrip("/")
+        if proxy:
+            return f"{proxy}/v1"
+
+    return (
+        os.environ.get("OPENWEBUI_API_BASE_URL")
+        or "https://llm.chutes.ai/v1"
+    ).strip()
+
+
+def desired_images_openai_api_key() -> str:
+    return (
+        os.environ.get("IMAGES_OPENAI_API_KEY")
+        or os.environ.get("OPENWEBUI_API_KEY")
+        or ""
+    ).strip()
 
 
 def sync_audio_config(token: str) -> bool:
@@ -479,6 +519,44 @@ def sync_audio_config(token: str) -> bool:
         token,
         {"tts": tts, "stt": updated_stt},
     )
+    return True
+
+
+def sync_image_config(token: str) -> bool:
+    """Keep OpenWebUI image-generation config aligned with the Dropzone deployment mode."""
+
+    image_config = request_json("GET", "/api/v1/images/config", token)
+    if not isinstance(image_config, dict):
+        return False
+
+    updated = dict(image_config)
+    updated["ENABLE_IMAGE_GENERATION"] = desired_image_generation_enabled()
+    updated["IMAGE_GENERATION_ENGINE"] = desired_image_generation_engine()
+    updated["IMAGE_GENERATION_MODEL"] = desired_image_generation_model()
+
+    desired_base_url = desired_images_openai_api_base_url()
+    if desired_base_url:
+        updated["IMAGES_OPENAI_API_BASE_URL"] = desired_base_url
+
+    desired_api_key = desired_images_openai_api_key()
+    if desired_api_key:
+        updated["IMAGES_OPENAI_API_KEY"] = desired_api_key
+
+    changed_keys = []
+    for key in (
+        "ENABLE_IMAGE_GENERATION",
+        "IMAGE_GENERATION_ENGINE",
+        "IMAGE_GENERATION_MODEL",
+        "IMAGES_OPENAI_API_BASE_URL",
+        "IMAGES_OPENAI_API_KEY",
+    ):
+        if image_config.get(key) != updated.get(key):
+            changed_keys.append(key)
+
+    if not changed_keys:
+        return False
+
+    request_json("POST", "/api/v1/images/config/update", token, updated)
     return True
 
 
@@ -603,6 +681,9 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
 
     if sync_audio_config(token):
         updates.append(f"AUDIO_STT({desired_stt_engine_mode()})")
+
+    if sync_image_config(token):
+        updates.append("IMAGE_GENERATION")
 
     models_payload = request_json("GET", "/api/models?refresh=true", token)
     models = models_payload.get("data", []) if isinstance(models_payload, dict) else []

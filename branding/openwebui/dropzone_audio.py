@@ -112,6 +112,63 @@ _cache: dict = {}
 _warmup_cache: dict[str, float] = {}
 
 
+def _traffic_mode() -> str:
+    return (os.environ.get("CHUTES_TRAFFIC_MODE") or "direct").strip().lower() or "direct"
+
+
+def _proxy_internal_url() -> str:
+    return (os.environ.get("CHUTES_PROXY_INTERNAL_URL") or "").strip().rstrip("/")
+
+
+def _allow_non_confidential() -> bool:
+    return (os.environ.get("ALLOW_NON_CONFIDENTIAL") or "false").strip().lower() == "true"
+
+
+def _audio_proxy_allowed(chute: dict) -> bool:
+    if _traffic_mode() != "e2ee-proxy":
+        return True
+    return bool(chute.get("tee")) or _allow_non_confidential()
+
+
+def _no_audio_chute_detail(kind: str) -> str:
+    label = "TTS" if kind == "tts" else "STT"
+    if _traffic_mode() == "e2ee-proxy" and not _allow_non_confidential():
+        return (
+            f"No TEE-enabled {label} chute is available right now for strict "
+            "e2ee-proxy mode. Set ALLOW_NON_CONFIDENTIAL=true or use direct traffic mode."
+        )
+    return f"No {label} chute available"
+
+
+def _audio_request_target(chute: dict, cord: str) -> tuple[str, dict]:
+    """Return (url, extra_body) for the configured traffic mode.
+
+    Direct: POST https://{slug}.chutes.ai{cord} with chute-native body.
+    Proxy: POST {internal}/v1/audio/speech or /v1/audio/transcriptions with
+    the chute id as ``model`` so the proxy can route to the right chute.
+    """
+    mode = _traffic_mode()
+    if mode == "e2ee-proxy":
+        internal = _proxy_internal_url()
+        if not internal:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "CHUTES_TRAFFIC_MODE=e2ee-proxy requires CHUTES_PROXY_INTERNAL_URL "
+                    "to be set; refusing to route audio directly to chutes.ai"
+                ),
+            )
+        if not _audio_proxy_allowed(chute):
+            raise HTTPException(
+                status_code=503,
+                detail=_no_audio_chute_detail("tts" if cord == TTS_CORD else "stt"),
+            )
+        endpoint = "/v1/audio/speech" if cord == TTS_CORD else "/v1/audio/transcriptions"
+        return f"{internal}{endpoint}", {"model": chute.get("chute_id") or chute.get("name", "")}
+
+    return f"https://{chute['slug']}.chutes.ai{cord}", {}
+
+
 def _fetch_json(url: str, timeout: int = 15):
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
     try:
@@ -151,22 +208,32 @@ def _warmup_chute(name: str, token: str) -> None:
 def _discover_chutes() -> dict:
     """Discover available TTS/STT chutes and pick the best by capacity."""
     now = time.time()
-    if _cache.get("ts", 0) + CACHE_TTL > now and _cache.get("tts") is not None:
+    cache_mode = f"{_traffic_mode()}:{int(_allow_non_confidential())}"
+    if (
+        _cache.get("ts", 0) + CACHE_TTL > now
+        and _cache.get("mode") == cache_mode
+        and "tts" in _cache
+        and "stt" in _cache
+    ):
         return _cache
 
     utilization = _fetch_json(UTILIZATION_URL)
     chutes_list = _fetch_json(f"{CHUTES_LIST_URL}?include_public=true&limit=500")
 
     if not utilization or not chutes_list:
-        if _cache.get("tts"):
+        if _cache.get("mode") == cache_mode and "tts" in _cache and "stt" in _cache:
             return _cache
-        return {"tts": None, "stt": None, "ts": now}
+        return {"tts": None, "stt": None, "ts": now, "mode": cache_mode}
 
     items = chutes_list.get("items", [])
-    slug_map = {}
+    chute_map = {}
     for item in items:
         name = item.get("name", "")
-        slug_map[name] = item.get("slug", "")
+        chute_map[name] = {
+            "slug": item.get("slug", ""),
+            "chute_id": item.get("chute_id", ""),
+            "tee": item.get("tee") is True,
+        }
 
     tts_best = None
     tts_score = -1
@@ -181,20 +248,37 @@ def _discover_chutes() -> dict:
             continue
         util_5m = entry.get("utilization_5m", 1.0)
         score = max(instances * (1.0 - util_5m), 0.001) if instances > 0 else 0.0001
-        slug = slug_map.get(name, "")
+        chute_meta = chute_map.get(name, {})
+        slug = chute_meta.get("slug", "")
+        chute_id = chute_meta.get("chute_id", "")
+        tee = chute_meta.get("tee") is True
 
         name_lower = name.lower()
         if any(t in name_lower for t in TTS_TEMPLATES) or name_lower in TTS_TEMPLATES:
-            if score > tts_score and slug:
-                tts_best = {"name": name, "slug": slug, "score": score}
+            candidate = {
+                "name": name,
+                "slug": slug,
+                "chute_id": chute_id,
+                "tee": tee,
+                "score": score,
+            }
+            if score > tts_score and slug and _audio_proxy_allowed(candidate):
+                tts_best = candidate
                 tts_score = score
 
         if any(t in name_lower for t in STT_TEMPLATES) or name_lower in STT_TEMPLATES:
-            if score > stt_score and slug:
-                stt_best = {"name": name, "slug": slug, "score": score}
+            candidate = {
+                "name": name,
+                "slug": slug,
+                "chute_id": chute_id,
+                "tee": tee,
+                "score": score,
+            }
+            if score > stt_score and slug and _audio_proxy_allowed(candidate):
+                stt_best = candidate
                 stt_score = score
 
-    result = {"tts": tts_best, "stt": stt_best, "ts": now}
+    result = {"tts": tts_best, "stt": stt_best, "ts": now, "mode": cache_mode}
     _cache.update(result)
     log.info(
         "audio discovery: tts=%s stt=%s",
@@ -213,10 +297,11 @@ def _get_oauth_token(user, db) -> str:
     return ""
 
 
-def _invoke_chute(slug: str, cord: str, payload: dict, token: str, timeout: int = 30) -> bytes:
-    """Invoke a Chutes chute and return raw response bytes."""
-    url = f"https://{slug}.chutes.ai{cord}"
-    data = json.dumps(payload).encode("utf-8")
+def _invoke_chute(chute: dict, cord: str, payload: dict, token: str, timeout: int = 30) -> bytes:
+    """Invoke a Chutes chute (directly or via the e2ee-proxy) and return raw bytes."""
+    url, extra_body = _audio_request_target(chute, cord)
+    body = {**extra_body, **payload}
+    data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
         url,
         data=data,
@@ -270,7 +355,7 @@ async def text_to_speech(request: Request, body: TTSRequest, user=Depends(_resol
     discovery = _discover_chutes()
     tts = discovery.get("tts")
     if not tts:
-        raise HTTPException(status_code=503, detail="No TTS chute available")
+        raise HTTPException(status_code=503, detail=_no_audio_chute_detail("tts"))
 
     token = _get_oauth_token(user, db)
     if not token:
@@ -281,7 +366,7 @@ async def text_to_speech(request: Request, body: TTSRequest, user=Depends(_resol
         _warmup_chute(tts["name"], token)
 
     try:
-        raw = _invoke_chute(tts["slug"], TTS_CORD, {
+        raw = _invoke_chute(tts, TTS_CORD, {
             "text": body.input,
             "voice": body.voice or "af_heart",
         }, token)
@@ -323,7 +408,7 @@ async def speech_to_text(
     discovery = _discover_chutes()
     stt = discovery.get("stt")
     if not stt:
-        raise HTTPException(status_code=503, detail="No STT chute available")
+        raise HTTPException(status_code=503, detail=_no_audio_chute_detail("stt"))
 
     token = _get_oauth_token(user, db)
     if not token:
@@ -340,7 +425,7 @@ async def speech_to_text(
     audio_b64 = base64.b64encode(audio_data).decode("ascii")
 
     try:
-        raw = _invoke_chute(stt["slug"], STT_CORD, {
+        raw = _invoke_chute(stt, STT_CORD, {
             "audio_b64": audio_b64,
         }, token)
     except urllib.error.HTTPError as e:

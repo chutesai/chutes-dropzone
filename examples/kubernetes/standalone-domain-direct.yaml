@@ -43,7 +43,7 @@ stringData:
   # STT modes: "local" (container-local faster-whisper), "openai" (Chutes
   # Whisper bridge), or "web" (browser speech API).
   DROPZONE_AUDIO_STT_ENGINE: "local"
-  DROPZONE_AUDIO_STT_LOCAL_MODEL: "tiny"
+  DROPZONE_AUDIO_STT_LOCAL_MODEL: "base"
 
   ALLOW_NON_CONFIDENTIAL: "false"
   CHUTES_SSO_PROXY_BYPASS: "false"

@@ -262,6 +262,83 @@ def patch_auths_router(path: Path) -> None:
     path.write_text(patched, encoding="utf-8")
 
 
+def patch_images_router(path: Path) -> None:
+    original = path.read_text(encoding="utf-8")
+    patched = insert_after_one_of(
+        original,
+        ["from open_webui.internal.db import get_session\n"],
+        "from open_webui.dropzone_images import (\n"
+        "    generate_chutes_images,\n"
+        "    get_chutes_image_model,\n"
+        "    get_chutes_image_models,\n"
+        "    is_chutes_image_backend,\n"
+        ")\n",
+        "dropzone images import",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "        if request.app.state.config.IMAGE_GENERATION_ENGINE == 'openai':\n            return [\n                {'id': 'dall-e-2', 'name': 'DALL·E 2'},\n                {'id': 'dall-e-3', 'name': 'DALL·E 3'},\n                {'id': 'gpt-image-1', 'name': 'GPT-IMAGE 1'},\n                {'id': 'gpt-image-1.5', 'name': 'GPT-IMAGE 1.5'},\n            ]\n",
+            '        if request.app.state.config.IMAGE_GENERATION_ENGINE == "openai":\n            return [\n                {"id": "dall-e-2", "name": "DALL·E 2"},\n                {"id": "dall-e-3", "name": "DALL·E 3"},\n                {"id": "gpt-image-1", "name": "GPT-IMAGE 1"},\n                {"id": "gpt-image-1.5", "name": "GPT-IMAGE 1.5"},\n            ]\n',
+        ],
+        "        if request.app.state.config.IMAGE_GENERATION_ENGINE == 'openai':\n"
+        "            if is_chutes_image_backend(request):\n"
+        "                return get_chutes_image_models(user)\n"
+        "            return [\n"
+        "                {'id': 'dall-e-2', 'name': 'DALL·E 2'},\n"
+        "                {'id': 'dall-e-3', 'name': 'DALL·E 3'},\n"
+        "                {'id': 'gpt-image-1', 'name': 'GPT-IMAGE 1'},\n"
+        "                {'id': 'gpt-image-1.5', 'name': 'GPT-IMAGE 1.5'},\n"
+        "            ]\n",
+        "dropzone image models branch",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "    model = get_image_model(request)\n",
+            '    model = get_image_model(request)\n',
+        ],
+        "    model = get_chutes_image_model(request, form_data) if is_chutes_image_backend(request) else get_image_model(request)\n",
+        "dropzone effective image model",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "        if request.app.state.config.IMAGE_GENERATION_ENGINE == 'openai':\n            headers = {\n                'Authorization': f'Bearer {request.app.state.config.IMAGES_OPENAI_API_KEY}',\n                'Content-Type': 'application/json',\n            }\n",
+            '        if request.app.state.config.IMAGE_GENERATION_ENGINE == "openai":\n            headers = {\n                "Authorization": f"Bearer {request.app.state.config.IMAGES_OPENAI_API_KEY}",\n                "Content-Type": "application/json",\n            }\n',
+        ],
+        "        if request.app.state.config.IMAGE_GENERATION_ENGINE == 'openai':\n"
+        "            if is_chutes_image_backend(request):\n"
+        "                generated_images, selected_model = await generate_chutes_images(\n"
+        "                    request=request,\n"
+        "                    form_data=form_data,\n"
+        "                    user=user,\n"
+        "                )\n"
+        "\n"
+        "                images = []\n"
+        "                upload_metadata = {\n"
+        "                    'model': selected_model['id'],\n"
+        "                    'prompt': form_data.prompt,\n"
+        "                    'n': form_data.n,\n"
+        "                    **({'size': form_data.size} if form_data.size else {}),\n"
+        "                    **({'negative_prompt': form_data.negative_prompt} if form_data.negative_prompt else {}),\n"
+        "                    **metadata,\n"
+        "                }\n"
+        "\n"
+        "                for image_data, content_type in generated_images:\n"
+        "                    _, url = upload_image(request, image_data, content_type, upload_metadata, user)\n"
+        "                    images.append({'url': url})\n"
+        "                return images\n"
+        "\n"
+        "            headers = {\n"
+        "                'Authorization': f'Bearer {request.app.state.config.IMAGES_OPENAI_API_KEY}',\n"
+        "                'Content-Type': 'application/json',\n"
+        "            }\n",
+        "dropzone chutes image generation branch",
+    )
+    path.write_text(patched, encoding="utf-8")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: patch-openwebui-runtime.py <openwebui-root>")
@@ -275,6 +352,7 @@ def main() -> int:
     patch_utils_oauth(root / "backend" / "open_webui" / "utils" / "oauth.py")
     patch_configs(root / "backend" / "open_webui" / "routers" / "configs.py")
     patch_auths_router(root / "backend" / "open_webui" / "routers" / "auths.py")
+    patch_images_router(root / "backend" / "open_webui" / "routers" / "images.py")
     return 0
 
 

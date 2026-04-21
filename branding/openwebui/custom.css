@@ -1,4 +1,40 @@
-:root {
+:root,
+html.light,
+html.her {
+  --chutes-crosslink-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(249, 250, 251, 0.98));
+  --chutes-crosslink-border: rgba(15, 23, 42, 0.1);
+  --chutes-crosslink-text: rgba(17, 24, 39, 0.96);
+  --chutes-crosslink-meta: rgba(75, 85, 99, 0.72);
+  --chutes-account-border: rgba(15, 23, 42, 0.08);
+  --chutes-account-panel: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.98));
+  --chutes-account-subtle: rgba(75, 85, 99, 0.84);
+  --chutes-account-ring: #37c879;
+  --chutes-account-ring-base: rgba(15, 23, 42, 0.14);
+  --chutes-account-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
+  --chutes-account-link-border: rgba(15, 23, 42, 0.12);
+  --chutes-account-link-bg: rgba(255, 255, 255, 0.72);
+  --chutes-account-link-hover: rgba(243, 190, 92, 0.42);
+  --chutes-account-avatar-border: rgba(255, 255, 255, 0.96);
+  --chutes-account-avatar-bg: linear-gradient(180deg, rgba(15, 23, 42, 0.08), rgba(15, 23, 42, 0.04));
+  --chutes-account-avatar-text: rgba(17, 24, 39, 0.88);
+  --chutes-tooltip-bg: rgba(255, 255, 255, 0.98);
+  --chutes-tooltip-border: rgba(15, 23, 42, 0.1);
+  --chutes-tooltip-text: rgba(17, 24, 39, 0.96);
+  --chutes-overlay-backdrop: rgba(15, 23, 42, 0.4);
+  --chutes-modal-panel: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+  --chutes-modal-border: rgba(15, 23, 42, 0.1);
+  --chutes-modal-text: rgba(17, 24, 39, 0.96);
+  --chutes-modal-subtle: rgba(75, 85, 99, 0.82);
+  --chutes-modal-shadow: 0 24px 64px rgba(15, 23, 42, 0.18);
+  --chutes-modal-secondary-bg: rgba(255, 255, 255, 0.8);
+  --chutes-modal-secondary-border: rgba(15, 23, 42, 0.12);
+  --chutes-image-picker-bg: rgba(255, 255, 255, 0.9);
+  --chutes-image-picker-border: rgba(15, 23, 42, 0.12);
+  --chutes-image-picker-text: rgba(17, 24, 39, 0.92);
+}
+
+html.dark,
+html.oled-dark {
   --chutes-crosslink-bg: linear-gradient(135deg, rgba(238, 110, 95, 0.2), rgba(243, 190, 92, 0.18));
   --chutes-crosslink-border: rgba(238, 110, 95, 0.28);
   --chutes-crosslink-text: rgba(248, 248, 247, 0.98);
@@ -7,6 +43,28 @@
   --chutes-account-panel: linear-gradient(180deg, rgba(28, 28, 28, 0.98), rgba(18, 18, 18, 0.98));
   --chutes-account-subtle: rgba(248, 248, 247, 0.58);
   --chutes-account-ring: #9afcbf;
+  --chutes-account-ring-base: rgba(248, 248, 247, 0.18);
+  --chutes-account-shadow: 0 14px 32px rgba(0, 0, 0, 0.28);
+  --chutes-account-link-border: rgba(248, 248, 247, 0.12);
+  --chutes-account-link-bg: rgba(248, 248, 247, 0.04);
+  --chutes-account-link-hover: rgba(243, 190, 92, 0.42);
+  --chutes-account-avatar-border: #121212;
+  --chutes-account-avatar-bg: linear-gradient(180deg, rgba(247, 247, 246, 0.18), rgba(247, 247, 246, 0.08));
+  --chutes-account-avatar-text: #f7f7f6;
+  --chutes-tooltip-bg: rgba(17, 18, 20, 0.96);
+  --chutes-tooltip-border: rgba(154, 252, 191, 0.2);
+  --chutes-tooltip-text: rgba(248, 248, 247, 0.96);
+  --chutes-overlay-backdrop: rgba(0, 0, 0, 0.58);
+  --chutes-modal-panel: linear-gradient(180deg, rgba(23, 23, 23, 0.98), rgba(12, 12, 12, 0.98));
+  --chutes-modal-border: rgba(248, 248, 247, 0.1);
+  --chutes-modal-text: rgba(248, 248, 247, 0.98);
+  --chutes-modal-subtle: rgba(212, 212, 216, 0.82);
+  --chutes-modal-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
+  --chutes-modal-secondary-bg: rgba(248, 248, 247, 0.04);
+  --chutes-modal-secondary-border: rgba(248, 248, 247, 0.12);
+  --chutes-image-picker-bg: rgba(23, 23, 23, 0.88);
+  --chutes-image-picker-border: rgba(248, 248, 247, 0.12);
+  --chutes-image-picker-text: rgba(248, 248, 247, 0.9);
 }
 
 img.sidebar-new-chat-icon.chutes-brand-icon {
@@ -38,7 +96,7 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
   border-radius: 1rem;
   border: 1px solid var(--chutes-account-border);
   background: var(--chutes-account-panel);
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--chutes-account-shadow);
   color: var(--chutes-crosslink-text);
   overflow: visible;
   padding: 0.82rem 0.88rem;
@@ -68,7 +126,7 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
 }
 
 [data-chutes-nav-slot="n8n"] .chutes-account-ring-base {
-  stroke: rgba(248, 248, 247, 0.18);
+  stroke: var(--chutes-account-ring-base);
 }
 
 [data-chutes-nav-slot="n8n"] .chutes-account-ring-fill {
@@ -99,10 +157,10 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
   width: 1.35rem;
   height: 1.35rem;
   border-radius: 999px;
-  border: 2px solid #121212;
-  background: linear-gradient(180deg, rgba(247, 247, 246, 0.18), rgba(247, 247, 246, 0.08));
+  border: 2px solid var(--chutes-account-avatar-border);
+  background: var(--chutes-account-avatar-bg);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.24);
-  color: #f7f7f6;
+  color: var(--chutes-account-avatar-text);
   font-size: 0.54rem;
   font-weight: 700;
   overflow: hidden;
@@ -185,8 +243,8 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
   gap: 0.48rem;
   min-height: 2.05rem;
   border-radius: 0.72rem;
-  border: 1px solid rgba(248, 248, 247, 0.12);
-  background: rgba(248, 248, 247, 0.04);
+  border: 1px solid var(--chutes-account-link-border);
+  background: var(--chutes-account-link-bg);
   color: var(--chutes-crosslink-text);
   font-size: 0.8rem;
   font-weight: 700;
@@ -227,11 +285,11 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
   inset: auto auto auto 0;
   max-width: min(16rem, calc(100vw - 24px));
   padding: 0.68rem 0.78rem;
-  border: 1px solid rgba(154, 252, 191, 0.2);
+  border: 1px solid var(--chutes-tooltip-border);
   border-radius: 0.9rem;
-  background: rgba(17, 18, 20, 0.96);
+  background: var(--chutes-tooltip-bg);
   box-shadow: 0 16px 38px rgba(0, 0, 0, 0.34);
-  color: rgba(248, 248, 247, 0.96);
+  color: var(--chutes-tooltip-text);
   font-size: 0.72rem;
   font-weight: 600;
   line-height: 1.45;
@@ -272,10 +330,47 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
   color: rgba(248, 248, 247, 0.82);
 }
 
+.chutes-image-model-picker {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: min(12rem, 42vw);
+}
+
+.chutes-image-model-select {
+  width: 100%;
+  min-height: 2rem;
+  max-width: inherit;
+  padding: 0.35rem 1.85rem 0.35rem 0.72rem;
+  border: 1px solid var(--chutes-image-picker-border);
+  border-radius: 0.5rem;
+  background: var(--chutes-image-picker-bg);
+  color: var(--chutes-image-picker-text);
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1.2;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 0.85rem) calc(50% - 0.08rem),
+    calc(100% - 0.58rem) calc(50% - 0.08rem);
+  background-size: 0.33rem 0.33rem, 0.33rem 0.33rem;
+  background-repeat: no-repeat;
+}
+
+.chutes-image-model-select:hover,
+.chutes-image-model-select:focus {
+  border-color: rgba(243, 190, 92, 0.42);
+}
+
 [data-chutes-nav-slot="n8n"] .chutes-account-link:hover,
 [data-chutes-nav-slot="n8n"] .chutes-account-link:focus-visible {
   transform: translateY(-1px);
-  border-color: rgba(243, 190, 92, 0.42);
+  border-color: var(--chutes-account-link-hover);
 }
 
 [data-chutes-nav-slot="n8n"] .chutes-crosslink {
@@ -300,7 +395,7 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
 [data-chutes-nav-slot="n8n"] .chutes-crosslink:hover,
 [data-chutes-nav-slot="n8n"] .chutes-crosslink:focus-visible {
   transform: translateY(-1px);
-  border-color: rgba(243, 190, 92, 0.42);
+  border-color: var(--chutes-account-link-hover);
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
 }
 
@@ -398,6 +493,96 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
   width: 1.08rem;
   height: 1.08rem;
   font-size: 0.42rem;
+}
+
+button[role="tab"][aria-controls="tab-about"],
+#tab-about {
+  display: none !important;
+}
+
+.chutes-mic-permission-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: var(--chutes-overlay-backdrop);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+  z-index: 10001;
+}
+
+.chutes-mic-permission-overlay.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.chutes-mic-permission-dialog {
+  width: min(28rem, calc(100vw - 2rem));
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1.15rem;
+  border-radius: 0.9rem;
+  border: 1px solid var(--chutes-modal-border);
+  background: var(--chutes-modal-panel);
+  box-shadow: var(--chutes-modal-shadow);
+  color: var(--chutes-modal-text);
+}
+
+.chutes-mic-permission-title {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.chutes-mic-permission-body {
+  color: var(--chutes-modal-subtle);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.chutes-mic-permission-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.chutes-mic-permission-button {
+  min-height: 2.4rem;
+  padding: 0.55rem 1rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--chutes-modal-secondary-border);
+  background: var(--chutes-modal-secondary-bg);
+  color: var(--chutes-modal-text);
+  font-size: 0.88rem;
+  font-weight: 700;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.chutes-mic-permission-button:hover,
+.chutes-mic-permission-button:focus-visible {
+  transform: translateY(-1px);
+  border-color: var(--chutes-account-link-hover);
+}
+
+.chutes-mic-permission-button.is-primary {
+  border-color: rgba(243, 190, 92, 0.32);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+  color: rgba(17, 24, 39, 0.96);
+}
+
+html.dark .chutes-mic-permission-button.is-primary,
+html.oled-dark .chutes-mic-permission-button.is-primary {
+  background: linear-gradient(180deg, rgba(248, 248, 247, 0.98), rgba(232, 232, 231, 0.98));
+  color: rgba(12, 12, 12, 0.96);
 }
 
 body::after {

@@ -6,9 +6,14 @@
   var N8N_LOGO_URL = "/static/n8n-logo.svg";
   var ACCOUNT_SUMMARY_URL = "/api/v1/dropzone/account-summary";
   var MODELS_URL = "/api/models";
+  var IMAGE_MODELS_URL = "/api/v1/images/models";
   var ACCOUNT_SUMMARY_POLL_MS = 60000;
   var ACCOUNT_SUMMARY_RETRY_MS = 5000;
   var AUTO_MODEL_HINT_LABEL = "Models";
+  var IMAGE_MODEL_DEFAULT_ID = "chutes-auto-image";
+  var IMAGE_MODEL_STORAGE_KEY = "chutes.dropzone.image.model";
+  var IMAGE_MODEL_COOKIE_NAME = "dropzone-image-model";
+  var IMAGE_ICON_PATH_PREFIX = "M21 7.6V20.4C21 20.7314";
   var MENU_MARKERS = ["New Chat", "Search", "Notes", "Folders", "Chats"];
   var DEFAULT_AUTH_REDIRECT = "/c/new";
   var DROPZONE_AUTH_MARKERS = ["Log in to Chutes", "Log in with Fingerprint"];
@@ -27,9 +32,20 @@
   var autoModelTooltip = "";
   var autoModelMetaLoaded = false;
   var autoModelMetaPromise = null;
+  var imageModels = [];
+  var imageModelsLoaded = false;
+  var imageModelsPromise = null;
   var n8nConfirmed = false;
   var tooltipLayer = null;
   var activeTooltipTarget = null;
+  var micPermissionOverlay = null;
+  var micPermissionTitle = null;
+  var micPermissionBody = null;
+  var micPermissionCancel = null;
+  var micPermissionConfirm = null;
+  var micPermissionResolve = null;
+  var micPermissionAllowCancel = true;
+  var micPermissionPromptAcknowledged = false;
 
   function isOllamaVersionRequest(input) {
     var url = typeof input === "string" ? input : input && input.url;
@@ -70,6 +86,238 @@
   }
 
   installOllamaFetchGuard();
+
+  function createNamedError(name, message) {
+    try {
+      if (window.DOMException) {
+        return new window.DOMException(message, name);
+      }
+    } catch (error) {
+      // Fall through to Error for older browsers.
+    }
+
+    var namedError = new Error(message);
+    namedError.name = name;
+    return namedError;
+  }
+
+  function isAudioCaptureRequest(constraints) {
+    if (constraints === true) return true;
+    if (!constraints || typeof constraints !== "object") return false;
+    return !!constraints.audio;
+  }
+
+  function queryMicrophonePermissionState() {
+    if (
+      !navigator.permissions ||
+      typeof navigator.permissions.query !== "function"
+    ) {
+      return Promise.resolve("prompt");
+    }
+
+    return navigator.permissions
+      .query({ name: "microphone" })
+      .then(function (result) {
+        return (result && result.state) || "prompt";
+      })
+      .catch(function () {
+        return "prompt";
+      });
+  }
+
+  function closeMicrophonePermissionDialog(approved) {
+    if (!micPermissionOverlay) return;
+
+    micPermissionOverlay.classList.remove("is-visible");
+    micPermissionOverlay.setAttribute("aria-hidden", "true");
+
+    var resolver = micPermissionResolve;
+    micPermissionResolve = null;
+    if (resolver) {
+      resolver(!!approved);
+    }
+  }
+
+  function ensureMicrophonePermissionDialog() {
+    if (micPermissionOverlay && document.body && document.body.contains(micPermissionOverlay)) {
+      return micPermissionOverlay;
+    }
+
+    micPermissionOverlay = createElement("div", "chutes-mic-permission-overlay");
+    micPermissionOverlay.setAttribute("data-chutes-mic-permission", "true");
+    micPermissionOverlay.setAttribute("aria-hidden", "true");
+
+    var dialog = createElement("div", "chutes-mic-permission-dialog");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-labelledby", "chutes-mic-permission-title");
+    dialog.setAttribute("aria-describedby", "chutes-mic-permission-body");
+
+    micPermissionTitle = createElement("div", "chutes-mic-permission-title");
+    micPermissionTitle.id = "chutes-mic-permission-title";
+    micPermissionBody = createElement("div", "chutes-mic-permission-body");
+    micPermissionBody.id = "chutes-mic-permission-body";
+
+    var actions = createElement("div", "chutes-mic-permission-actions");
+    micPermissionCancel = createElement("button", "chutes-mic-permission-button");
+    micPermissionCancel.type = "button";
+    micPermissionCancel.textContent = "Not now";
+    micPermissionCancel.addEventListener("click", function () {
+      closeMicrophonePermissionDialog(false);
+    });
+
+    micPermissionConfirm = createElement(
+      "button",
+      "chutes-mic-permission-button is-primary"
+    );
+    micPermissionConfirm.type = "button";
+    micPermissionConfirm.textContent = "Continue";
+    micPermissionConfirm.addEventListener("click", function () {
+      closeMicrophonePermissionDialog(true);
+    });
+
+    actions.appendChild(micPermissionCancel);
+    actions.appendChild(micPermissionConfirm);
+    dialog.appendChild(micPermissionTitle);
+    dialog.appendChild(micPermissionBody);
+    dialog.appendChild(actions);
+    micPermissionOverlay.appendChild(dialog);
+
+    micPermissionOverlay.addEventListener("click", function (event) {
+      if (event.target === micPermissionOverlay && micPermissionAllowCancel) {
+        closeMicrophonePermissionDialog(false);
+      }
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (
+        event.key === "Escape" &&
+        micPermissionOverlay &&
+        micPermissionOverlay.classList.contains("is-visible") &&
+        micPermissionAllowCancel
+      ) {
+        closeMicrophonePermissionDialog(false);
+      }
+    });
+
+    (document.body || document.documentElement).appendChild(micPermissionOverlay);
+    return micPermissionOverlay;
+  }
+
+  function showMicrophonePermissionDialog(options) {
+    ensureMicrophonePermissionDialog();
+
+    micPermissionAllowCancel = options.allowCancel !== false;
+    micPermissionTitle.textContent = options.title || "Allow microphone access";
+    micPermissionBody.textContent = options.message || "";
+    micPermissionCancel.textContent = options.cancelLabel || "Not now";
+    micPermissionConfirm.textContent = options.confirmLabel || "Continue";
+    micPermissionCancel.hidden = !micPermissionAllowCancel;
+    micPermissionOverlay.setAttribute("aria-hidden", "false");
+    micPermissionOverlay.classList.add("is-visible");
+
+    window.setTimeout(function () {
+      if (micPermissionConfirm) {
+        micPermissionConfirm.focus();
+      }
+    }, 0);
+
+    return new Promise(function (resolve) {
+      micPermissionResolve = resolve;
+    });
+  }
+
+  function installMicrophonePermissionGuard() {
+    if (
+      !navigator.mediaDevices ||
+      typeof navigator.mediaDevices.getUserMedia !== "function" ||
+      navigator.mediaDevices.getUserMedia.__chutesMicrophonePermissionGuard
+    ) {
+      return;
+    }
+
+    var nativeGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+
+    function guardedGetUserMedia(constraints) {
+      if (!isAudioCaptureRequest(constraints)) {
+        return nativeGetUserMedia(constraints);
+      }
+
+      return Promise.resolve()
+        .then(function () {
+          if (!window.isSecureContext) {
+            return showMicrophonePermissionDialog({
+              title: "Microphone unavailable",
+              message:
+                "Microphone access requires a secure HTTPS page. Open Chutes Chat over HTTPS and try again.",
+              confirmLabel: "OK",
+              allowCancel: false,
+            }).then(function () {
+              throw createNamedError(
+                "NotSupportedError",
+                "Microphone access requires a secure HTTPS page."
+              );
+            });
+          }
+
+          return queryMicrophonePermissionState().then(function (permissionState) {
+            if (permissionState === "denied") {
+              return showMicrophonePermissionDialog({
+                title: "Microphone access is blocked",
+                message:
+                  "Allow microphone access in your browser's site settings, then try again.",
+                confirmLabel: "OK",
+                allowCancel: false,
+              }).then(function () {
+                throw createNamedError(
+                  "NotAllowedError",
+                  "Microphone access is blocked in your browser site settings."
+                );
+              });
+            }
+
+            if (permissionState !== "granted" && !micPermissionPromptAcknowledged) {
+              return showMicrophonePermissionDialog({
+                title: "Allow microphone access",
+                message:
+                  "Chutes Chat needs your microphone before recording can start. Continue to open your browser's permission prompt.",
+                confirmLabel: "Continue",
+                cancelLabel: "Not now",
+                allowCancel: true,
+              }).then(function (approved) {
+                if (!approved) {
+                  throw createNamedError(
+                    "NotAllowedError",
+                    "Microphone access was cancelled before the browser prompt opened."
+                  );
+                }
+
+                micPermissionPromptAcknowledged = true;
+              });
+            }
+          });
+        })
+        .then(function () {
+          return nativeGetUserMedia(constraints);
+        })
+        .catch(function (error) {
+          var name = (error && error.name) || "";
+          if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+            micPermissionPromptAcknowledged = false;
+            throw createNamedError(
+              "NotAllowedError",
+              "Microphone access was denied. Allow it in your browser and try again."
+            );
+          }
+          throw error;
+        });
+    }
+
+    guardedGetUserMedia.__chutesMicrophonePermissionGuard = true;
+    navigator.mediaDevices.getUserMedia = guardedGetUserMedia;
+  }
+
+  installMicrophonePermissionGuard();
 
   function getSafeRelativePath(value, fallback) {
     var text = stripWrappedCookieValue(value);
@@ -217,6 +465,17 @@
     document.cookie =
       name +
       "=; Max-Age=0; path=/; SameSite=Lax" +
+      (window.location.protocol === "https:" ? "; Secure" : "");
+  }
+
+  function writeCookie(name, value, maxAgeSeconds) {
+    document.cookie =
+      name +
+      "=" +
+      encodeURIComponent(String(value || "")) +
+      "; Max-Age=" +
+      String(maxAgeSeconds || 31536000) +
+      "; path=/; SameSite=Lax" +
       (window.location.protocol === "https:" ? "; Secure" : "");
   }
 
@@ -526,6 +785,73 @@
       });
   }
 
+  function getStoredImageModelId() {
+    var cookieValue = normalizeText(readCookie(IMAGE_MODEL_COOKIE_NAME));
+    if (cookieValue) return cookieValue;
+
+    try {
+      return normalizeText(window.localStorage.getItem(IMAGE_MODEL_STORAGE_KEY) || "");
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function persistImageModelId(value) {
+    var nextValue = normalizeText(value) || IMAGE_MODEL_DEFAULT_ID;
+    writeCookie(IMAGE_MODEL_COOKIE_NAME, nextValue, 31536000);
+    try {
+      window.localStorage.setItem(IMAGE_MODEL_STORAGE_KEY, nextValue);
+    } catch (error) {
+      // Ignore storage failures; cookie remains authoritative for the server.
+    }
+  }
+
+  function findImageModelById(id) {
+    if (!Array.isArray(imageModels)) return null;
+    return (
+      imageModels.find(function (model) {
+        return model && model.id === id;
+      }) || null
+    );
+  }
+
+  function queueImageModelFetch(force) {
+    if (imageModelsPromise) return;
+    if (!force && imageModelsLoaded) return;
+
+    imageModelsPromise = window
+      .fetch(IMAGE_MODELS_URL, {
+        cache: "no-store",
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error("image models unavailable");
+        }
+        return response.json();
+      })
+      .then(function (payload) {
+        var models = (payload && payload.data) || payload || [];
+        imageModels = Array.isArray(models) ? models : [];
+
+        if (!findImageModelById(getStoredImageModelId())) {
+          var fallbackModel = findImageModelById(IMAGE_MODEL_DEFAULT_ID) || imageModels[0] || null;
+          if (fallbackModel && fallbackModel.id) {
+            persistImageModelId(fallbackModel.id);
+          }
+        }
+      })
+      .catch(function () {
+        imageModels = [];
+      })
+      .finally(function () {
+        imageModelsLoaded = true;
+        imageModelsPromise = null;
+        scheduleRefresh();
+      });
+  }
+
   function formatQuota(value) {
     var number = Number(value || 0);
     if (!isFinite(number)) return "0";
@@ -658,6 +984,151 @@
     if (className) node.className = className;
     if (text !== undefined) node.textContent = text;
     return node;
+  }
+
+  function findImageGenerationButton() {
+    var buttons = Array.prototype.slice
+      .call(document.querySelectorAll("button"))
+      .filter(function (button) {
+        if (!isVisible(button)) return false;
+        return !!button.querySelector(
+          'svg path[d^="' + IMAGE_ICON_PATH_PREFIX + '"]'
+        );
+      })
+      .sort(function (left, right) {
+        var leftRect = left.getBoundingClientRect ? left.getBoundingClientRect() : { bottom: 0 };
+        var rightRect = right.getBoundingClientRect ? right.getBoundingClientRect() : { bottom: 0 };
+        return rightRect.bottom - leftRect.bottom;
+      });
+
+    return buttons[0] || null;
+  }
+
+  function removeImageModelPicker() {
+    Array.prototype.forEach.call(
+      document.querySelectorAll('[data-chutes-image-model-slot="true"]'),
+      function (slot) {
+        slot.remove();
+      },
+    );
+  }
+
+  function ensureImageModelPicker() {
+    queueImageModelFetch();
+
+    var button = findImageGenerationButton();
+    if (!button || !imageModelsLoaded || !imageModels.length) {
+      removeImageModelPicker();
+      return;
+    }
+
+    var wrapper = button.parentElement || button;
+    var slot = document.querySelector('[data-chutes-image-model-slot="true"]');
+    if (!slot) {
+      slot = createElement("div", "chutes-image-model-picker");
+      slot.setAttribute("data-chutes-image-model-slot", "true");
+
+      var select = document.createElement("select");
+      select.className = "chutes-image-model-select";
+      select.setAttribute("aria-label", "Image model");
+      select.addEventListener("change", function () {
+        persistImageModelId(select.value);
+        scheduleRefresh();
+      });
+
+      slot.appendChild(select);
+    }
+
+    Array.prototype.forEach.call(
+      document.querySelectorAll('[data-chutes-image-model-slot="true"]'),
+      function (node) {
+        if (node !== slot) {
+          node.remove();
+        }
+      },
+    );
+
+    var selectNode = slot.querySelector("select");
+    if (!selectNode) return;
+
+    var previousValue = selectNode.value || getStoredImageModelId() || IMAGE_MODEL_DEFAULT_ID;
+    selectNode.innerHTML = "";
+    imageModels.forEach(function (model) {
+      if (!model || !model.id) return;
+      var option = document.createElement("option");
+      option.value = model.id;
+      option.textContent = model.name || model.id;
+      selectNode.appendChild(option);
+    });
+
+    var selectedModel =
+      findImageModelById(previousValue) ||
+      findImageModelById(getStoredImageModelId()) ||
+      findImageModelById(IMAGE_MODEL_DEFAULT_ID) ||
+      imageModels[0] ||
+      null;
+
+    if (!selectedModel || !selectedModel.id) {
+      removeImageModelPicker();
+      return;
+    }
+
+    selectNode.value = selectedModel.id;
+    persistImageModelId(selectedModel.id);
+    selectNode.setAttribute("title", selectedModel.description || selectedModel.name || "");
+
+    var meta = (selectedModel && selectedModel.meta) || {};
+    var tooltipText = normalizeTooltipText(meta.routing_tooltip || selectedModel.description || "");
+    if (tooltipText) {
+      applyTooltip(slot, tooltipText);
+    } else {
+      slot.removeAttribute("data-chutes-tooltip");
+      slot.removeAttribute("aria-label");
+    }
+
+    if (wrapper.parentNode && slot.parentNode !== wrapper.parentNode) {
+      wrapper.parentNode.insertBefore(slot, wrapper.nextSibling);
+    } else if (wrapper.parentNode && slot.previousElementSibling !== wrapper) {
+      wrapper.parentNode.insertBefore(slot, wrapper.nextSibling);
+    }
+  }
+
+  function ensureSettingsAboutHidden() {
+    var aboutButtons = Array.prototype.slice.call(
+      document.querySelectorAll('button[role="tab"][aria-controls="tab-about"]')
+    );
+    if (!aboutButtons.length) return;
+
+    var fallbackButton = null;
+    Array.prototype.some.call(
+      document.querySelectorAll('button[role="tab"][aria-controls]'),
+      function (button) {
+        if (
+          button.getAttribute("aria-controls") !== "tab-about" &&
+          isVisible(button)
+        ) {
+          fallbackButton = button;
+          return true;
+        }
+        return false;
+      }
+    );
+
+    aboutButtons.forEach(function (button) {
+      var selected = button.getAttribute("aria-selected") === "true";
+      button.hidden = true;
+      button.setAttribute("aria-hidden", "true");
+      button.style.display = "none";
+      if (selected && fallbackButton) {
+        fallbackButton.click();
+      }
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll("#tab-about"), function (panel) {
+      panel.hidden = true;
+      panel.setAttribute("aria-hidden", "true");
+      panel.style.display = "none";
+    });
   }
 
   function buildQuotaRing(summary) {
@@ -1145,10 +1616,12 @@
     if (forceDropzoneAuthScreen()) return;
     if (maybeFinishAuthRedirect()) return;
     patchBranding();
+    ensureSettingsAboutHidden();
     if (accountSummary && accountSummary.username) {
       syncCurrentUserAvatar(accountSummary);
     }
     ensureChutesAutoHint();
+    ensureImageModelPicker();
     ensureSidebarCard();
   }
 
@@ -1166,6 +1639,7 @@
     if (!document.hidden) {
       queueAccountSummaryFetch(true);
       queueAutoModelMetaFetch(true);
+      queueImageModelFetch(true);
     }
   });
   window.addEventListener(
