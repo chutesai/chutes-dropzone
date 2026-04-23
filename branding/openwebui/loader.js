@@ -7,6 +7,7 @@
   var ACCOUNT_SUMMARY_URL = "/api/v1/dropzone/account-summary";
   var MODELS_URL = "/api/models";
   var IMAGE_MODELS_URL = "/api/v1/images/models";
+  var VERSION_UPDATES_URL = "/api/version/updates";
   var ACCOUNT_SUMMARY_POLL_MS = 60000;
   var ACCOUNT_SUMMARY_RETRY_MS = 5000;
   var AUTO_MODEL_HINT_LABEL = "Models";
@@ -60,6 +61,18 @@
     }
   }
 
+  function isVersionUpdatesRequest(input) {
+    var url = typeof input === "string" ? input : input && input.url;
+    if (!url) return false;
+
+    try {
+      var parsed = new URL(url, window.location.origin);
+      return parsed.pathname === VERSION_UPDATES_URL;
+    } catch (error) {
+      return false;
+    }
+  }
+
   function installOllamaFetchGuard() {
     if (!window.fetch || window.fetch.__chutesOllamaVersionGuard) return;
 
@@ -73,6 +86,20 @@
 
         return Promise.resolve(
           new window.Response(JSON.stringify({ version: "" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+
+      if (isVersionUpdatesRequest(input)) {
+        if (!window.Response) {
+          return nativeFetch(input, init);
+        }
+
+        // Keep OpenWebUI's upstream self-update toast out of the branded product UI.
+        return Promise.resolve(
+          new window.Response(JSON.stringify({ current: "0.0.0", latest: "0.0.0" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           })

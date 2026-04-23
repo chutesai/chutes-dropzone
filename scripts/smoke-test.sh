@@ -916,6 +916,16 @@ else
     fail "OpenWebUI Ollama/model-grouping protections are missing"
 fi
 
+if grep -Fq 'var VERSION_UPDATES_URL = "/api/version/updates";' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'function isVersionUpdatesRequest(input)' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq "parsed.pathname === VERSION_UPDATES_URL" "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq "Keep OpenWebUI's upstream self-update toast out of the branded product UI." "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'JSON.stringify({ current: "0.0.0", latest: "0.0.0" })' "$PROJECT_DIR/branding/openwebui/loader.js"; then
+    pass "OpenWebUI suppresses the upstream self-update toast in the branded UI"
+else
+    fail "OpenWebUI still leaks the upstream self-update toast into the branded UI"
+fi
+
 if grep -Fq 'findNamedUserAnchor' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'syncCurrentUserAvatar(summary);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'Users.update_user_profile_image_url_by_id' "$PROJECT_DIR/branding/openwebui/dropzone_account.py" && \
