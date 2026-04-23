@@ -1178,6 +1178,7 @@ if [ "$(grep -c 'COPY branding/openwebui/dropzone_images.py /app/backend/open_we
    grep -Fq 'def replace_all_of_or_keep(text: str, olds: list[str], new: str, label: str) -> str:' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq 'describe_chutes_image_request' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq '_dropzone_parse_image_prompt_response' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq '_dropzone_markdown_blockquote' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq '_dropzone_image_success_content' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq 'Prompt planning' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq '**Prompt sent**' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
