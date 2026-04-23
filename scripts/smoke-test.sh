@@ -1228,6 +1228,18 @@ fi
 
 if grep -q '^ENABLE_WEB_SEARCH=' "$PROJECT_DIR/.env.example" && \
    grep -q '^WEB_SEARCH_ENGINE=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^WEB_SEARCH_RESULT_COUNT=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^WEB_SEARCH_CONCURRENT_REQUESTS=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^WEB_SEARCH_DOMAIN_FILTER_LIST=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^WEB_SEARCH_TRUST_ENV=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^WEB_FETCH_MAX_CONTENT_LENGTH=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^WEB_LOADER_ENGINE=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^WEB_LOADER_CONCURRENT_REQUESTS=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^WEB_LOADER_TIMEOUT=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^ENABLE_WEB_LOADER_SSL_VERIFICATION=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^BYPASS_WEB_SEARCH_WEB_LOADER=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^DDGS_BACKEND=' "$PROJECT_DIR/.env.example" && \
    grep -q '^ENABLE_IMAGE_GENERATION=' "$PROJECT_DIR/.env.example" && \
    grep -q '^ENABLE_IMAGE_PROMPT_GENERATION=' "$PROJECT_DIR/.env.example" && \
    grep -q '^ENABLE_TITLE_GENERATION=' "$PROJECT_DIR/.env.example" && \
@@ -1252,8 +1264,20 @@ else
 fi
 
 # shellcheck disable=SC2016
-if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-false}' "$PROJECT_DIR/docker-compose.yml" && \
+if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'WEB_SEARCH_ENGINE=${WEB_SEARCH_ENGINE:-duckduckgo}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'WEB_SEARCH_RESULT_COUNT=${WEB_SEARCH_RESULT_COUNT:-5}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'WEB_SEARCH_CONCURRENT_REQUESTS=${WEB_SEARCH_CONCURRENT_REQUESTS:-2}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'WEB_SEARCH_DOMAIN_FILTER_LIST=${WEB_SEARCH_DOMAIN_FILTER_LIST:-[]}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'WEB_SEARCH_TRUST_ENV=${WEB_SEARCH_TRUST_ENV:-false}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'WEB_FETCH_MAX_CONTENT_LENGTH=${WEB_FETCH_MAX_CONTENT_LENGTH:-50000}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'WEB_LOADER_ENGINE=${WEB_LOADER_ENGINE:-safe_web}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'WEB_LOADER_CONCURRENT_REQUESTS=${WEB_LOADER_CONCURRENT_REQUESTS:-4}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'WEB_LOADER_TIMEOUT=${WEB_LOADER_TIMEOUT:-20}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'ENABLE_WEB_LOADER_SSL_VERIFICATION=${ENABLE_WEB_LOADER_SSL_VERIFICATION:-true}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=${BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL:-false}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'BYPASS_WEB_SEARCH_WEB_LOADER=${BYPASS_WEB_SEARCH_WEB_LOADER:-false}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'DDGS_BACKEND=${DDGS_BACKEND:-duckduckgo}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'ENABLE_IMAGE_GENERATION=${ENABLE_IMAGE_GENERATION:-true}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'ENABLE_IMAGE_PROMPT_GENERATION=${ENABLE_IMAGE_PROMPT_GENERATION:-true}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'ENABLE_TITLE_GENERATION=${ENABLE_TITLE_GENERATION:-true}' "$PROJECT_DIR/docker-compose.yml" && \
@@ -1275,7 +1299,11 @@ if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-false}' "$PROJECT_DIR/docker
    grep -Fq 'env_line IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE ' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line DROPZONE_IMAGE_GENERATION_PROVIDER' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line ENABLE_WEB_SEARCH' "$PROJECT_DIR/standalone/entrypoint.sh" && \
-   grep -Fq 'export ENABLE_WEB_SEARCH="${ENABLE_WEB_SEARCH:-false}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'env_line WEB_LOADER_ENGINE' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'export ENABLE_WEB_SEARCH="${ENABLE_WEB_SEARCH:-true}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'export WEB_SEARCH_RESULT_COUNT="${WEB_SEARCH_RESULT_COUNT:-5}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'export WEB_LOADER_ENGINE="${WEB_LOADER_ENGINE:-safe_web}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'export DDGS_BACKEND="${DDGS_BACKEND:-duckduckgo}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export ENABLE_IMAGE_GENERATION="${ENABLE_IMAGE_GENERATION:-true}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export ENABLE_IMAGE_PROMPT_GENERATION="${ENABLE_IMAGE_PROMPT_GENERATION:-true}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export ENABLE_TITLE_GENERATION="${ENABLE_TITLE_GENERATION:-true}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
@@ -1288,6 +1316,16 @@ if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-false}' "$PROJECT_DIR/docker
     pass "Dropzone deploy scaffolding exposes native OpenWebUI web search, image generation, and image prompt task wiring"
 else
     fail "Dropzone deploy scaffolding is missing native OpenWebUI web search, image generation, or image prompt task wiring"
+fi
+
+if grep -Fq 'def sync_web_config' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'WEB_SEARCH_RESULT_COUNT' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'DDGS_BACKEND' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq '/api/v1/retrieval/config/update' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'web search config mismatch' "$PROJECT_DIR/scripts/configure-openwebui.sh"; then
+    pass "OpenWebUI web search defaults are runtime-synced and verified"
+else
+    fail "OpenWebUI web search runtime sync or verification is incomplete"
 fi
 
 if grep -Fq 'converge_openwebui_runtime_config()' "$PROJECT_DIR/scripts/configure-openwebui.sh" && \

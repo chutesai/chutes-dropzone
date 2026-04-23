@@ -438,6 +438,64 @@ def admin_allowlist() -> list[str]:
     return [u.strip().lower() for u in raw.split(",") if u.strip()]
 
 
+def env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def env_int(name: str, default: int | None) -> int | None:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return int(raw.strip())
+    except ValueError:
+        return default
+
+
+def env_list(name: str, default: list[str] | None = None) -> list[str]:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return list(default or [])
+    raw = raw.strip()
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    except json.JSONDecodeError:
+        pass
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def desired_web_config() -> dict:
+    """Deployment-owned web search settings.
+
+    These are PersistentConfig values in OpenWebUI, so startup env vars alone
+    do not update existing volumes. The order-sync loop keeps them aligned.
+    """
+
+    return {
+        "ENABLE_WEB_SEARCH": env_bool("ENABLE_WEB_SEARCH", True),
+        "WEB_SEARCH_ENGINE": (os.environ.get("WEB_SEARCH_ENGINE") or "duckduckgo").strip() or "duckduckgo",
+        "WEB_SEARCH_RESULT_COUNT": env_int("WEB_SEARCH_RESULT_COUNT", 5),
+        "WEB_SEARCH_CONCURRENT_REQUESTS": env_int("WEB_SEARCH_CONCURRENT_REQUESTS", 2),
+        "WEB_SEARCH_DOMAIN_FILTER_LIST": env_list("WEB_SEARCH_DOMAIN_FILTER_LIST", []),
+        "WEB_SEARCH_TRUST_ENV": env_bool("WEB_SEARCH_TRUST_ENV", False),
+        "WEB_FETCH_MAX_CONTENT_LENGTH": env_int("WEB_FETCH_MAX_CONTENT_LENGTH", 50000),
+        "WEB_LOADER_ENGINE": (os.environ.get("WEB_LOADER_ENGINE") or "safe_web").strip() or "safe_web",
+        "WEB_LOADER_CONCURRENT_REQUESTS": env_int("WEB_LOADER_CONCURRENT_REQUESTS", 4),
+        "WEB_LOADER_TIMEOUT": (os.environ.get("WEB_LOADER_TIMEOUT") or "20").strip() or "20",
+        "ENABLE_WEB_LOADER_SSL_VERIFICATION": env_bool("ENABLE_WEB_LOADER_SSL_VERIFICATION", True),
+        "BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL": env_bool(
+            "BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL", False
+        ),
+        "BYPASS_WEB_SEARCH_WEB_LOADER": env_bool("BYPASS_WEB_SEARCH_WEB_LOADER", False),
+        "DDGS_BACKEND": (os.environ.get("DDGS_BACKEND") or "duckduckgo").strip() or "duckduckgo",
+    }
+
+
 def desired_stt_engine_mode() -> str:
     raw = (
         os.environ.get("DROPZONE_AUDIO_STT_ENGINE")
@@ -526,6 +584,38 @@ def desired_images_openai_api_key() -> str:
         or os.environ.get("OPENWEBUI_API_KEY")
         or ""
     ).strip()
+
+
+def sync_web_config(token: str) -> bool:
+    """Keep OpenWebUI web search/fetch config aligned with Dropzone defaults."""
+
+    retrieval_config = request_json("GET", "/api/v1/retrieval/config", token)
+    web_config = retrieval_config.get("web", {}) if isinstance(retrieval_config, dict) else {}
+    if not isinstance(web_config, dict):
+        return False
+
+    desired = desired_web_config()
+    updated = dict(web_config)
+    updated.update(desired)
+
+    changed_keys = []
+    for key, expected in desired.items():
+        current = web_config.get(key)
+        if isinstance(expected, list):
+            current = current if isinstance(current, list) else []
+        if current != expected:
+            changed_keys.append(key)
+
+    if not changed_keys:
+        return False
+
+    request_json(
+        "POST",
+        "/api/v1/retrieval/config/update",
+        token,
+        {"web": updated},
+    )
+    return True
 
 
 def sync_audio_config(token: str) -> bool:
@@ -759,6 +849,9 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
         openai_config["OPENAI_API_CONFIGS"] = desired_api_configs
         request_json("POST", "/openai/config/update", token, openai_config)
         updates.append("OPENAI_API_CONFIGS")
+
+    if sync_web_config(token):
+        updates.append(f"WEB_SEARCH({desired_web_config()['WEB_SEARCH_ENGINE']})")
 
     if sync_audio_config(token):
         updates.append(f"AUDIO_STT({desired_stt_engine_mode()})")

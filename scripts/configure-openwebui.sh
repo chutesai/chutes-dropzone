@@ -178,6 +178,59 @@ if not admin_user or admin_user.role != "admin":
 
 token = create_token({"id": admin_user.id}, expires_delta=timedelta(minutes=10))
 
+
+def env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def env_int(name: str, default: int | None) -> int | None:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return int(raw.strip())
+    except ValueError:
+        return default
+
+
+def env_list(name: str, default: list[str] | None = None) -> list[str]:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return list(default or [])
+    raw = raw.strip()
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    except json.JSONDecodeError:
+        pass
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def expected_web_config() -> dict:
+    return {
+        "ENABLE_WEB_SEARCH": env_bool("ENABLE_WEB_SEARCH", True),
+        "WEB_SEARCH_ENGINE": (os.environ.get("WEB_SEARCH_ENGINE") or "duckduckgo").strip() or "duckduckgo",
+        "WEB_SEARCH_RESULT_COUNT": env_int("WEB_SEARCH_RESULT_COUNT", 5),
+        "WEB_SEARCH_CONCURRENT_REQUESTS": env_int("WEB_SEARCH_CONCURRENT_REQUESTS", 2),
+        "WEB_SEARCH_DOMAIN_FILTER_LIST": env_list("WEB_SEARCH_DOMAIN_FILTER_LIST", []),
+        "WEB_SEARCH_TRUST_ENV": env_bool("WEB_SEARCH_TRUST_ENV", False),
+        "WEB_FETCH_MAX_CONTENT_LENGTH": env_int("WEB_FETCH_MAX_CONTENT_LENGTH", 50000),
+        "WEB_LOADER_ENGINE": (os.environ.get("WEB_LOADER_ENGINE") or "safe_web").strip() or "safe_web",
+        "WEB_LOADER_CONCURRENT_REQUESTS": env_int("WEB_LOADER_CONCURRENT_REQUESTS", 4),
+        "WEB_LOADER_TIMEOUT": (os.environ.get("WEB_LOADER_TIMEOUT") or "20").strip() or "20",
+        "ENABLE_WEB_LOADER_SSL_VERIFICATION": env_bool("ENABLE_WEB_LOADER_SSL_VERIFICATION", True),
+        "BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL": env_bool(
+            "BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL", False
+        ),
+        "BYPASS_WEB_SEARCH_WEB_LOADER": env_bool("BYPASS_WEB_SEARCH_WEB_LOADER", False),
+        "DDGS_BACKEND": (os.environ.get("DDGS_BACKEND") or "duckduckgo").strip() or "duckduckgo",
+    }
+
+
 openai_config = request_json("/openai/config", token)
 api_urls = openai_config.get("OPENAI_API_BASE_URLS", [])
 api_configs = openai_config.get("OPENAI_API_CONFIGS", {})
@@ -195,6 +248,20 @@ model_order = models_config.get("MODEL_ORDER_LIST")
 
 if not isinstance(model_order, list) or len(model_order) == 0:
     raise SystemExit("MODEL_ORDER_LIST is empty")
+
+retrieval_config = request_json("/api/v1/retrieval/config", token)
+web_config = retrieval_config.get("web", {}) if isinstance(retrieval_config, dict) else {}
+if not isinstance(web_config, dict):
+    raise SystemExit("web search config is unavailable")
+
+for key, expected in expected_web_config().items():
+    current = web_config.get(key)
+    if isinstance(expected, list):
+        current = current if isinstance(current, list) else []
+    if current != expected:
+        raise SystemExit(
+            f"web search config mismatch for {key}: expected {expected!r} got {current!r}"
+        )
 
 audio_config = request_json("/api/v1/audio/config", token)
 stt_config = audio_config.get("stt", {}) if isinstance(audio_config, dict) else {}

@@ -225,6 +225,8 @@ At startup, Dropzone also seeds OpenWebUI runtime config so model backends use t
 
 Dropzone keeps that ordering fresh in the background with a server-side sync worker. By default, OpenWebUI refreshes its upstream model cache every 5 minutes and the worker reseeds `MODEL_ORDER_LIST` on the same cadence, so newly published Chutes models settle into the intended order without a redeploy.
 
+Web search is also enabled by default with a no-key DuckDuckGo backend and OpenWebUI's `safe_web` loader. The sync worker keeps the persisted OpenWebUI retrieval config aligned with `.env`, including conservative defaults for result count, loader concurrency, fetch length, SSL verification, and proxy trust. Operators can still disable it with `ENABLE_WEB_SEARCH=false` or narrow sources with `WEB_SEARCH_DOMAIN_FILTER_LIST`.
+
 When `CHUTES_TRAFFIC_MODE=direct`, OpenWebUI talks straight to `https://llm.chutes.ai/v1` and n8n resolves text traffic against the native Chutes LLM endpoints.
 
 When `CHUTES_TRAFFIC_MODE=e2ee-proxy`, both OpenWebUI and n8n send invocation traffic through the shared `e2ee-proxy` sidecar. The sidecar's `/v1/models` catalog still sources model metadata anonymously from `https://llm.chutes.ai/v1/models`, then applies local TEE-only filtering when `ALLOW_NON_CONFIDENTIAL=false`.
