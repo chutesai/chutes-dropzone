@@ -142,6 +142,9 @@ After deploy:
 - `https://<host>/chat/` opens OpenWebUI
 - `https://<host>/n8n/` opens n8n (when `DROPZONE_ENABLE_N8N=true`)
 
+If you deploy the standalone image on Render or another managed container platform with configurable health checks, set the service health-check path to `/health`.
+That endpoint is served directly by the embedded edge and is a better liveness probe than `/static/site.webmanifest`, which can briefly fail during app startup while OpenWebUI is still binding its internal upstream.
+
 ### Required Chutes OAuth Callbacks
 
 Register both exact redirect URIs on the same Chutes OAuth app:
