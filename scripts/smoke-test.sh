@@ -894,6 +894,18 @@ else
     fail "OpenWebUI runtime patch is missing the OAuth session fallback"
 fi
 
+if grep -Fq "cookie_expires = datetime.utcnow() + expires_delta if expires_delta else None" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
+    pass "OpenWebUI runtime patch fixes the undefined OAuth session cookie expiry"
+else
+    fail "OpenWebUI runtime patch is missing the OAuth session cookie expiry fix"
+fi
+
+if grep -Fq "detail='OAuth provider is temporarily unavailable. Please try again in a minute.'" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
+    pass "OpenWebUI runtime patch maps upstream OAuth 5xx errors to a retryable user-facing message"
+else
+    fail "OpenWebUI runtime patch still reports upstream OAuth outages as invalid credentials"
+fi
+
 if grep -Fq 'ENABLE_OLLAMA_API=false' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'isOllamaVersionRequest' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq '\/ollama\/api\/version' "$PROJECT_DIR/branding/openwebui/loader.js" && \

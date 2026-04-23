@@ -246,6 +246,42 @@ def patch_utils_oauth(path: Path) -> None:
         "        redirect_base_url = str(request.base_url).rstrip('/')\n        error_redirect_url = f'{redirect_base_url}/auth'\n        success_redirect_url = f'{redirect_base_url}{get_request_auth_redirect_path(request)}'\n\n        if error_message:\n            error_redirect_url = f'{error_redirect_url}?error={urllib.parse.quote_plus(error_message)}'\n            return RedirectResponse(url=error_redirect_url, headers=response.headers)\n\n        response = RedirectResponse(url=success_redirect_url, headers=response.headers)\n",
         "dropzone oauth callback redirect target",
     )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "            try:\n                token = await client.authorize_access_token(request, **auth_params)\n            except Exception as e:\n                detailed_error = _build_oauth_callback_error_message(e)\n                log.warning(\n                    'OAuth callback error during authorize_access_token for provider %s: %s',\n                    provider,\n                    detailed_error,\n                    exc_info=True,\n                )\n                raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)\n",
+            '            try:\n                token = await client.authorize_access_token(request, **auth_params)\n            except Exception as e:\n                detailed_error = _build_oauth_callback_error_message(e)\n                log.warning(\n                    "OAuth callback error during authorize_access_token for provider %s: %s",\n                    provider,\n                    detailed_error,\n                    exc_info=True,\n                )\n                raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)\n',
+        ],
+        "            try:\n"
+        "                token = await client.authorize_access_token(request, **auth_params)\n"
+        "            except Exception as e:\n"
+        "                detailed_error = _build_oauth_callback_error_message(e)\n"
+        "                log.warning(\n"
+        "                    'OAuth callback error during authorize_access_token for provider %s: %s',\n"
+        "                    provider,\n"
+        "                    detailed_error,\n"
+        "                    exc_info=True,\n"
+        "                )\n"
+        "                provider_status = getattr(getattr(e, 'response', None), 'status_code', None)\n"
+        "                if provider_status is not None and int(provider_status) >= 500:\n"
+        "                    raise HTTPException(\n"
+        "                        502,\n"
+        "                        detail='OAuth provider is temporarily unavailable. Please try again in a minute.',\n"
+        "                    )\n"
+        "                raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)\n",
+        "oauth callback provider outage handling",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "        # Compute cookie expiry from JWT lifetime\n        expires_delta = parse_duration(auth_manager_config.JWT_EXPIRES_IN)\n        cookie_max_age = int(expires_delta.total_seconds()) if expires_delta else None\n",
+        ],
+        "        # Compute cookie expiry from JWT lifetime\n"
+        "        expires_delta = parse_duration(auth_manager_config.JWT_EXPIRES_IN)\n"
+        "        cookie_max_age = int(expires_delta.total_seconds()) if expires_delta else None\n"
+        "        cookie_expires = datetime.utcnow() + expires_delta if expires_delta else None\n",
+        "oauth session cookie expiry fix",
+    )
     path.write_text(patched, encoding="utf-8")
 
 
