@@ -1176,15 +1176,16 @@ if [ "$(grep -c 'COPY branding/openwebui/dropzone_images.py /app/backend/open_we
    grep -q 'patch_images_router(root / "backend" / "open_webui" / "routers" / "images.py")' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq "response_override = metadata.pop('_dropzone_response_override', None)" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq 'def replace_all_of_or_keep(text: str, olds: list[str], new: str, label: str) -> str:' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
-   grep -Fq "The requested image has been edited and created and is now being shown to the user." "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
-   grep -Fq "The requested image has been created by the system successfully and is now being shown to the user." "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
-   grep -Fq "Image generation was attempted but failed. The system is currently unable to generate the image." "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
-   grep -Fq "Image generation was attempted but failed because of an error." "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
-   grep -Fq "metadata['_dropzone_response_override'] = {'choices': [{'message': {'content': ''}}]}" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq 'describe_chutes_image_request' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq '_dropzone_parse_image_prompt_response' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq '_dropzone_image_success_content' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq 'Prompt planning' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq '**Prompt sent**' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq '**Parameters**' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq 'Image generation failed: {error_message or \"Unknown error\"}' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
-    pass "OpenWebUI image generation bridge is patched into the runtime without post-image model narration"
+    pass "OpenWebUI image generation bridge is patched into the runtime with prompt/parameter summaries"
 else
-    fail "OpenWebUI image generation bridge wiring or image-only response bypass is incomplete"
+    fail "OpenWebUI image generation bridge wiring or image summary flow is incomplete"
 fi
 
 for placeholder in __INSTALL_MODE__ __CHUTES_TRAFFIC_MODE__ __DROPZONE_HOST__; do
@@ -1228,6 +1229,8 @@ if grep -q '^ENABLE_WEB_SEARCH=' "$PROJECT_DIR/.env.example" && \
    grep -q '^WEB_SEARCH_ENGINE=' "$PROJECT_DIR/.env.example" && \
    grep -q '^ENABLE_IMAGE_GENERATION=' "$PROJECT_DIR/.env.example" && \
    grep -q '^ENABLE_IMAGE_PROMPT_GENERATION=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^ENABLE_TITLE_GENERATION=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^ENABLE_FOLLOW_UP_GENERATION=' "$PROJECT_DIR/.env.example" && \
    grep -q '^IMAGE_GENERATION_ENGINE=' "$PROJECT_DIR/.env.example" && \
    grep -q '^IMAGE_GENERATION_MODEL=' "$PROJECT_DIR/.env.example" && \
    grep -q '^IMAGES_OPENAI_API_BASE_URL=' "$PROJECT_DIR/.env.example" && \
@@ -1252,6 +1255,8 @@ if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-false}' "$PROJECT_DIR/docker
    grep -Fq 'WEB_SEARCH_ENGINE=${WEB_SEARCH_ENGINE:-duckduckgo}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'ENABLE_IMAGE_GENERATION=${ENABLE_IMAGE_GENERATION:-true}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'ENABLE_IMAGE_PROMPT_GENERATION=${ENABLE_IMAGE_PROMPT_GENERATION:-true}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'ENABLE_TITLE_GENERATION=${ENABLE_TITLE_GENERATION:-true}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'ENABLE_FOLLOW_UP_GENERATION=${ENABLE_FOLLOW_UP_GENERATION:-true}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'IMAGE_GENERATION_ENGINE=${IMAGE_GENERATION_ENGINE:-openai}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'IMAGE_GENERATION_MODEL=${IMAGE_GENERATION_MODEL:-chutes-auto-image}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'IMAGES_OPENAI_API_BASE_URL=${IMAGES_OPENAI_API_BASE_URL:-https://llm.chutes.ai/v1}' "$PROJECT_DIR/docker-compose.yml" && \
@@ -1261,6 +1266,8 @@ if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-false}' "$PROJECT_DIR/docker
    grep -Fq 'DROPZONE_IMAGE_GENERATION_PROVIDER=${DROPZONE_IMAGE_GENERATION_PROVIDER:-chutes}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'env_line ENABLE_WEB_SEARCH' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line ENABLE_IMAGE_PROMPT_GENERATION' "$PROJECT_DIR/deploy.sh" && \
+   grep -Fq 'env_line ENABLE_TITLE_GENERATION' "$PROJECT_DIR/deploy.sh" && \
+   grep -Fq 'env_line ENABLE_FOLLOW_UP_GENERATION' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line IMAGE_GENERATION_MODEL' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line TASK_MODEL ' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line TASK_MODEL_EXTERNAL ' "$PROJECT_DIR/deploy.sh" && \
@@ -1270,6 +1277,8 @@ if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-false}' "$PROJECT_DIR/docker
    grep -Fq 'export ENABLE_WEB_SEARCH="${ENABLE_WEB_SEARCH:-false}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export ENABLE_IMAGE_GENERATION="${ENABLE_IMAGE_GENERATION:-true}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export ENABLE_IMAGE_PROMPT_GENERATION="${ENABLE_IMAGE_PROMPT_GENERATION:-true}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'export ENABLE_TITLE_GENERATION="${ENABLE_TITLE_GENERATION:-true}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'export ENABLE_FOLLOW_UP_GENERATION="${ENABLE_FOLLOW_UP_GENERATION:-true}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export IMAGE_GENERATION_MODEL="${IMAGE_GENERATION_MODEL:-chutes-auto-image}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export TASK_MODEL="${TASK_MODEL:-}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export TASK_MODEL_EXTERNAL="${TASK_MODEL_EXTERNAL:-}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
@@ -1304,15 +1313,19 @@ fi
 
 if grep -Fq 'ENABLE_IMAGE_PROMPT_GENERATION' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq 'IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'ENABLE_TITLE_GENERATION' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'ENABLE_FOLLOW_UP_GENERATION' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq 'def sync_task_config(token: str) -> bool:' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq '/api/v1/tasks/config' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq 'TASK_MODEL' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq 'request_json("/api/v1/tasks/config", token)' "$PROJECT_DIR/scripts/configure-openwebui.sh" && \
    grep -Fq 'expected_image_prompt_enabled = (' "$PROJECT_DIR/scripts/configure-openwebui.sh" && \
+   grep -Fq 'expected_title_generation_enabled = (' "$PROJECT_DIR/scripts/configure-openwebui.sh" && \
+   grep -Fq 'expected_follow_up_generation_enabled = (' "$PROJECT_DIR/scripts/configure-openwebui.sh" && \
    grep -Fq 'expected_image_prompt_template = (' "$PROJECT_DIR/scripts/configure-openwebui.sh"; then
-    pass "OpenWebUI image prompt generation is runtime-synced so the selected chat model can rewrite image requests"
+    pass "OpenWebUI image prompt, title, and follow-up generation are runtime-synced"
 else
-    fail "OpenWebUI image prompt generation/task-model runtime wiring is incomplete"
+    fail "OpenWebUI task-generation runtime wiring is incomplete"
 fi
 
 if grep -q 'DROPZONE_ENABLE_PUBLIC_LANDING: "false"' "$PROJECT_DIR/examples/kubernetes/standalone-domain-direct.yaml" && \

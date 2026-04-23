@@ -24,7 +24,7 @@ RECONFIGURE=false
 WIPE=false
 DEFAULT_CHUTES_SSO_SCOPES="openid profile chutes:read chutes:invoke"
 LEGACY_CHUTES_SSO_SCOPES="openid email profile chutes:read chutes:invoke"
-DEFAULT_IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE="You turn recent chat context into one high-quality prompt for image generation. Infer the user's intended subject, setting, composition, lighting, perspective, medium, materials, color palette, mood, and any explicit constraints from the conversation. If the request is brief, add sensible visual detail without changing the core idea. Stay faithful to what the user wants, do not invent named entities or unsafe details they did not request, and output strict JSON only: {\"prompt\":\"...\"}. Chat history: <chat_history>{{MESSAGES:END:8}}</chat_history>"
+DEFAULT_IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE="You turn recent chat context and the selected image model into one high-quality image request. A system note in the chat history may tell you which image model is selected and which parameters are already set. Infer the user's intended subject, setting, composition, lighting, perspective, medium, materials, color palette, mood, and any explicit constraints from the conversation. If the request is brief, add sensible visual detail without changing the core idea. Stay faithful to what the user wants, do not invent named entities or unsafe details they did not request. You may optionally suggest a negative prompt, image size, and step count when that would materially improve the result; otherwise omit them. Prefer conservative step counts for fast FLUX or schnell style models unless the user explicitly asks for a slower, higher-detail render. Output strict JSON only using the keys you are setting: {\"prompt\":\"...\",\"negative_prompt\":\"...\",\"size\":\"1024x1024\",\"steps\":6,\"rationale\":\"...\"}. Chat history: <chat_history>{{MESSAGES:END:8}}</chat_history>"
 
 # ---------------------------------------------------------------------------
 # Compose-mode detection: if DB_TYPE=postgresdb, this container is running
@@ -917,6 +917,8 @@ write_env_file() {
         echo '# Native image generation in chat. Chutes deployments discover live diffusion chutes and route directly or through the local proxy automatically.'
         env_line ENABLE_IMAGE_GENERATION "${ENABLE_IMAGE_GENERATION:-true}"
         env_line ENABLE_IMAGE_PROMPT_GENERATION "${ENABLE_IMAGE_PROMPT_GENERATION:-true}"
+        env_line ENABLE_TITLE_GENERATION "${ENABLE_TITLE_GENERATION:-true}"
+        env_line ENABLE_FOLLOW_UP_GENERATION "${ENABLE_FOLLOW_UP_GENERATION:-true}"
         env_line IMAGE_GENERATION_ENGINE "${IMAGE_GENERATION_ENGINE:-openai}"
         env_line IMAGE_GENERATION_MODEL "${IMAGE_GENERATION_MODEL:-chutes-auto-image}"
         env_line IMAGES_OPENAI_API_BASE_URL "${IMAGES_OPENAI_API_BASE_URL:-$OPENWEBUI_API_BASE_URL}"
@@ -1189,6 +1191,8 @@ ENABLE_WEB_SEARCH="${ENABLE_WEB_SEARCH:-false}"
 WEB_SEARCH_ENGINE="${WEB_SEARCH_ENGINE:-duckduckgo}"
 ENABLE_IMAGE_GENERATION="${ENABLE_IMAGE_GENERATION:-true}"
 ENABLE_IMAGE_PROMPT_GENERATION="${ENABLE_IMAGE_PROMPT_GENERATION:-true}"
+ENABLE_TITLE_GENERATION="${ENABLE_TITLE_GENERATION:-true}"
+ENABLE_FOLLOW_UP_GENERATION="${ENABLE_FOLLOW_UP_GENERATION:-true}"
 IMAGE_GENERATION_ENGINE="${IMAGE_GENERATION_ENGINE:-openai}"
 IMAGE_GENERATION_MODEL="${IMAGE_GENERATION_MODEL:-chutes-auto-image}"
 IMAGES_OPENAI_API_BASE_URL="${IMAGES_OPENAI_API_BASE_URL:-$OPENWEBUI_API_BASE_URL}"
@@ -1301,6 +1305,8 @@ export ENABLE_WEB_SEARCH="${ENABLE_WEB_SEARCH:-false}"
 export WEB_SEARCH_ENGINE="${WEB_SEARCH_ENGINE:-duckduckgo}"
 export ENABLE_IMAGE_GENERATION="${ENABLE_IMAGE_GENERATION:-true}"
 export ENABLE_IMAGE_PROMPT_GENERATION="${ENABLE_IMAGE_PROMPT_GENERATION:-true}"
+export ENABLE_TITLE_GENERATION="${ENABLE_TITLE_GENERATION:-true}"
+export ENABLE_FOLLOW_UP_GENERATION="${ENABLE_FOLLOW_UP_GENERATION:-true}"
 export IMAGE_GENERATION_ENGINE="${IMAGE_GENERATION_ENGINE:-openai}"
 export IMAGE_GENERATION_MODEL="${IMAGE_GENERATION_MODEL:-chutes-auto-image}"
 export IMAGES_OPENAI_API_BASE_URL="${IMAGES_OPENAI_API_BASE_URL:-$OPENWEBUI_API_BASE_URL}"

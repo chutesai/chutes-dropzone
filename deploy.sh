@@ -121,7 +121,7 @@ PROJECT_OPENWEBUI_IMAGE="ghcr.io/open-webui/open-webui:v0.8.12@sha256:96737272ee
 PROJECT_NODES_REPO="https://github.com/sirouk/n8n-nodes-chutes.git"
 DEFAULT_CHUTES_SSO_SCOPES="openid profile chutes:read chutes:invoke"
 LEGACY_CHUTES_SSO_SCOPES="openid email profile chutes:read chutes:invoke"
-DEFAULT_IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE="You turn recent chat context into one high-quality prompt for image generation. Infer the user's intended subject, setting, composition, lighting, perspective, medium, materials, color palette, mood, and any explicit constraints from the conversation. If the request is brief, add sensible visual detail without changing the core idea. Stay faithful to what the user wants, do not invent named entities or unsafe details they did not request, and output strict JSON only: {\"prompt\":\"...\"}. Chat history: <chat_history>{{MESSAGES:END:8}}</chat_history>"
+DEFAULT_IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE="You turn recent chat context and the selected image model into one high-quality image request. A system note in the chat history may tell you which image model is selected and which parameters are already set. Infer the user's intended subject, setting, composition, lighting, perspective, medium, materials, color palette, mood, and any explicit constraints from the conversation. If the request is brief, add sensible visual detail without changing the core idea. Stay faithful to what the user wants, do not invent named entities or unsafe details they did not request. You may optionally suggest a negative prompt, image size, and step count when that would materially improve the result; otherwise omit them. Prefer conservative step counts for fast FLUX or schnell style models unless the user explicitly asks for a slower, higher-detail render. Output strict JSON only using the keys you are setting: {\"prompt\":\"...\",\"negative_prompt\":\"...\",\"size\":\"1024x1024\",\"steps\":6,\"rationale\":\"...\"}. Chat history: <chat_history>{{MESSAGES:END:8}}</chat_history>"
 PROJECT_NODES_REF="d98eb1c02e966a99eb0c8ce66434feaa2c9049c3"
 PROJECT_E2EE_PROXY_IMAGE="parachutes/e2ee-proxy:latest@sha256:0af4965c84e3eace05063fe2a013e818c30dd3687e9690a3bea83ae1df3b9a56"
 PROJECT_CADDY_IMAGE="caddy:2.11.2-alpine@sha256:a1b7e624f860619cea121bdbc5dec2e112401666298c6507c6793b0a3ee6fc8e"
@@ -562,6 +562,8 @@ write_env_file() {
         echo '# Native image generation in chat. Chutes deployments discover live diffusion chutes and route to /generate automatically.'
         env_line ENABLE_IMAGE_GENERATION "$ENABLE_IMAGE_GENERATION"
         env_line ENABLE_IMAGE_PROMPT_GENERATION "$ENABLE_IMAGE_PROMPT_GENERATION"
+        env_line ENABLE_TITLE_GENERATION "$ENABLE_TITLE_GENERATION"
+        env_line ENABLE_FOLLOW_UP_GENERATION "$ENABLE_FOLLOW_UP_GENERATION"
         env_line IMAGE_GENERATION_ENGINE "$IMAGE_GENERATION_ENGINE"
         env_line IMAGE_GENERATION_MODEL "$IMAGE_GENERATION_MODEL"
         env_line IMAGES_OPENAI_API_BASE_URL "$IMAGES_OPENAI_API_BASE_URL"
@@ -2007,6 +2009,8 @@ for overridable_var in \
     OPENWEBUI_MODELS_CACHE_TTL \
     OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL \
     ENABLE_IMAGE_PROMPT_GENERATION \
+    ENABLE_TITLE_GENERATION \
+    ENABLE_FOLLOW_UP_GENERATION \
     TASK_MODEL \
     TASK_MODEL_EXTERNAL \
     IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE \
@@ -2080,6 +2084,8 @@ for overridable_var in \
     OPENWEBUI_MODELS_CACHE_TTL \
     OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL \
     ENABLE_IMAGE_PROMPT_GENERATION \
+    ENABLE_TITLE_GENERATION \
+    ENABLE_FOLLOW_UP_GENERATION \
     TASK_MODEL \
     TASK_MODEL_EXTERNAL \
     IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE \
@@ -2126,6 +2132,8 @@ ENABLE_WEB_SEARCH="${ENABLE_WEB_SEARCH:-false}"
 WEB_SEARCH_ENGINE="${WEB_SEARCH_ENGINE:-duckduckgo}"
 ENABLE_IMAGE_GENERATION="${ENABLE_IMAGE_GENERATION:-true}"
 ENABLE_IMAGE_PROMPT_GENERATION="${ENABLE_IMAGE_PROMPT_GENERATION:-true}"
+ENABLE_TITLE_GENERATION="${ENABLE_TITLE_GENERATION:-true}"
+ENABLE_FOLLOW_UP_GENERATION="${ENABLE_FOLLOW_UP_GENERATION:-true}"
 IMAGE_GENERATION_ENGINE="${IMAGE_GENERATION_ENGINE:-openai}"
 IMAGE_GENERATION_MODEL="${IMAGE_GENERATION_MODEL:-chutes-auto-image}"
 IMAGES_OPENAI_API_BASE_URL="${IMAGES_OPENAI_API_BASE_URL:-$OPENWEBUI_API_BASE_URL}"

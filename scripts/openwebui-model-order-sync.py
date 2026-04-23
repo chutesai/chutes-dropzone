@@ -31,12 +31,15 @@ PROVIDER_LOGOS: dict[str, str] = {
 CHUTES_LOGO_URL = "/static/chutes-logo.svg"
 AUTO_MODEL_DESCRIPTION = "Best available model."
 DEFAULT_IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE = (
-    'You turn recent chat context into one high-quality prompt for image generation. '
-    "Infer the user's intended subject, setting, composition, lighting, perspective, medium, "
-    "materials, color palette, mood, and any explicit constraints from the conversation. "
-    "If the request is brief, add sensible visual detail without changing the core idea. "
-    "Stay faithful to what the user wants, do not invent named entities or unsafe details they did not request, "
-    'and output strict JSON only: {"prompt":"..."}. '
+    'You turn recent chat context and the selected image model into one high-quality image request. '
+    "A system note in the chat history may tell you which image model is selected and which parameters are already set. "
+    "Infer the user's intended subject, setting, composition, lighting, perspective, medium, materials, color palette, "
+    "mood, and any explicit constraints from the conversation. If the request is brief, add sensible visual detail "
+    "without changing the core idea. Stay faithful to what the user wants, do not invent named entities or unsafe "
+    "details they did not request. You may optionally suggest a negative prompt, image size, and step count when that "
+    "would materially improve the result; otherwise omit them. Prefer conservative step counts for fast FLUX or schnell "
+    'style models unless the user explicitly asks for a slower, higher-detail render. Output strict JSON only using '
+    'only keys you are setting: {"prompt":"...","negative_prompt":"...","size":"1024x1024","steps":6,"rationale":"..."}. '
     "Chat history: <chat_history>{{MESSAGES:END:8}}</chat_history>"
 )
 
@@ -485,6 +488,14 @@ def desired_task_model_external() -> str:
     return (os.environ.get("TASK_MODEL_EXTERNAL") or "").strip()
 
 
+def desired_title_generation_enabled() -> bool:
+    return (os.environ.get("ENABLE_TITLE_GENERATION") or "true").strip().lower() == "true"
+
+
+def desired_follow_up_generation_enabled() -> bool:
+    return (os.environ.get("ENABLE_FOLLOW_UP_GENERATION") or "true").strip().lower() == "true"
+
+
 def desired_image_prompt_generation_prompt_template() -> str:
     return (
         os.environ.get("IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE")
@@ -593,7 +604,7 @@ def sync_image_config(token: str) -> bool:
 
 
 def sync_task_config(token: str) -> bool:
-    """Keep OpenWebUI task config aligned so the selected chat model rewrites image prompts."""
+    """Keep task config aligned so image turns stay polished and predictable."""
 
     task_config = request_json("GET", "/api/v1/tasks/config", token)
     if not isinstance(task_config, dict):
@@ -602,6 +613,8 @@ def sync_task_config(token: str) -> bool:
     updated = dict(task_config)
     updated["TASK_MODEL"] = desired_task_model()
     updated["TASK_MODEL_EXTERNAL"] = desired_task_model_external()
+    updated["ENABLE_TITLE_GENERATION"] = desired_title_generation_enabled()
+    updated["ENABLE_FOLLOW_UP_GENERATION"] = desired_follow_up_generation_enabled()
     updated["IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE"] = (
         desired_image_prompt_generation_prompt_template()
     )
@@ -610,10 +623,15 @@ def sync_task_config(token: str) -> bool:
     for key in (
         "TASK_MODEL",
         "TASK_MODEL_EXTERNAL",
+        "ENABLE_TITLE_GENERATION",
+        "ENABLE_FOLLOW_UP_GENERATION",
         "IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE",
     ):
         current = task_config.get(key)
-        if (current or "") != (updated.get(key) or ""):
+        if isinstance(updated.get(key), bool):
+            if bool(current) != bool(updated.get(key)):
+                changed_keys.append(key)
+        elif (current or "") != (updated.get(key) or ""):
             changed_keys.append(key)
 
     if not changed_keys:

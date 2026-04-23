@@ -227,12 +227,15 @@ if desired_mode == "openai":
         )
 
 default_image_prompt_template = (
-    'You turn recent chat context into one high-quality prompt for image generation. '
-    "Infer the user's intended subject, setting, composition, lighting, perspective, medium, "
-    "materials, color palette, mood, and any explicit constraints from the conversation. "
-    "If the request is brief, add sensible visual detail without changing the core idea. "
-    "Stay faithful to what the user wants, do not invent named entities or unsafe details they did not request, "
-    'and output strict JSON only: {"prompt":"..."}. '
+    'You turn recent chat context and the selected image model into one high-quality image request. '
+    "A system note in the chat history may tell you which image model is selected and which parameters are already set. "
+    "Infer the user's intended subject, setting, composition, lighting, perspective, medium, materials, color palette, "
+    "mood, and any explicit constraints from the conversation. If the request is brief, add sensible visual detail "
+    "without changing the core idea. Stay faithful to what the user wants, do not invent named entities or unsafe "
+    "details they did not request. You may optionally suggest a negative prompt, image size, and step count when that "
+    "would materially improve the result; otherwise omit them. Prefer conservative step counts for fast FLUX or schnell "
+    'style models unless the user explicitly asks for a slower, higher-detail render. Output strict JSON only using '
+    'only keys you are setting: {"prompt":"...","negative_prompt":"...","size":"1024x1024","steps":6,"rationale":"..."}. '
     "Chat history: <chat_history>{{MESSAGES:END:8}}</chat_history>"
 )
 
@@ -292,6 +295,12 @@ if not isinstance(task_config, dict):
 
 expected_task_model = (os.environ.get("TASK_MODEL") or "").strip()
 expected_task_model_external = (os.environ.get("TASK_MODEL_EXTERNAL") or "").strip()
+expected_title_generation_enabled = (
+    os.environ.get("ENABLE_TITLE_GENERATION") or "true"
+).strip().lower() == "true"
+expected_follow_up_generation_enabled = (
+    os.environ.get("ENABLE_FOLLOW_UP_GENERATION") or "true"
+).strip().lower() == "true"
 expected_image_prompt_template = (
     os.environ.get("IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE")
     or default_image_prompt_template
@@ -305,6 +314,16 @@ if (task_config.get("TASK_MODEL") or "") != expected_task_model:
 if (task_config.get("TASK_MODEL_EXTERNAL") or "") != expected_task_model_external:
     raise SystemExit(
         f"external task model mismatch: expected {expected_task_model_external or '<selected chat model>'} got {(task_config.get('TASK_MODEL_EXTERNAL') or '') or '<selected chat model>'}"
+    )
+
+if bool(task_config.get("ENABLE_TITLE_GENERATION")) != expected_title_generation_enabled:
+    raise SystemExit(
+        f"title generation mismatch: expected {expected_title_generation_enabled} got {bool(task_config.get('ENABLE_TITLE_GENERATION'))}"
+    )
+
+if bool(task_config.get("ENABLE_FOLLOW_UP_GENERATION")) != expected_follow_up_generation_enabled:
+    raise SystemExit(
+        f"follow-up generation mismatch: expected {expected_follow_up_generation_enabled} got {bool(task_config.get('ENABLE_FOLLOW_UP_GENERATION'))}"
     )
 
 if (task_config.get("IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE") or "") != expected_image_prompt_template:

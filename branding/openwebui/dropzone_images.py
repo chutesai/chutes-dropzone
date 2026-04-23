@@ -503,6 +503,16 @@ def get_chutes_image_models(user=None) -> list[dict[str, Any]]:
     return rendered
 
 
+async def _resolve_request_access_token(request: Request, user=None) -> str:
+    oauth_token = await get_request_oauth_token(request, user) if user else None
+    access_token = (
+        str(oauth_token.get("access_token") or "").strip() if isinstance(oauth_token, dict) else ""
+    )
+    if access_token:
+        return access_token
+    return str(getattr(request.app.state.config, "IMAGES_OPENAI_API_KEY", "") or "").strip()
+
+
 def _resolve_selected_model(model_id: str, token: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
     model_id = _normalize_model_id(model_id)
     discovered = _discover_models(token)
@@ -565,6 +575,41 @@ def _generation_payload(request: Request, form_data) -> dict[str, Any]:
             payload["num_inference_steps"] = steps_value
 
     return payload
+
+
+def _payload_size(payload: dict[str, Any]) -> str:
+    width = payload.get("width")
+    height = payload.get("height")
+    if isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0:
+        return f"{width}x{height}"
+    return ""
+
+
+async def describe_chutes_image_request(request: Request, form_data, user=None) -> dict[str, Any]:
+    access_token = await _resolve_request_access_token(request, user)
+    if not access_token:
+        raise HTTPException(
+            status_code=502,
+            detail="No Chutes image authorization is available for this request",
+        )
+
+    requested_model = get_chutes_image_model(request, form_data)
+    payload = _generation_payload(request, form_data)
+    selected_model, _ = _resolve_selected_model(requested_model, access_token)
+    selected_name = _friendly_image_name(selected_model)
+
+    return {
+        "requested_model": requested_model,
+        "selected_model": {
+            "id": str(selected_model.get("id") or "").strip(),
+            "name": selected_name,
+            "slug": str(selected_model.get("slug") or "").strip(),
+            "chute_id": str(selected_model.get("chute_id") or "").strip(),
+        },
+        "payload": dict(payload),
+        "traffic_mode": _traffic_mode(),
+        "size": _payload_size(payload),
+    }
 
 
 def _image_request_target(selected_model: dict[str, Any]) -> tuple[str, dict[str, Any], str]:
@@ -766,13 +811,7 @@ def _generate_chutes_images_blocking(
 
 
 async def generate_chutes_images(request: Request, form_data, user=None) -> tuple[list[tuple[bytes, str]], dict[str, Any]]:
-    oauth_token = await get_request_oauth_token(request, user) if user else None
-    access_token = (
-        str(oauth_token.get("access_token") or "").strip() if isinstance(oauth_token, dict) else ""
-    )
-    if not access_token:
-        access_token = str(getattr(request.app.state.config, "IMAGES_OPENAI_API_KEY", "") or "").strip()
-
+    access_token = await _resolve_request_access_token(request, user)
     if not access_token:
         raise HTTPException(
             status_code=502,
