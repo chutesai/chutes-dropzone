@@ -371,6 +371,11 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
   border-color: rgba(243, 190, 92, 0.42);
 }
 
+.chutes-image-model-select:disabled {
+  opacity: 0.74;
+  cursor: progress;
+}
+
 [data-chutes-nav-slot="n8n"] .chutes-account-link:hover,
 [data-chutes-nav-slot="n8n"] .chutes-account-link:focus-visible {
   transform: translateY(-1px);

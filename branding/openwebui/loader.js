@@ -1097,16 +1097,29 @@
     node.removeAttribute("data-chutes-tooltip-bound");
   }
 
+  function setImageModelPickerPlaceholder(selectNode, label) {
+    if (!selectNode) return;
+    imageModelOptionSignature = "";
+    selectNode.innerHTML = "";
+    selectNode.disabled = true;
+    selectNode.removeAttribute("title");
+
+    var option = document.createElement("option");
+    option.value = "";
+    option.textContent = label;
+    selectNode.appendChild(option);
+  }
+
   function ensureImageModelPicker() {
     var button = findImageGenerationButton();
-    if (!button || !isImageGenerationEnabled(button)) {
+    if (!button) {
       removeImageModelPicker();
       return;
     }
 
     queueImageModelFetch();
 
-    if (!imageModelsLoaded || !imageModels.length) {
+    if (!isImageGenerationEnabled(button)) {
       removeImageModelPicker();
       return;
     }
@@ -1141,6 +1154,24 @@
     var selectNode = slot.querySelector("select");
     if (!selectNode) return;
 
+    if (!imageModelsLoaded) {
+      setImageModelPickerPlaceholder(selectNode, "Loading image models...");
+      clearTooltip(slot);
+      if (controlRow && (slot.parentNode !== controlRow || slot !== controlRow.lastElementChild)) {
+        controlRow.appendChild(slot);
+      }
+      return;
+    }
+
+    if (!imageModels.length) {
+      setImageModelPickerPlaceholder(selectNode, "Image models unavailable");
+      clearTooltip(slot);
+      if (controlRow && (slot.parentNode !== controlRow || slot !== controlRow.lastElementChild)) {
+        controlRow.appendChild(slot);
+      }
+      return;
+    }
+
     var signature = getImageModelOptionSignature(imageModels);
     var previousValue = selectNode.value || getStoredImageModelId() || getDefaultImageModelId();
     var needsOptionRefresh =
@@ -1157,6 +1188,7 @@
         selectNode.appendChild(option);
       });
     }
+    selectNode.disabled = false;
 
     var selectedModel =
       findImageModelById(previousValue) ||

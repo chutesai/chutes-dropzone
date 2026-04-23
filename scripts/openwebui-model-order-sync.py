@@ -30,6 +30,15 @@ PROVIDER_LOGOS: dict[str, str] = {
 
 CHUTES_LOGO_URL = "/static/chutes-logo.svg"
 AUTO_MODEL_DESCRIPTION = "Best available model."
+DEFAULT_IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE = (
+    'You turn recent chat context into one high-quality prompt for image generation. '
+    "Infer the user's intended subject, setting, composition, lighting, perspective, medium, "
+    "materials, color palette, mood, and any explicit constraints from the conversation. "
+    "If the request is brief, add sensible visual detail without changing the core idea. "
+    "Stay faithful to what the user wants, do not invent named entities or unsafe details they did not request, "
+    'and output strict JSON only: {"prompt":"..."}. '
+    "Chat history: <chat_history>{{MESSAGES:END:8}}</chat_history>"
+)
 
 HF_AVATAR_RE = re.compile(
     r"https://cdn-avatars\.huggingface\.co/v1/production/uploads/[a-f0-9]+/[A-Za-z0-9_-]+\.\w+"
@@ -451,6 +460,12 @@ def desired_image_generation_enabled() -> bool:
     return (os.environ.get("ENABLE_IMAGE_GENERATION") or "true").strip().lower() == "true"
 
 
+def desired_image_prompt_generation_enabled() -> bool:
+    return (
+        os.environ.get("ENABLE_IMAGE_PROMPT_GENERATION") or "true"
+    ).strip().lower() == "true"
+
+
 def desired_image_generation_engine() -> str:
     return (os.environ.get("IMAGE_GENERATION_ENGINE") or "openai").strip() or "openai"
 
@@ -460,6 +475,21 @@ def desired_image_generation_model() -> str:
         os.environ.get("IMAGE_GENERATION_MODEL")
         or "chutes-auto-image"
     ).strip() or "chutes-auto-image"
+
+
+def desired_task_model() -> str:
+    return (os.environ.get("TASK_MODEL") or "").strip()
+
+
+def desired_task_model_external() -> str:
+    return (os.environ.get("TASK_MODEL_EXTERNAL") or "").strip()
+
+
+def desired_image_prompt_generation_prompt_template() -> str:
+    return (
+        os.environ.get("IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE")
+        or DEFAULT_IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE
+    ).strip() or DEFAULT_IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE
 
 
 def desired_images_openai_api_base_url() -> str:
@@ -531,6 +561,7 @@ def sync_image_config(token: str) -> bool:
 
     updated = dict(image_config)
     updated["ENABLE_IMAGE_GENERATION"] = desired_image_generation_enabled()
+    updated["ENABLE_IMAGE_PROMPT_GENERATION"] = desired_image_prompt_generation_enabled()
     updated["IMAGE_GENERATION_ENGINE"] = desired_image_generation_engine()
     updated["IMAGE_GENERATION_MODEL"] = desired_image_generation_model()
 
@@ -545,6 +576,7 @@ def sync_image_config(token: str) -> bool:
     changed_keys = []
     for key in (
         "ENABLE_IMAGE_GENERATION",
+        "ENABLE_IMAGE_PROMPT_GENERATION",
         "IMAGE_GENERATION_ENGINE",
         "IMAGE_GENERATION_MODEL",
         "IMAGES_OPENAI_API_BASE_URL",
@@ -557,6 +589,37 @@ def sync_image_config(token: str) -> bool:
         return False
 
     request_json("POST", "/api/v1/images/config/update", token, updated)
+    return True
+
+
+def sync_task_config(token: str) -> bool:
+    """Keep OpenWebUI task config aligned so the selected chat model rewrites image prompts."""
+
+    task_config = request_json("GET", "/api/v1/tasks/config", token)
+    if not isinstance(task_config, dict):
+        return False
+
+    updated = dict(task_config)
+    updated["TASK_MODEL"] = desired_task_model()
+    updated["TASK_MODEL_EXTERNAL"] = desired_task_model_external()
+    updated["IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE"] = (
+        desired_image_prompt_generation_prompt_template()
+    )
+
+    changed_keys = []
+    for key in (
+        "TASK_MODEL",
+        "TASK_MODEL_EXTERNAL",
+        "IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE",
+    ):
+        current = task_config.get(key)
+        if (current or "") != (updated.get(key) or ""):
+            changed_keys.append(key)
+
+    if not changed_keys:
+        return False
+
+    request_json("POST", "/api/v1/tasks/config/update", token, updated)
     return True
 
 
@@ -684,6 +747,9 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
 
     if sync_image_config(token):
         updates.append("IMAGE_GENERATION")
+
+    if sync_task_config(token):
+        updates.append("IMAGE_PROMPT_TASKS")
 
     models_payload = request_json("GET", "/api/models?refresh=true", token)
     models = models_payload.get("data", []) if isinstance(models_payload, dict) else []

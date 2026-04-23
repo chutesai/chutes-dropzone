@@ -24,6 +24,7 @@ RECONFIGURE=false
 WIPE=false
 DEFAULT_CHUTES_SSO_SCOPES="openid profile chutes:read chutes:invoke"
 LEGACY_CHUTES_SSO_SCOPES="openid email profile chutes:read chutes:invoke"
+DEFAULT_IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE="You turn recent chat context into one high-quality prompt for image generation. Infer the user's intended subject, setting, composition, lighting, perspective, medium, materials, color palette, mood, and any explicit constraints from the conversation. If the request is brief, add sensible visual detail without changing the core idea. Stay faithful to what the user wants, do not invent named entities or unsafe details they did not request, and output strict JSON only: {\"prompt\":\"...\"}. Chat history: <chat_history>{{MESSAGES:END:8}}</chat_history>"
 
 # ---------------------------------------------------------------------------
 # Compose-mode detection: if DB_TYPE=postgresdb, this container is running
@@ -915,12 +916,16 @@ write_env_file() {
         env_line WEB_SEARCH_ENGINE "${WEB_SEARCH_ENGINE:-duckduckgo}"
         echo '# Native image generation in chat. Chutes deployments discover live diffusion chutes and route directly or through the local proxy automatically.'
         env_line ENABLE_IMAGE_GENERATION "${ENABLE_IMAGE_GENERATION:-true}"
+        env_line ENABLE_IMAGE_PROMPT_GENERATION "${ENABLE_IMAGE_PROMPT_GENERATION:-true}"
         env_line IMAGE_GENERATION_ENGINE "${IMAGE_GENERATION_ENGINE:-openai}"
         env_line IMAGE_GENERATION_MODEL "${IMAGE_GENERATION_MODEL:-chutes-auto-image}"
         env_line IMAGES_OPENAI_API_BASE_URL "${IMAGES_OPENAI_API_BASE_URL:-$OPENWEBUI_API_BASE_URL}"
         env_line IMAGES_OPENAI_API_KEY "${IMAGES_OPENAI_API_KEY:-${OPENWEBUI_API_KEY:-}}"
         env_line IMAGES_OPENAI_API_PARAMS "${IMAGES_OPENAI_API_PARAMS:-}"
         env_line DROPZONE_IMAGE_GENERATION_PROVIDER "${DROPZONE_IMAGE_GENERATION_PROVIDER:-chutes}"
+        env_line TASK_MODEL "${TASK_MODEL:-}"
+        env_line TASK_MODEL_EXTERNAL "${TASK_MODEL_EXTERNAL:-}"
+        env_line IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE "${IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE:-$DEFAULT_IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE}"
         echo '# STT modes: "local" (container-local faster-whisper), "openai" (Chutes Whisper bridge), or "web" (browser speech API).'
         env_line DROPZONE_AUDIO_STT_ENGINE "${DROPZONE_AUDIO_STT_ENGINE:-local}"
         env_line DROPZONE_AUDIO_STT_LOCAL_MODEL "${DROPZONE_AUDIO_STT_LOCAL_MODEL:-base}"
@@ -1183,12 +1188,16 @@ OPENWEBUI_API_BASE_URL="${OPENWEBUI_API_BASE_URL:-https://llm.chutes.ai/v1}"
 ENABLE_WEB_SEARCH="${ENABLE_WEB_SEARCH:-false}"
 WEB_SEARCH_ENGINE="${WEB_SEARCH_ENGINE:-duckduckgo}"
 ENABLE_IMAGE_GENERATION="${ENABLE_IMAGE_GENERATION:-true}"
+ENABLE_IMAGE_PROMPT_GENERATION="${ENABLE_IMAGE_PROMPT_GENERATION:-true}"
 IMAGE_GENERATION_ENGINE="${IMAGE_GENERATION_ENGINE:-openai}"
 IMAGE_GENERATION_MODEL="${IMAGE_GENERATION_MODEL:-chutes-auto-image}"
 IMAGES_OPENAI_API_BASE_URL="${IMAGES_OPENAI_API_BASE_URL:-$OPENWEBUI_API_BASE_URL}"
 IMAGES_OPENAI_API_KEY="${IMAGES_OPENAI_API_KEY:-${OPENWEBUI_API_KEY:-}}"
 IMAGES_OPENAI_API_PARAMS="${IMAGES_OPENAI_API_PARAMS:-}"
 DROPZONE_IMAGE_GENERATION_PROVIDER="${DROPZONE_IMAGE_GENERATION_PROVIDER:-chutes}"
+TASK_MODEL="${TASK_MODEL:-}"
+TASK_MODEL_EXTERNAL="${TASK_MODEL_EXTERNAL:-}"
+IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE="${IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE:-$DEFAULT_IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE}"
 
 # Database: external postgres if host is set, else sqlite
 if [ -n "${DB_POSTGRESDB_HOST:-}" ]; then
@@ -1291,12 +1300,16 @@ export OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL="${OPENWEBUI_MODEL_ORDER_SYNC_INTERVA
 export ENABLE_WEB_SEARCH="${ENABLE_WEB_SEARCH:-false}"
 export WEB_SEARCH_ENGINE="${WEB_SEARCH_ENGINE:-duckduckgo}"
 export ENABLE_IMAGE_GENERATION="${ENABLE_IMAGE_GENERATION:-true}"
+export ENABLE_IMAGE_PROMPT_GENERATION="${ENABLE_IMAGE_PROMPT_GENERATION:-true}"
 export IMAGE_GENERATION_ENGINE="${IMAGE_GENERATION_ENGINE:-openai}"
 export IMAGE_GENERATION_MODEL="${IMAGE_GENERATION_MODEL:-chutes-auto-image}"
 export IMAGES_OPENAI_API_BASE_URL="${IMAGES_OPENAI_API_BASE_URL:-$OPENWEBUI_API_BASE_URL}"
 export IMAGES_OPENAI_API_KEY="${IMAGES_OPENAI_API_KEY:-${OPENWEBUI_API_KEY:-}}"
 export IMAGES_OPENAI_API_PARAMS="${IMAGES_OPENAI_API_PARAMS:-}"
 export DROPZONE_IMAGE_GENERATION_PROVIDER="${DROPZONE_IMAGE_GENERATION_PROVIDER:-chutes}"
+export TASK_MODEL="${TASK_MODEL:-}"
+export TASK_MODEL_EXTERNAL="${TASK_MODEL_EXTERNAL:-}"
+export IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE="${IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE:-$DEFAULT_IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE}"
 export OPENWEBUI_SYNC_BASE_URL="http://127.0.0.1:8080"
 export DROPZONE_ENABLE_OPENWEBUI="${DROPZONE_ENABLE_OPENWEBUI:-true}"
 export DROPZONE_ENABLE_N8N="${DROPZONE_ENABLE_N8N:-true}"

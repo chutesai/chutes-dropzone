@@ -99,6 +99,15 @@ def patch_main(path: Path) -> None:
             '            if "," not in base_model_id and base_model_id not in request.app.state.MODELS:\n',
             "multi-model routing bypass",
         )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "            form_data, metadata, events = await process_chat_payload(request, form_data, user, metadata, model)\n\n            response = await chat_completion_handler(request, form_data, user)\n",
+            "            form_data, metadata, events = await process_chat_payload(request, form_data, user, metadata, model)\n\n            response = await chat_completion_handler(request, form_data, user)\r\n",
+        ],
+        "            form_data, metadata, events = await process_chat_payload(request, form_data, user, metadata, model)\n\n            response_override = metadata.pop('_dropzone_response_override', None)\n            if response_override is not None:\n                response = response_override\n            else:\n                response = await chat_completion_handler(request, form_data, user)\n",
+        "dropzone image response override bypass",
+    )
     path.write_text(patched, encoding="utf-8")
 
 
@@ -187,6 +196,38 @@ def patch_middleware(path: Path) -> None:
         ],
         "async def get_system_oauth_token(request, user):\n    return await get_request_oauth_token(request, user)\n",
         "system oauth token fallback for middleware",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "            system_message_content = '<context>The requested image has been edited and created and is now being shown to the user. Let them know that it has been generated.</context>'\n",
+        ],
+        "            metadata['_dropzone_response_override'] = {'choices': [{'message': {'content': ''}}]}\n",
+        "dropzone image edit success override",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "            system_message_content = f'<context>Image generation was attempted but failed. The system is currently unable to generate the image. Tell the user that the following error occurred: {error_message}</context>'\n",
+        ],
+        "            metadata['_dropzone_response_override'] = {\n                'choices': [\n                    {\n                        'message': {\n                            'content': f'Image generation failed: {error_message or \"Unknown error\"}'\n                        }\n                    }\n                ]\n            }\n",
+        "dropzone image edit failure override",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "            system_message_content = '<context>The requested image has been created by the system successfully and is now being shown to the user. Let the user know that the image they requested has been generated and is now shown in the chat.</context>'\n",
+        ],
+        "            metadata['_dropzone_response_override'] = {'choices': [{'message': {'content': ''}}]}\n",
+        "dropzone image create success override",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "            system_message_content = f'<context>Image generation was attempted but failed because of an error. The system is currently unable to generate the image. Tell the user that the following error occurred: {error_message}</context>'\n",
+        ],
+        "            metadata['_dropzone_response_override'] = {\n                'choices': [\n                    {\n                        'message': {\n                            'content': f'Image generation failed: {error_message or \"Unknown error\"}'\n                        }\n                    }\n                ]\n            }\n",
+        "dropzone image create failure override",
     )
     path.write_text(patched, encoding="utf-8")
 

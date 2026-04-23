@@ -226,24 +226,49 @@ if desired_mode == "openai":
             f"audio remote STT model mismatch: expected {expected_remote_model} got {stt_config.get('MODEL', '')}"
         )
 
+default_image_prompt_template = (
+    'You turn recent chat context into one high-quality prompt for image generation. '
+    "Infer the user's intended subject, setting, composition, lighting, perspective, medium, "
+    "materials, color palette, mood, and any explicit constraints from the conversation. "
+    "If the request is brief, add sensible visual detail without changing the core idea. "
+    "Stay faithful to what the user wants, do not invent named entities or unsafe details they did not request, "
+    'and output strict JSON only: {"prompt":"..."}. '
+    "Chat history: <chat_history>{{MESSAGES:END:8}}</chat_history>"
+)
+
 image_config = request_json("/api/v1/images/config", token)
 if not isinstance(image_config, dict):
     raise SystemExit("image generation config is unavailable")
 
 expected_image_enabled = (os.environ.get("ENABLE_IMAGE_GENERATION") or "true").strip().lower() == "true"
+expected_image_prompt_enabled = (
+    os.environ.get("ENABLE_IMAGE_PROMPT_GENERATION") or "true"
+).strip().lower() == "true"
 expected_image_engine = (os.environ.get("IMAGE_GENERATION_ENGINE") or "openai").strip() or "openai"
 expected_image_model = (
     os.environ.get("IMAGE_GENERATION_MODEL") or "chutes-auto-image"
 ).strip() or "chutes-auto-image"
-expected_image_base_url = (
-    os.environ.get("IMAGES_OPENAI_API_BASE_URL")
-    or os.environ.get("OPENWEBUI_API_BASE_URL")
-    or "https://llm.chutes.ai/v1"
-).strip()
+expected_image_base_url = (os.environ.get("IMAGES_OPENAI_API_BASE_URL") or "").strip()
+if not expected_image_base_url:
+    traffic_mode = (os.environ.get("CHUTES_TRAFFIC_MODE") or "direct").strip().lower()
+    if traffic_mode == "e2ee-proxy":
+        proxy = (os.environ.get("CHUTES_PROXY_INTERNAL_URL") or "").strip().rstrip("/")
+        if proxy:
+            expected_image_base_url = f"{proxy}/v1"
+if not expected_image_base_url:
+    expected_image_base_url = (
+        os.environ.get("OPENWEBUI_API_BASE_URL")
+        or "https://llm.chutes.ai/v1"
+    ).strip()
 
 if bool(image_config.get("ENABLE_IMAGE_GENERATION")) != expected_image_enabled:
     raise SystemExit(
         f"image generation enabled mismatch: expected {expected_image_enabled} got {bool(image_config.get('ENABLE_IMAGE_GENERATION'))}"
+    )
+
+if bool(image_config.get("ENABLE_IMAGE_PROMPT_GENERATION")) != expected_image_prompt_enabled:
+    raise SystemExit(
+        f"image prompt generation mismatch: expected {expected_image_prompt_enabled} got {bool(image_config.get('ENABLE_IMAGE_PROMPT_GENERATION'))}"
     )
 
 if image_config.get("IMAGE_GENERATION_ENGINE", "") != expected_image_engine:
@@ -260,6 +285,30 @@ if expected_image_base_url and image_config.get("IMAGES_OPENAI_API_BASE_URL", ""
     raise SystemExit(
         f"image generation base URL mismatch: expected {expected_image_base_url} got {image_config.get('IMAGES_OPENAI_API_BASE_URL', '')}"
     )
+
+task_config = request_json("/api/v1/tasks/config", token)
+if not isinstance(task_config, dict):
+    raise SystemExit("task config is unavailable")
+
+expected_task_model = (os.environ.get("TASK_MODEL") or "").strip()
+expected_task_model_external = (os.environ.get("TASK_MODEL_EXTERNAL") or "").strip()
+expected_image_prompt_template = (
+    os.environ.get("IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE")
+    or default_image_prompt_template
+).strip() or default_image_prompt_template
+
+if (task_config.get("TASK_MODEL") or "") != expected_task_model:
+    raise SystemExit(
+        f"task model mismatch: expected {expected_task_model or '<selected chat model>'} got {(task_config.get('TASK_MODEL') or '') or '<selected chat model>'}"
+    )
+
+if (task_config.get("TASK_MODEL_EXTERNAL") or "") != expected_task_model_external:
+    raise SystemExit(
+        f"external task model mismatch: expected {expected_task_model_external or '<selected chat model>'} got {(task_config.get('TASK_MODEL_EXTERNAL') or '') or '<selected chat model>'}"
+    )
+
+if (task_config.get("IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE") or "") != expected_image_prompt_template:
+    raise SystemExit("image prompt template mismatch")
 PY
 }
 
