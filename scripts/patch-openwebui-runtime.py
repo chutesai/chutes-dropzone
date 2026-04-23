@@ -21,6 +21,17 @@ def replace_one_of_or_keep(text: str, olds: list[str], new: str, label: str) -> 
     return replace_one_of(text, olds, new, label)
 
 
+def replace_all_of_or_keep(text: str, olds: list[str], new: str, label: str) -> str:
+    replaced = False
+    for old in olds:
+        if old in text:
+            text = text.replace(old, new)
+            replaced = True
+    if replaced or new in text:
+        return text
+    raise SystemExit(f"missing expected {label} block")
+
+
 def insert_after_one_of(text: str, anchors: list[str], addition: str, label: str) -> str:
     if addition in text:
         return text
@@ -197,37 +208,23 @@ def patch_middleware(path: Path) -> None:
         "async def get_system_oauth_token(request, user):\n    return await get_request_oauth_token(request, user)\n",
         "system oauth token fallback for middleware",
     )
-    patched = replace_one_of_or_keep(
+    patched = replace_all_of_or_keep(
         patched,
         [
             "            system_message_content = '<context>The requested image has been edited and created and is now being shown to the user. Let them know that it has been generated.</context>'\n",
-        ],
-        "            metadata['_dropzone_response_override'] = {'choices': [{'message': {'content': ''}}]}\n",
-        "dropzone image edit success override",
-    )
-    patched = replace_one_of_or_keep(
-        patched,
-        [
-            "            system_message_content = f'<context>Image generation was attempted but failed. The system is currently unable to generate the image. Tell the user that the following error occurred: {error_message}</context>'\n",
-        ],
-        "            metadata['_dropzone_response_override'] = {\n                'choices': [\n                    {\n                        'message': {\n                            'content': f'Image generation failed: {error_message or \"Unknown error\"}'\n                        }\n                    }\n                ]\n            }\n",
-        "dropzone image edit failure override",
-    )
-    patched = replace_one_of_or_keep(
-        patched,
-        [
             "            system_message_content = '<context>The requested image has been created by the system successfully and is now being shown to the user. Let the user know that the image they requested has been generated and is now shown in the chat.</context>'\n",
         ],
         "            metadata['_dropzone_response_override'] = {'choices': [{'message': {'content': ''}}]}\n",
-        "dropzone image create success override",
+        "dropzone image success override",
     )
-    patched = replace_one_of_or_keep(
+    patched = replace_all_of_or_keep(
         patched,
         [
+            "            system_message_content = f'<context>Image generation was attempted but failed. The system is currently unable to generate the image. Tell the user that the following error occurred: {error_message}</context>'\n",
             "            system_message_content = f'<context>Image generation was attempted but failed because of an error. The system is currently unable to generate the image. Tell the user that the following error occurred: {error_message}</context>'\n",
         ],
         "            metadata['_dropzone_response_override'] = {\n                'choices': [\n                    {\n                        'message': {\n                            'content': f'Image generation failed: {error_message or \"Unknown error\"}'\n                        }\n                    }\n                ]\n            }\n",
-        "dropzone image create failure override",
+        "dropzone image failure override",
     )
     path.write_text(patched, encoding="utf-8")
 

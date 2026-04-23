@@ -1153,6 +1153,11 @@ fi
 if [ "$(grep -c 'COPY branding/openwebui/dropzone_images.py /app/backend/open_webui/dropzone_images.py' "$PROJECT_DIR/Dockerfile.local-repo")" -ge 2 ] && \
    grep -q 'patch_images_router(root / "backend" / "open_webui" / "routers" / "images.py")' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq "response_override = metadata.pop('_dropzone_response_override', None)" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq 'def replace_all_of_or_keep(text: str, olds: list[str], new: str, label: str) -> str:' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq "The requested image has been edited and created and is now being shown to the user." "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq "The requested image has been created by the system successfully and is now being shown to the user." "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq "Image generation was attempted but failed. The system is currently unable to generate the image." "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq "Image generation was attempted but failed because of an error." "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq "metadata['_dropzone_response_override'] = {'choices': [{'message': {'content': ''}}]}" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq 'Image generation failed: {error_message or \"Unknown error\"}' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
     pass "OpenWebUI image generation bridge is patched into the runtime without post-image model narration"
