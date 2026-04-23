@@ -15,6 +15,8 @@
   var IMAGE_MODEL_STORAGE_KEY = "chutes.dropzone.image.model";
   var IMAGE_MODEL_COOKIE_NAME = "dropzone-image-model";
   var IMAGE_ICON_PATH_PREFIX = "M21 7.6V20.4C21 20.7314";
+  var WEB_SEARCH_ICON_PATH_PREFIX = "M12 21a9.004";
+  var CODE_INTERPRETER_ICON_PATH_PREFIX = "M13 16H18";
   var MENU_MARKERS = ["New Chat", "Search", "Notes", "Folders", "Chats"];
   var DEFAULT_AUTH_REDIRECT = "/c/new";
   var DROPZONE_AUTH_MARKERS = ["Log in to Chutes", "Log in with Fingerprint"];
@@ -1038,13 +1040,24 @@
     return node;
   }
 
-  function findImageGenerationButton() {
+  function buttonHasIcon(button, pathPrefix) {
+    if (!button || !pathPrefix) return false;
+    return !!button.querySelector('svg path[d^="' + pathPrefix + '"]');
+  }
+
+  function isToolMenuFeatureButton(button, label) {
+    if (!button) return false;
+    return normalizeText(button.innerText).toLowerCase() === label.toLowerCase();
+  }
+
+  function findImageGenerationMenuButton() {
     var buttons = Array.prototype.slice
       .call(document.querySelectorAll("button"))
       .filter(function (button) {
         if (!isVisible(button)) return false;
-        return !!button.querySelector(
-          'svg path[d^="' + IMAGE_ICON_PATH_PREFIX + '"]'
+        return (
+          buttonHasIcon(button, IMAGE_ICON_PATH_PREFIX) &&
+          isToolMenuFeatureButton(button, "Image")
         );
       })
       .sort(function (left, right) {
@@ -1054,6 +1067,29 @@
       });
 
     return buttons[0] || null;
+  }
+
+  function hideCollapsedFeatureChips() {
+    var featureIcons = [
+      IMAGE_ICON_PATH_PREFIX,
+      WEB_SEARCH_ICON_PATH_PREFIX,
+      CODE_INTERPRETER_ICON_PATH_PREFIX,
+    ];
+
+    featureIcons.forEach(function (pathPrefix) {
+      Array.prototype.forEach.call(document.querySelectorAll("button"), function (button) {
+        if (!isVisible(button) || !buttonHasIcon(button, pathPrefix)) return;
+        if (button.id === "integration-menu-button" || button.id === "input-menu-button") return;
+        if (normalizeText(button.innerText)) return;
+        var className = String(button.getAttribute("class") || "");
+        if (className.indexOf("p-[7px]") === -1 || className.indexOf("group") === -1) {
+          return;
+        }
+        if (button.getAttribute("data-chutes-hidden-feature-chip") === "true") return;
+        button.setAttribute("data-chutes-hidden-feature-chip", "true");
+        button.style.display = "none";
+      });
+    });
   }
 
   function imageToggleState(node) {
@@ -1138,21 +1174,19 @@
   }
 
   function ensureImageModelPicker() {
-    var button = findImageGenerationButton();
+    var button = findImageGenerationMenuButton();
     if (!button) {
       removeImageModelPicker();
       return;
     }
-
-    queueImageModelFetch();
 
     if (!isImageGenerationEnabled(button)) {
       removeImageModelPicker();
       return;
     }
 
-    var wrapper = button.parentElement || button;
-    var controlRow = wrapper.parentNode || null;
+    queueImageModelFetch();
+
     var slot = document.querySelector('[data-chutes-image-model-slot="true"]');
     if (!slot) {
       slot = createElement("div", "chutes-image-model-picker");
@@ -1184,8 +1218,8 @@
     if (!imageModelsLoaded) {
       setImageModelPickerPlaceholder(selectNode, "Loading image models...");
       clearTooltip(slot);
-      if (controlRow && (slot.parentNode !== controlRow || slot !== controlRow.lastElementChild)) {
-        controlRow.appendChild(slot);
+      if (button.parentNode && slot.previousElementSibling !== button) {
+        button.insertAdjacentElement("afterend", slot);
       }
       return;
     }
@@ -1193,8 +1227,8 @@
     if (!imageModels.length) {
       setImageModelPickerPlaceholder(selectNode, "Image models unavailable");
       clearTooltip(slot);
-      if (controlRow && (slot.parentNode !== controlRow || slot !== controlRow.lastElementChild)) {
-        controlRow.appendChild(slot);
+      if (button.parentNode && slot.previousElementSibling !== button) {
+        button.insertAdjacentElement("afterend", slot);
       }
       return;
     }
@@ -1234,8 +1268,8 @@
     selectNode.setAttribute("title", selectedModel.description || selectedModel.name || "");
     clearTooltip(slot);
 
-    if (controlRow && (slot.parentNode !== controlRow || slot !== controlRow.lastElementChild)) {
-      controlRow.appendChild(slot);
+    if (button.parentNode && slot.previousElementSibling !== button) {
+      button.insertAdjacentElement("afterend", slot);
     }
   }
 
@@ -1767,6 +1801,7 @@
       syncCurrentUserAvatar(accountSummary);
     }
     ensureChutesAutoHint();
+    hideCollapsedFeatureChips();
     ensureImageModelPicker();
     ensureSidebarCard();
   }

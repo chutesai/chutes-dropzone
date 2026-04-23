@@ -227,6 +227,10 @@ Dropzone keeps that ordering fresh in the background with a server-side sync wor
 
 Web search is also enabled by default with a no-key DuckDuckGo backend and OpenWebUI's `safe_web` loader. The sync worker keeps the persisted OpenWebUI retrieval config aligned with `.env`, including conservative defaults for result count, loader concurrency, fetch length, SSL verification, and proxy trust. Operators can still disable it with `ENABLE_WEB_SEARCH=false` or narrow sources with `WEB_SEARCH_DOMAIN_FILTER_LIST`.
 
+For Chutes models that advertise native tool support, the sync worker also seeds `web_search` and `image_generation` into `defaultFeatureIds` and sets `function_calling=native`. That makes web and image available to the selected LLM by default without forcing a search or image job on every turn. Operators can set `OPENWEBUI_DEFAULT_FEATURE_IDS=""` to keep those tools available but off by default, or provide a comma-list such as `web_search`.
+
+Image generation uses the same native tool path. The chat palette stays clean when the tools menu is collapsed; the image on/off switch and image model selector live inside the tools menu.
+
 When `CHUTES_TRAFFIC_MODE=direct`, OpenWebUI talks straight to `https://llm.chutes.ai/v1` and n8n resolves text traffic against the native Chutes LLM endpoints.
 
 When `CHUTES_TRAFFIC_MODE=e2ee-proxy`, both OpenWebUI and n8n send invocation traffic through the shared `e2ee-proxy` sidecar. The sidecar's `/v1/models` catalog still sources model metadata anonymously from `https://llm.chutes.ai/v1/models`, then applies local TEE-only filtering when `ALLOW_NON_CONFIDENTIAL=false`.

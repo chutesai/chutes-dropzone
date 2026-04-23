@@ -30,6 +30,7 @@ PROVIDER_LOGOS: dict[str, str] = {
 
 CHUTES_LOGO_URL = "/static/chutes-logo.svg"
 AUTO_MODEL_DESCRIPTION = "Best available model."
+MANAGED_AGENTIC_FEATURES = ("web_search", "image_generation")
 DEFAULT_IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE = (
     'You turn recent chat context and the selected image model into one high-quality image request. '
     "A system note in the chat history may tell you which image model is selected and which parameters are already set. "
@@ -422,6 +423,96 @@ def fetch_public_models() -> tuple[list[dict], bool]:
     return collected_models, bool(collected_models)
 
 
+def model_id_for(model: dict) -> str:
+    return str(model.get("id") or model.get("name") or "").strip()
+
+
+def merge_models_by_id(*model_lists: list[dict]) -> dict[str, dict]:
+    """Merge model metadata, preferring entries with richer capability fields."""
+
+    merged: dict[str, dict] = {}
+    for model_list in model_lists:
+        for model in model_list or []:
+            if not isinstance(model, dict):
+                continue
+            model_id = model_id_for(model)
+            if not model_id:
+                continue
+
+            existing = merged.get(model_id)
+            if not existing:
+                merged[model_id] = model
+                continue
+
+            existing_features = supported_features_for(existing)
+            next_features = supported_features_for(model)
+            if next_features and not existing_features:
+                merged[model_id] = {**existing, **model}
+            else:
+                merged[model_id] = {**model, **existing}
+    return merged
+
+
+def supported_features_for(model: dict | None) -> set[str]:
+    if not isinstance(model, dict):
+        return set()
+
+    candidates = [
+        model.get("supported_features"),
+        (model.get("openai") or {}).get("supported_features")
+        if isinstance(model.get("openai"), dict)
+        else None,
+    ]
+    for candidate in candidates:
+        if isinstance(candidate, list):
+            return {str(item).strip().lower() for item in candidate if str(item).strip()}
+    return set()
+
+
+def supports_native_tools(model: dict | None) -> bool:
+    return "tools" in supported_features_for(model)
+
+
+def managed_agentic_metadata(existing_meta: dict | None, supports_tools: bool) -> dict:
+    """Apply Dropzone-owned tool defaults without discarding unrelated model metadata."""
+
+    meta = dict(existing_meta or {})
+    capabilities = dict(meta.get("capabilities") or {})
+    capabilities.update(
+        {
+            "builtin_tools": supports_tools,
+            "web_search": supports_tools,
+            "image_generation": supports_tools,
+        }
+    )
+    meta["capabilities"] = capabilities
+
+    existing_features = [
+        str(feature)
+        for feature in (meta.get("defaultFeatureIds") or [])
+        if str(feature) not in MANAGED_AGENTIC_FEATURES
+    ]
+    desired_features = list(desired_default_feature_ids()) if supports_tools else []
+    next_features = existing_features + [
+        feature for feature in desired_features if feature not in existing_features
+    ]
+    if next_features:
+        meta["defaultFeatureIds"] = next_features
+    else:
+        meta.pop("defaultFeatureIds", None)
+
+    return meta
+
+
+def managed_agentic_params(existing_params: dict | None, supports_tools: bool) -> dict:
+    params = dict(existing_params or {})
+    if supports_tools:
+        params["function_calling"] = "native"
+    elif params.get("function_calling") == "native":
+        params.pop("function_calling", None)
+    return params
+
+
 def admin_token() -> str:
     with get_db() as db:
         admin_user = Users.get_user_by_email(admin_email(), db)
@@ -552,6 +643,14 @@ def desired_title_generation_enabled() -> bool:
 
 def desired_follow_up_generation_enabled() -> bool:
     return (os.environ.get("ENABLE_FOLLOW_UP_GENERATION") or "true").strip().lower() == "true"
+
+
+def desired_default_feature_ids() -> list[str]:
+    raw = os.environ.get("OPENWEBUI_DEFAULT_FEATURE_IDS")
+    values = env_list("OPENWEBUI_DEFAULT_FEATURE_IDS", list(MANAGED_AGENTIC_FEATURES))
+    if raw is not None and raw.strip() == "":
+        return []
+    return [feature for feature in values if feature in MANAGED_AGENTIC_FEATURES]
 
 
 def desired_image_prompt_generation_prompt_template() -> str:
@@ -865,12 +964,17 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
     models_payload = request_json("GET", "/api/models?refresh=true", token)
     models = models_payload.get("data", []) if isinstance(models_payload, dict) else []
     used_backend_fallback = False
+    public_models, _ = fetch_public_models()
     if not isinstance(models, list) or not models:
-        models, used_backend_fallback = fetch_public_models()
+        if not public_models:
+            public_models, _ = fetch_public_models()
+        models = public_models
+        used_backend_fallback = bool(public_models)
     if not isinstance(models, list) or not models:
         raise SystemExit(
             "OpenWebUI model discovery returned no models after runtime configuration"
         )
+    model_lookup = merge_models_by_id(public_models, models)
 
     ordered_ids = ["chutes-auto"]
     seen_ids = {"chutes-auto"}
@@ -886,12 +990,20 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
         request_json("POST", "/api/v1/configs/models", token, models_config)
         updates.append("MODEL_ORDER_LIST")
 
-    logo_count = sync_model_logos(token, ordered_ids)
+    logo_count = sync_model_logos(token, ordered_ids, model_lookup)
     if logo_count:
-        updates.append(f"MODEL_LOGOS({logo_count})")
+        updates.append(f"MODEL_OVERRIDES({logo_count})")
 
     ranked = rank_models_by_capacity(set(ordered_ids))
     if ranked:
+        agentic_ranked = [
+            model_id
+            for model_id in ranked
+            if supports_native_tools(model_lookup.get(model_id))
+        ]
+        if agentic_ranked:
+            ranked = agentic_ranked
+
         auto_model_id = "chutes-auto"
         is_proxy = os.environ.get("CHUTES_TRAFFIC_MODE", "direct").strip().lower() == "e2ee-proxy"
         if is_proxy:
@@ -901,7 +1013,13 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
             auto_base = ",".join(ranked[:5])
             auto_models = ranked[:5]
 
-        auto_updated = sync_auto_model(token, auto_model_id, auto_base, auto_models)
+        auto_updated = sync_auto_model(
+            token,
+            auto_model_id,
+            auto_base,
+            auto_models,
+            supports_tools=bool(agentic_ranked),
+        )
         if auto_updated:
             updates.append(f"CHUTES_AUTO({ranked[0]}...)")
 
@@ -1079,7 +1197,11 @@ def generate_composite_logo(model_ids: list[str]) -> str:
 
 
 def sync_auto_model(
-    token: str, model_id: str, base_model_id: str, ranked: list[str]
+    token: str,
+    model_id: str,
+    base_model_id: str,
+    ranked: list[str],
+    supports_tools: bool = False,
 ) -> bool:
     """Create or update the Chutes Auto model with composite logo."""
     import hashlib
@@ -1120,12 +1242,29 @@ def sync_auto_model(
             current_routing_tooltip = getattr(existing.meta, "routing_tooltip", "") or ""
             current_profile_image = getattr(existing.meta, "profile_image_url", "") or ""
 
+        desired_meta = managed_agentic_metadata(
+            {
+                "description": description,
+                "routing_key": ranked_key,
+                "routing_models": routing_models,
+                **({"routing_tooltip": routing_tooltip} if routing_tooltip else {}),
+                **({"profile_image_url": composite} if composite else {}),
+            },
+            supports_tools,
+        )
+        desired_params = managed_agentic_params(
+            existing.params.model_dump() if existing.params else {},
+            supports_tools,
+        )
+
         if (
             current_desc == description
             and current_routing_key == ranked_key
             and current_routing_tooltip == routing_tooltip
             and current_base_model_id == base_model_id
             and ((not composite) or current_profile_image == composite)
+            and (existing.meta.model_dump() if existing.meta else {}) == desired_meta
+            and (existing.params.model_dump() if existing.params else {}) == desired_params
         ):
             return False
 
@@ -1138,6 +1277,7 @@ def sync_auto_model(
         meta["routing_tooltip"] = routing_tooltip
     if composite:
         meta["profile_image_url"] = composite
+    meta = managed_agentic_metadata(meta, supports_tools)
 
     if existing:
         try:
@@ -1146,7 +1286,10 @@ def sync_auto_model(
                 "name": name,
                 "base_model_id": base_model_id,
                 "meta": meta,
-                "params": existing.params.model_dump() if existing.params else {},
+                "params": managed_agentic_params(
+                    existing.params.model_dump() if existing.params else {},
+                    supports_tools,
+                ),
             })
             return True
         except Exception:
@@ -1158,38 +1301,51 @@ def sync_auto_model(
                 "name": name,
                 "base_model_id": base_model_id,
                 "meta": meta,
-                "params": {},
+                "params": managed_agentic_params({}, supports_tools),
             })
             return True
         except Exception:
             return False
 
 
-def sync_model_logos(token: str, model_ids: list[str]) -> int:
-    """Create or update model override records so OpenWebUI shows provider logos."""
+def sync_model_logos(
+    token: str,
+    model_ids: list[str],
+    models_by_id: dict[str, dict] | None = None,
+) -> int:
+    """Create/update model overrides for logos and safe agentic tool defaults."""
     from open_webui.models.models import Models
 
+    models_by_id = models_by_id or {}
     synced = 0
     for model_id in model_ids:
-        logo = logo_url_for_model(model_id)
-        if not logo:
+        if model_id == "chutes-auto":
             continue
+
+        logo = logo_url_for_model(model_id)
+        source_model = models_by_id.get(model_id, {"id": model_id})
+        tool_capable = supports_native_tools(source_model)
 
         with get_db() as db:
             existing = Models.get_model_by_id(model_id, db)
 
+        existing_meta = existing.meta.model_dump() if existing and existing.meta else {}
+        next_meta = managed_agentic_metadata(existing_meta, tool_capable)
+        if logo:
+            next_meta["profile_image_url"] = logo
+
+        existing_params = existing.params.model_dump() if existing and existing.params else {}
+        next_params = managed_agentic_params(existing_params, tool_capable)
+
         if existing:
-            current_url = ""
-            if existing.meta and hasattr(existing.meta, "profile_image_url"):
-                current_url = existing.meta.profile_image_url or ""
-            if current_url == logo:
+            if existing_meta == next_meta and existing_params == next_params:
                 continue
             try:
                 request_json("POST", "/api/v1/models/model/update", token, {
                     "id": model_id,
                     "name": existing.name or model_id,
-                    "meta": {"profile_image_url": logo},
-                    "params": existing.params.model_dump() if existing.params else {},
+                    "meta": next_meta,
+                    "params": next_params,
                 })
                 synced += 1
             except Exception:
@@ -1200,8 +1356,8 @@ def sync_model_logos(token: str, model_ids: list[str]) -> int:
                     "id": model_id,
                     "name": model_id,
                     "base_model_id": None,
-                    "meta": {"profile_image_url": logo},
-                    "params": {},
+                    "meta": next_meta,
+                    "params": next_params,
                 })
                 synced += 1
             except Exception:

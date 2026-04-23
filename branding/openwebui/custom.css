@@ -331,20 +331,17 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
 }
 
 .chutes-image-model-picker {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  align-self: center;
-  flex: 0 0 auto;
+  width: calc(100% - 3.1rem);
   min-width: 0;
-  max-width: min(12rem, 42vw);
-  margin-inline-start: 0.5rem;
-  order: 99;
+  margin: -0.1rem 0.55rem 0.35rem 2.55rem;
 }
 
 .chutes-image-model-select {
   width: 100%;
   min-height: 2rem;
-  max-width: inherit;
+  max-width: 100%;
   padding: 0.35rem 1.85rem 0.35rem 0.72rem;
   border: 1px solid var(--chutes-image-picker-border);
   border-radius: 0.5rem;

@@ -946,11 +946,14 @@ fi
 
 if grep -Fq 'function getImageModelOptionSignature(models)' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'function isImageGenerationEnabled(button)' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'function findImageGenerationMenuButton()' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'function hideCollapsedFeatureChips()' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'function setImageModelPickerPlaceholder(selectNode, label)' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'if (!button) {' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'if (!isImageGenerationEnabled(button)) {' "$PROJECT_DIR/branding/openwebui/loader.js" && \
-   grep -Fq 'var controlRow = wrapper.parentNode || null;' "$PROJECT_DIR/branding/openwebui/loader.js" && \
-   grep -Fq 'controlRow.appendChild(slot);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'button.insertAdjacentElement("afterend", slot);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'data-chutes-hidden-feature-chip' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'hideCollapsedFeatureChips();' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'var needsOptionRefresh =' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'imageModelOptionSignature = "";' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'selectNode.options.length !== imageModels.length' "$PROJECT_DIR/branding/openwebui/loader.js" && \
@@ -958,8 +961,8 @@ if grep -Fq 'function getImageModelOptionSignature(models)' "$PROJECT_DIR/brandi
    grep -Fq 'setImageModelPickerPlaceholder(selectNode, "Image models unavailable");' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'clearTooltip(slot);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    ! grep -Fq 'applyTooltip(slot, tooltipText);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
-   grep -Fq 'margin-inline-start: 0.5rem;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
-   grep -Fq 'order: 99;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
+   grep -Fq 'width: calc(100% - 3.1rem);' "$PROJECT_DIR/branding/openwebui/custom.css" && \
+   grep -Fq 'margin: -0.1rem 0.55rem 0.35rem 2.55rem;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq 'cursor: progress;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq 'lines.extend(["", "Top choices"])' "$PROJECT_DIR/branding/openwebui/dropzone_images.py" && \
    grep -Fq 'lines.append(f"+ {len(models) - 4} more live model(s)")' "$PROJECT_DIR/branding/openwebui/dropzone_images.py" && \
@@ -973,12 +976,12 @@ end = text.index("function ensureSettingsAboutHidden()", start)
 body = text[start:end]
 queue_idx = body.index("queueImageModelFetch();")
 gate_idx = body.index("if (!isImageGenerationEnabled(button)) {")
-assert queue_idx < gate_idx
+assert gate_idx < queue_idx
 PY
 then
-    pass "Image picker prefetches models, waits for active image mode, stays pinned to a stable slot, and keeps auto-model tooltip lightweight"
+    pass "Image picker lives in the tools menu, waits for active image mode, hides collapsed chips, and keeps auto-model tooltip lightweight"
 else
-    fail "Image picker prefetch, active-mode gating, stable slot anchoring, or auto-model tooltip trimming is missing"
+    fail "Image picker tools-menu placement, active-mode gating, collapsed-chip hiding, or auto-model tooltip trimming is missing"
 fi
 
 if command -v jq >/dev/null 2>&1; then
@@ -1240,6 +1243,7 @@ if grep -q '^ENABLE_WEB_SEARCH=' "$PROJECT_DIR/.env.example" && \
    grep -q '^BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=' "$PROJECT_DIR/.env.example" && \
    grep -q '^BYPASS_WEB_SEARCH_WEB_LOADER=' "$PROJECT_DIR/.env.example" && \
    grep -q '^DDGS_BACKEND=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^OPENWEBUI_DEFAULT_FEATURE_IDS=' "$PROJECT_DIR/.env.example" && \
    grep -q '^ENABLE_IMAGE_GENERATION=' "$PROJECT_DIR/.env.example" && \
    grep -q '^ENABLE_IMAGE_PROMPT_GENERATION=' "$PROJECT_DIR/.env.example" && \
    grep -q '^ENABLE_TITLE_GENERATION=' "$PROJECT_DIR/.env.example" && \
@@ -1278,6 +1282,7 @@ if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}' "$PROJECT_DIR/docker-
    grep -Fq 'BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=${BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL:-false}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'BYPASS_WEB_SEARCH_WEB_LOADER=${BYPASS_WEB_SEARCH_WEB_LOADER:-false}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'DDGS_BACKEND=${DDGS_BACKEND:-duckduckgo}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'OPENWEBUI_DEFAULT_FEATURE_IDS=${OPENWEBUI_DEFAULT_FEATURE_IDS:-web_search,image_generation}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'ENABLE_IMAGE_GENERATION=${ENABLE_IMAGE_GENERATION:-true}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'ENABLE_IMAGE_PROMPT_GENERATION=${ENABLE_IMAGE_PROMPT_GENERATION:-true}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'ENABLE_TITLE_GENERATION=${ENABLE_TITLE_GENERATION:-true}' "$PROJECT_DIR/docker-compose.yml" && \
@@ -1300,7 +1305,10 @@ if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}' "$PROJECT_DIR/docker-
    grep -Fq 'env_line DROPZONE_IMAGE_GENERATION_PROVIDER' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line ENABLE_WEB_SEARCH' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'env_line WEB_LOADER_ENGINE' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'env_line OPENWEBUI_DEFAULT_FEATURE_IDS' "$PROJECT_DIR/deploy.sh" && \
+   grep -Fq 'env_line OPENWEBUI_DEFAULT_FEATURE_IDS' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export ENABLE_WEB_SEARCH="${ENABLE_WEB_SEARCH:-true}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'export OPENWEBUI_DEFAULT_FEATURE_IDS="${OPENWEBUI_DEFAULT_FEATURE_IDS:-web_search,image_generation}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export WEB_SEARCH_RESULT_COUNT="${WEB_SEARCH_RESULT_COUNT:-5}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export WEB_LOADER_ENGINE="${WEB_LOADER_ENGINE:-safe_web}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export DDGS_BACKEND="${DDGS_BACKEND:-duckduckgo}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
@@ -1326,6 +1334,18 @@ if grep -Fq 'def sync_web_config' "$PROJECT_DIR/scripts/openwebui-model-order-sy
     pass "OpenWebUI web search defaults are runtime-synced and verified"
 else
     fail "OpenWebUI web search runtime sync or verification is incomplete"
+fi
+
+if grep -Fq 'MANAGED_AGENTIC_FEATURES = ("web_search", "image_generation")' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'def managed_agentic_metadata' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'def managed_agentic_params' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'params["function_calling"] = "native"' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'meta["defaultFeatureIds"] = next_features' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'supports_native_tools(model_lookup.get(model_id))' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'MODEL_OVERRIDES' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py"; then
+    pass "OpenWebUI model overrides default web/image to native tools instead of forced legacy actions"
+else
+    fail "OpenWebUI model overrides are missing native agentic web/image defaults"
 fi
 
 if grep -Fq 'converge_openwebui_runtime_config()' "$PROJECT_DIR/scripts/configure-openwebui.sh" && \
