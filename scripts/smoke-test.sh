@@ -962,8 +962,10 @@ if grep -Fq 'function getImageModelOptionSignature(models)' "$PROJECT_DIR/brandi
    grep -Fq 'setImageModelPickerPlaceholder(selectNode, "Image models unavailable");' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'clearTooltip(slot);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    ! grep -Fq 'applyTooltip(slot, tooltipText);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
-   grep -Fq 'width: calc(100% - 3.1rem);' "$PROJECT_DIR/branding/openwebui/custom.css" && \
-   grep -Fq 'margin: -0.1rem 0.55rem 0.35rem 2.55rem;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
+   grep -Fq 'grid-template-columns: 3rem minmax(18rem, 1fr);' "$PROJECT_DIR/branding/openwebui/custom.css" && \
+   grep -Fq 'width: min(28rem, calc(100vw - 1.5rem));' "$PROJECT_DIR/branding/openwebui/custom.css" && \
+   grep -Fq '.chutes-image-model-picker::before' "$PROJECT_DIR/branding/openwebui/custom.css" && \
+   grep -Fq 'grid-template-columns: 2.35rem minmax(0, 1fr);' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq 'cursor: progress;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq 'lines.extend(["", "Top choices"])' "$PROJECT_DIR/branding/openwebui/dropzone_images.py" && \
    grep -Fq 'lines.append(f"+ {len(models) - 4} more live model(s)")' "$PROJECT_DIR/branding/openwebui/dropzone_images.py" && \
