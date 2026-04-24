@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+import socket
 import time
 import urllib.error
 import urllib.parse
@@ -46,6 +47,11 @@ CHUTES_UTILIZATION_URL = os.environ.get(
 CHUTES_IMAGE_TIMEOUT = max(
     10, int((os.environ.get("DROPZONE_IMAGE_TIMEOUT_SECONDS") or "180").strip() or "180")
 )
+CHUTES_IMAGE_FALLBACK_ATTEMPTS = max(
+    1,
+    int((os.environ.get("DROPZONE_IMAGE_FALLBACK_ATTEMPTS") or "4").strip() or "4"),
+)
+TRANSIENT_IMAGE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
 
 def _traffic_mode() -> str:
@@ -544,6 +550,36 @@ def _resolve_selected_model(model_id: str, token: str = "") -> tuple[dict[str, A
     return _annotate_model_resolution(auto_selected, model_id, "fallback"), discovered
 
 
+def _candidate_image_models(model_id: str, token: str = "") -> list[dict[str, Any]]:
+    """Return the selected model followed by ranked fallbacks.
+
+    Chutes are independently deployed services, so a single image chute can
+    return a transient 5xx while others are healthy. Keeping fallback local to
+    auto-image routing prevents the chat model from retrying the same bad chute.
+    """
+    selected_model, discovered = _resolve_selected_model(model_id, token)
+    items = _routable_image_models(list(discovered.get("items") or []))
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def add(model: dict[str, Any]) -> None:
+        if len(candidates) >= CHUTES_IMAGE_FALLBACK_ATTEMPTS:
+            return
+        key = str(model.get("id") or model.get("chute_id") or model.get("slug") or "").strip()
+        if not key or key in seen:
+            return
+        seen.add(key)
+        candidates.append(dict(model))
+
+    add(selected_model)
+    for item in items:
+        add(item)
+        if len(candidates) >= CHUTES_IMAGE_FALLBACK_ATTEMPTS:
+            break
+
+    return candidates
+
+
 def _annotate_model_resolution(
     selected_model: dict[str, Any], requested_model: str, resolution: str
 ) -> dict[str, Any]:
@@ -559,6 +595,39 @@ def _annotate_model_resolution(
         selected["fallback_from"] = requested_id
         selected["fallback_to"] = selected_id
         selected["fallback_reason"] = "requested image model is unavailable; using Chutes Auto Image"
+    return selected
+
+
+def _annotate_runtime_fallback_model(
+    selected_model: dict[str, Any],
+    requested_model: str,
+    failures: list[dict[str, str]],
+) -> dict[str, Any]:
+    selected = dict(selected_model)
+    selected_id = str(selected.get("id") or "").strip()
+    requested_id = _normalize_model_id(requested_model) or AUTO_IMAGE_MODEL_ID
+    failed_models = [failure.get("model_id", "") for failure in failures if failure.get("model_id")]
+    last_failure = failures[-1] if failures else {}
+    last_model = str(last_failure.get("model_id") or "").strip()
+    last_error = str(last_failure.get("error") or "").strip()
+
+    selected["requested_model"] = requested_id
+    selected["resolved_model"] = selected_id
+    selected["model_resolution"] = "runtime_fallback"
+    selected["model_fallback"] = bool(failures)
+    selected["fallback_from"] = requested_id
+    selected["fallback_to"] = selected_id
+    selected["failed_image_models"] = failed_models
+    if last_model and last_error:
+        selected["fallback_reason"] = (
+            f"{last_model} failed transiently ({last_error}); using next available Chutes image model"
+        )
+    elif last_model:
+        selected["fallback_reason"] = (
+            f"{last_model} failed transiently; using next available Chutes image model"
+        )
+    else:
+        selected["fallback_reason"] = "previous image model failed transiently; using next available Chutes image model"
     return selected
 
 
@@ -851,53 +920,102 @@ def _generate_chutes_images_blocking(
     base_payload: dict[str, Any],
     image_count: int,
 ) -> tuple[list[tuple[bytes, str]], dict[str, Any]]:
-    selected_model, _ = _resolve_selected_model(requested_model, access_token)
-    url, extra_body, accept_header = _image_request_target(selected_model)
-    payload = {**extra_body, **base_payload}
+    candidates = _candidate_image_models(requested_model, access_token)
+    failures: list[dict[str, str]] = []
+    last_model = candidates[0] if candidates else {}
 
-    images: list[tuple[bytes, str]] = []
-    for _ in range(image_count):
-        request_data = json.dumps(payload).encode("utf-8")
-        chute_request = urllib.request.Request(
-            url,
-            data=request_data,
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json",
-                "Accept": accept_header,
-            },
-            method="POST",
+    for candidate in candidates:
+        selected_model = (
+            _annotate_runtime_fallback_model(candidate, requested_model, failures)
+            if failures
+            else candidate
         )
+        last_model = selected_model
+        url, extra_body, accept_header = _image_request_target(selected_model)
+        payload = {**extra_body, **base_payload}
+        candidate_images: list[tuple[bytes, str]] = []
+
         try:
-            with urllib.request.urlopen(chute_request, timeout=CHUTES_IMAGE_TIMEOUT) as response:
-                images.extend(
-                    _decode_generated_images(
-                        response.read(),
-                        response.headers.get("Content-Type", "image/jpeg"),
-                        access_token,
-                    )
+            while len(candidate_images) < image_count:
+                request_data = json.dumps(payload).encode("utf-8")
+                chute_request = urllib.request.Request(
+                    url,
+                    data=request_data,
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Content-Type": "application/json",
+                        "Accept": accept_header,
+                    },
+                    method="POST",
                 )
-                if len(images) >= image_count:
-                    break
+                with urllib.request.urlopen(chute_request, timeout=CHUTES_IMAGE_TIMEOUT) as response:
+                    candidate_images.extend(
+                        _decode_generated_images(
+                            response.read(),
+                            response.headers.get("Content-Type", "image/jpeg"),
+                            access_token,
+                        )
+                    )
+                    if len(candidate_images) >= image_count:
+                        break
+            if len(candidate_images) >= image_count:
+                if failures:
+                    log.warning(
+                        "image generation recovered with %s after %d transient failure(s)",
+                        selected_model.get("id"),
+                        len(failures),
+                    )
+                return candidate_images[:image_count], selected_model
+        except HTTPException:
+            raise
         except urllib.error.HTTPError as exc:
             raw_detail = exc.read()
             detail = _sanitize_upstream_error(raw_detail, exc.reason)
-            log.warning("image generation failed for %s: %s %s", selected_model["id"], exc.code, detail)
-            raise HTTPException(
-                status_code=502,
-                detail=(
-                    f"Chutes image generation failed for {selected_model['id']} "
-                    f"(HTTP {exc.code}): {detail}"
-                ),
-            ) from exc
+            error_label = f"HTTP {exc.code}: {detail}"
+            failure = {"model_id": str(selected_model.get("id") or ""), "error": error_label}
+            can_fallback = exc.code in TRANSIENT_IMAGE_STATUS_CODES and candidate is not candidates[-1]
+            log.warning(
+                "image generation failed for %s: %s %s%s",
+                selected_model.get("id"),
+                exc.code,
+                detail,
+                "; trying next image model" if can_fallback else "",
+            )
+            failures.append(failure)
+            if can_fallback:
+                continue
+            break
+        except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
+            detail = _sanitize_upstream_error(b"", exc)
+            failure = {"model_id": str(selected_model.get("id") or ""), "error": detail}
+            can_fallback = candidate is not candidates[-1]
+            log.warning(
+                "image generation failed for %s: %s%s",
+                selected_model.get("id"),
+                detail,
+                "; trying next image model" if can_fallback else "",
+            )
+            failures.append(failure)
+            if can_fallback:
+                continue
+            break
         except Exception as exc:
-            log.warning("image generation failed for %s: %s", selected_model["id"], exc)
+            log.warning("image generation failed for %s: %s", selected_model.get("id"), exc)
             raise HTTPException(
                 status_code=502,
-                detail=f"Chutes image generation failed for {selected_model['id']}",
+                detail=f"Chutes image generation failed for {selected_model.get('id') or 'selected model'}",
             ) from exc
 
-    return images[:image_count], selected_model
+    attempted = "; ".join(
+        f"{failure.get('model_id')}: {failure.get('error')}"
+        for failure in failures
+        if failure.get("model_id") or failure.get("error")
+    )
+    selected_id = str(last_model.get("id") or "selected model")
+    detail = f"Chutes image generation failed for {selected_id}"
+    if attempted:
+        detail = f"{detail}. Attempted image models: {attempted}"
+    raise HTTPException(status_code=502, detail=detail)
 
 
 async def generate_chutes_images(request: Request, form_data, user=None) -> tuple[list[tuple[bytes, str]], dict[str, Any]]:

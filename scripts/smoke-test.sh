@@ -480,7 +480,7 @@ PY
         fail "Dropzone image bridge proxy routing/default selection handling is incomplete"
     fi
 
-if python3 - <<'PY' >/dev/null 2>&1
+    if python3 - <<'PY' >/dev/null 2>&1
 import asyncio
 import sys
 import types
@@ -589,6 +589,113 @@ PY
         pass "Dropzone image generation keeps blocking chute I/O off the async event loop"
     else
         fail "Dropzone image generation can still block the async event loop"
+    fi
+
+    if python3 - <<'PY' >/dev/null 2>&1
+import io
+import os
+import sys
+import types
+import importlib.util
+
+fastapi_mod = types.ModuleType("fastapi")
+
+class HTTPException(Exception):
+    def __init__(self, status_code, detail=""):
+        self.status_code = status_code
+        self.detail = detail
+        super().__init__(detail)
+
+class Request:
+    pass
+
+fastapi_mod.HTTPException = HTTPException
+fastapi_mod.Request = Request
+sys.modules["fastapi"] = fastapi_mod
+
+pkg = types.ModuleType("open_webui")
+oauth_mod = types.ModuleType("open_webui.dropzone_oauth")
+
+async def _stub_get_request_oauth_token(*args, **kwargs):
+    return None
+
+def _stub_get_user_oauth_access_token(*args, **kwargs):
+    return ""
+
+oauth_mod.get_request_oauth_token = _stub_get_request_oauth_token
+oauth_mod.get_user_oauth_access_token = _stub_get_user_oauth_access_token
+sys.modules["open_webui"] = pkg
+sys.modules["open_webui.dropzone_oauth"] = oauth_mod
+
+spec = importlib.util.spec_from_file_location(
+    "dropzone_images",
+    "branding/openwebui/dropzone_images.py",
+)
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+os.environ["CHUTES_TRAFFIC_MODE"] = "direct"
+mod._candidate_image_models = lambda model_id, token="": [
+    {
+        "id": "chutes/FLUX.1-schnell",
+        "slug": "chutes-flux-1-schnell",
+        "chute_id": "flux",
+        "tee": True,
+    },
+    {
+        "id": "chutes/Qwen-Image-2512",
+        "slug": "chutes-qwen-image-2512",
+        "chute_id": "qwen",
+        "tee": True,
+    },
+]
+
+calls = []
+
+class FakeResponse:
+    headers = {"Content-Type": "image/png"}
+
+    def read(self):
+        return b"\x89PNG\r\n\x1a\n"
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+def fake_urlopen(request, timeout=0):
+    calls.append(request.full_url)
+    if "flux" in request.full_url:
+        raise mod.urllib.error.HTTPError(
+            request.full_url,
+            502,
+            "Bad Gateway",
+            {},
+            io.BytesIO(b"<html><h1>502 Bad Gateway</h1></html>"),
+        )
+    return FakeResponse()
+
+mod.urllib.request.urlopen = fake_urlopen
+images, selected = mod._generate_chutes_images_blocking(
+    "chutes/FLUX.1-schnell",
+    "token",
+    {"prompt": "a tiger on the great wall"},
+    1,
+)
+assert len(images) == 1
+assert selected["id"] == "chutes/Qwen-Image-2512"
+assert selected["model_fallback"] is True
+assert selected["failed_image_models"] == ["chutes/FLUX.1-schnell"]
+assert calls == [
+    "https://chutes-flux-1-schnell.chutes.ai/generate",
+    "https://chutes-qwen-image-2512.chutes.ai/generate",
+]
+PY
+    then
+        pass "Dropzone image generation falls through to the next live image model on transient chute failures"
+    else
+        fail "Dropzone image generation does not recover from transient chute failures"
     fi
 
     if python3 - <<'PY' >/dev/null 2>&1
