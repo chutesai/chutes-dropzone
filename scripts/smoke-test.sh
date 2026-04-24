@@ -1241,6 +1241,16 @@ for placeholder in __SERVER_NAME__ __RESOLVERS__ __CHUTES_V1_BLOCK__ __ROOT_ENTR
     fi
 done
 
+if grep -Fq 'microphone=(self)' "$PROJECT_DIR/conf/Caddyfile.template" && \
+   grep -Fq 'microphone=(self)' "$PROJECT_DIR/conf/local-proxy.nginx.template" && \
+   grep -Fq 'microphone=(self)' "$PROJECT_DIR/standalone/Caddyfile.template" && \
+   grep -Fq 'microphone=(self)' "$PROJECT_DIR/standalone/nginx-domain-http.conf.template" && \
+   grep -Fq 'microphone=(self)' "$PROJECT_DIR/standalone/nginx-standalone.conf.template"; then
+    pass "edge security policy allows same-origin microphone capture for OpenWebUI voice input"
+else
+    fail "edge security policy still blocks same-origin microphone capture"
+fi
+
 if grep -q '/tmp/nginx-domain-http.conf' "$PROJECT_DIR/standalone/s6-rc.d/openresty/run" && \
    grep -q 'STANDALONE_ACME_EMAIL' "$PROJECT_DIR/standalone/s6-rc.d/openresty/run" && \
    grep -q 'STANDALONE_ACME_EMAIL' "$PROJECT_DIR/standalone/s6-rc.d/caddy/run" && \

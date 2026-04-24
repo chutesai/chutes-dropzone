@@ -497,7 +497,7 @@ class TTSRequest(BaseModel):
     model: Optional[str] = "kokoro"
     input: str
     voice: Optional[str] = "af_heart"
-    response_format: Optional[str] = "wav"
+    response_format: Optional[str] = "mp3"
 
 
 async def _read_upload_limited(file: UploadFile, max_bytes: int) -> bytes:
@@ -536,6 +536,7 @@ async def text_to_speech(request: Request, body: TTSRequest, user=Depends(_resol
         _warmup_chute(tts["name"], token)
 
     try:
+        started = time.time()
         raw, upstream_content_type = _invoke_audio_request(
             tts,
             TTS_CORD,
@@ -545,6 +546,12 @@ async def text_to_speech(request: Request, body: TTSRequest, user=Depends(_resol
                 "response_format": body.response_format or "wav",
             },
             token,
+        )
+        log.info(
+            "tts generated via %s in %.2fs (%d bytes)",
+            tts.get("name"),
+            time.time() - started,
+            len(raw),
         )
     except urllib.error.HTTPError as e:
         raise HTTPException(status_code=e.code, detail=f"TTS chute error: {e.reason}")
@@ -607,6 +614,7 @@ async def speech_to_text(
     audio_b64 = base64.b64encode(audio_data).decode("ascii")
 
     try:
+        started = time.time()
         raw, _ = _invoke_audio_request(
             stt,
             STT_CORD,
@@ -617,6 +625,12 @@ async def speech_to_text(
             file_bytes=audio_data,
             filename=upload_filename,
             file_content_type=upload_content_type,
+        )
+        log.info(
+            "stt transcribed via %s in %.2fs (%d upload bytes)",
+            stt.get("name"),
+            time.time() - started,
+            len(audio_data),
         )
     except urllib.error.HTTPError as e:
         raise HTTPException(status_code=e.code, detail=f"STT chute error: {e.reason}")
