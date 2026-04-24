@@ -953,6 +953,7 @@ if grep -Fq 'function getImageModelOptionSignature(models)' "$PROJECT_DIR/brandi
    grep -Fq 'if (!isImageGenerationEnabled(button)) {' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'button.insertAdjacentElement("afterend", slot);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'data-chutes-hidden-feature-chip' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'button.querySelectorAll("[aria-pressed], [aria-checked], [aria-selected], [data-state], [data-selected], [class]")' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'hideCollapsedFeatureChips();' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'var needsOptionRefresh =' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'imageModelOptionSignature = "";' "$PROJECT_DIR/branding/openwebui/loader.js" && \

@@ -1128,6 +1128,13 @@
       current = current.parentElement;
     }
 
+    Array.prototype.forEach.call(
+      button.querySelectorAll("[aria-pressed], [aria-checked], [aria-selected], [data-state], [data-selected], [class]"),
+      function (node) {
+        nodes.push(node);
+      },
+    );
+
     for (var i = 0; i < nodes.length; i += 1) {
       var state = imageToggleState(nodes[i]);
       if (state === true) return true;
