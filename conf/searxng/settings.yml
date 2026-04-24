@@ -1,0 +1,46 @@
+use_default_settings:
+  engines:
+    keep_only:
+      - duckduckgo
+      - duckduckgo news
+      - google
+      - google news
+      - startpage
+      - startpage news
+      - yahoo news
+      - reuters
+      - wikipedia
+      - wikinews
+      - wiktionary
+      - arxiv
+      - semantic scholar
+      - pubmed
+      - openairepublications
+      - openairedatasets
+      - mdn
+      - github
+      - stackoverflow
+      - askubuntu
+      - superuser
+      - pypi
+      - docker hub
+      - openstreetmap
+
+general:
+  instance_name: "Chutes SearXNG"
+  enable_metrics: false
+
+search:
+  safe_search: 1
+  formats:
+    - html
+    - json
+
+server:
+  bind_address: "0.0.0.0"
+  port: 8080
+  secret_key: "dropzone-local-searxng-secret-change-me"
+  limiter: false
+  public_instance: false
+  method: "GET"
+  image_proxy: false

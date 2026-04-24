@@ -117,6 +117,36 @@ services:
     networks: [dropzone-net]
     restart: unless-stopped
 
+  searxng:
+    image: ${SEARXNG_IMAGE:-searxng/searxng:latest@sha256:c9100c29c14a77d5289263a671580226c3b8a396a1a0130d2f500f57076a0119}
+    environment:
+      - SEARXNG_BIND_ADDRESS=0.0.0.0
+      - SEARXNG_PORT=8080
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-dropzone-local-searxng-secret-change-me}
+      - SEARXNG_LIMITER=false
+      - SEARXNG_PUBLIC_INSTANCE=false
+      - SEARXNG_METHOD=GET
+      - SEARXNG_IMAGE_PROXY=false
+    volumes:
+      - ./conf/searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - searxng_cache:/var/cache/searxng
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O- http://127.0.0.1:8080/healthz >/dev/null 2>&1",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks: [dropzone-net]
+    restart: unless-stopped
+
   openwebui:
     image: ${DROPZONE_OPENWEBUI_IMAGE:-chutes-dropzone-openwebui:local}
     build:
@@ -165,9 +195,10 @@ services:
       - MODELS_CACHE_TTL=${OPENWEBUI_MODELS_CACHE_TTL:-300}
       - OPENWEBUI_DEFAULT_FEATURE_IDS=${OPENWEBUI_DEFAULT_FEATURE_IDS:-web_search,image_generation}
       - ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}
-      - WEB_SEARCH_ENGINE=${WEB_SEARCH_ENGINE:-duckduckgo}
+      - WEB_SEARCH_ENGINE=${WEB_SEARCH_ENGINE:-searxng}
       - WEB_SEARCH_RESULT_COUNT=${WEB_SEARCH_RESULT_COUNT:-5}
       - WEB_SEARCH_CONCURRENT_REQUESTS=${WEB_SEARCH_CONCURRENT_REQUESTS:-2}
+      - SEARXNG_QUERY_URL=${SEARXNG_QUERY_URL:-http://searxng:8080/search?q=<query>}
       - WEB_SEARCH_DOMAIN_FILTER_LIST=${WEB_SEARCH_DOMAIN_FILTER_LIST:-[]}
       - WEB_SEARCH_TRUST_ENV=${WEB_SEARCH_TRUST_ENV:-false}
       - WEB_FETCH_MAX_CONTENT_LENGTH=${WEB_FETCH_MAX_CONTENT_LENGTH:-50000}
@@ -217,6 +248,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      searxng:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -249,9 +282,10 @@ services:
       - OPENWEBUI_API_KEY=${OPENWEBUI_API_KEY:-}
       - OPENWEBUI_DEFAULT_FEATURE_IDS=${OPENWEBUI_DEFAULT_FEATURE_IDS:-web_search,image_generation}
       - ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}
-      - WEB_SEARCH_ENGINE=${WEB_SEARCH_ENGINE:-duckduckgo}
+      - WEB_SEARCH_ENGINE=${WEB_SEARCH_ENGINE:-searxng}
       - WEB_SEARCH_RESULT_COUNT=${WEB_SEARCH_RESULT_COUNT:-5}
       - WEB_SEARCH_CONCURRENT_REQUESTS=${WEB_SEARCH_CONCURRENT_REQUESTS:-2}
+      - SEARXNG_QUERY_URL=${SEARXNG_QUERY_URL:-http://searxng:8080/search?q=<query>}
       - WEB_SEARCH_DOMAIN_FILTER_LIST=${WEB_SEARCH_DOMAIN_FILTER_LIST:-[]}
       - WEB_SEARCH_TRUST_ENV=${WEB_SEARCH_TRUST_ENV:-false}
       - WEB_FETCH_MAX_CONTENT_LENGTH=${WEB_FETCH_MAX_CONTENT_LENGTH:-50000}
@@ -286,6 +320,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      searxng:
+        condition: service_healthy
       openwebui:
         condition: service_healthy
     healthcheck:
@@ -299,6 +335,7 @@ volumes:
   postgres_data:
   n8n_data:
   openwebui_data:
+  searxng_cache:
 
 networks:
   dropzone-net:

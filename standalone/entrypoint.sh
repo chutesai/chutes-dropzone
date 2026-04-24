@@ -913,11 +913,16 @@ write_env_file() {
         env_line OPENWEBUI_MODELS_CACHE_TTL "${OPENWEBUI_MODELS_CACHE_TTL:-300}"
         env_line OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL "${OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL:-300}"
         env_line OPENWEBUI_DEFAULT_FEATURE_IDS "${OPENWEBUI_DEFAULT_FEATURE_IDS:-web_search,image_generation}"
-        echo '# Native web search in chat. duckduckgo + safe_web gives no-key browsing with conservative fetch limits.'
+        echo '# Native web search in chat. Set SEARXNG_QUERY_URL to use an external/private SearXNG instance; otherwise DuckDuckGo is used.'
+        web_search_engine_default="${WEB_SEARCH_ENGINE:-duckduckgo}"
+        if [ -z "${WEB_SEARCH_ENGINE:-}" ] && [ -n "${SEARXNG_QUERY_URL:-}" ]; then
+            web_search_engine_default="searxng"
+        fi
         env_line ENABLE_WEB_SEARCH "${ENABLE_WEB_SEARCH:-true}"
-        env_line WEB_SEARCH_ENGINE "${WEB_SEARCH_ENGINE:-duckduckgo}"
+        env_line WEB_SEARCH_ENGINE "$web_search_engine_default"
         env_line WEB_SEARCH_RESULT_COUNT "${WEB_SEARCH_RESULT_COUNT:-5}"
         env_line WEB_SEARCH_CONCURRENT_REQUESTS "${WEB_SEARCH_CONCURRENT_REQUESTS:-2}"
+        env_line SEARXNG_QUERY_URL "${SEARXNG_QUERY_URL:-}"
         env_line WEB_SEARCH_DOMAIN_FILTER_LIST "${WEB_SEARCH_DOMAIN_FILTER_LIST:-[]}"
         env_line WEB_SEARCH_TRUST_ENV "${WEB_SEARCH_TRUST_ENV:-false}"
         env_line WEB_FETCH_MAX_CONTENT_LENGTH "${WEB_FETCH_MAX_CONTENT_LENGTH:-50000}"
@@ -1212,7 +1217,18 @@ OPENWEBUI_ADMIN_NAME="${OPENWEBUI_ADMIN_NAME:-Dropzone Service Account}"
 OPENWEBUI_ADMIN_EMAIL="${OPENWEBUI_ADMIN_EMAIL:-svc-dropzone@internal.chutes.local}"
 OPENWEBUI_API_BASE_URL="${OPENWEBUI_API_BASE_URL:-https://llm.chutes.ai/v1}"
 ENABLE_WEB_SEARCH="${ENABLE_WEB_SEARCH:-true}"
-WEB_SEARCH_ENGINE="${WEB_SEARCH_ENGINE:-duckduckgo}"
+SEARXNG_QUERY_URL="${SEARXNG_QUERY_URL:-}"
+if [ -z "${WEB_SEARCH_ENGINE:-}" ]; then
+    if [ -n "$SEARXNG_QUERY_URL" ]; then
+        WEB_SEARCH_ENGINE="searxng"
+    else
+        WEB_SEARCH_ENGINE="duckduckgo"
+    fi
+fi
+if [ "$WEB_SEARCH_ENGINE" = "searxng" ] && [ -z "$SEARXNG_QUERY_URL" ]; then
+    log "WEB_SEARCH_ENGINE=searxng requires SEARXNG_QUERY_URL in standalone mode; falling back to duckduckgo"
+    WEB_SEARCH_ENGINE="duckduckgo"
+fi
 WEB_SEARCH_RESULT_COUNT="${WEB_SEARCH_RESULT_COUNT:-5}"
 WEB_SEARCH_CONCURRENT_REQUESTS="${WEB_SEARCH_CONCURRENT_REQUESTS:-2}"
 WEB_SEARCH_DOMAIN_FILTER_LIST="${WEB_SEARCH_DOMAIN_FILTER_LIST:-[]}"
@@ -1345,9 +1361,10 @@ export MODELS_CACHE_TTL="${OPENWEBUI_MODELS_CACHE_TTL:-300}"
 export OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL="${OPENWEBUI_MODEL_ORDER_SYNC_INTERVAL:-300}"
 export OPENWEBUI_DEFAULT_FEATURE_IDS="${OPENWEBUI_DEFAULT_FEATURE_IDS:-web_search,image_generation}"
 export ENABLE_WEB_SEARCH="${ENABLE_WEB_SEARCH:-true}"
-export WEB_SEARCH_ENGINE="${WEB_SEARCH_ENGINE:-duckduckgo}"
+export WEB_SEARCH_ENGINE="$WEB_SEARCH_ENGINE"
 export WEB_SEARCH_RESULT_COUNT="${WEB_SEARCH_RESULT_COUNT:-5}"
 export WEB_SEARCH_CONCURRENT_REQUESTS="${WEB_SEARCH_CONCURRENT_REQUESTS:-2}"
+export SEARXNG_QUERY_URL="${SEARXNG_QUERY_URL:-}"
 export WEB_SEARCH_DOMAIN_FILTER_LIST="${WEB_SEARCH_DOMAIN_FILTER_LIST:-[]}"
 export WEB_SEARCH_TRUST_ENV="${WEB_SEARCH_TRUST_ENV:-false}"
 export WEB_FETCH_MAX_CONTENT_LENGTH="${WEB_FETCH_MAX_CONTENT_LENGTH:-50000}"

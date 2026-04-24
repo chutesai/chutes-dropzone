@@ -567,11 +567,17 @@ def desired_web_config() -> dict:
     do not update existing volumes. The order-sync loop keeps them aligned.
     """
 
+    web_search_engine = (os.environ.get("WEB_SEARCH_ENGINE") or "").strip()
+    searxng_query_url = (os.environ.get("SEARXNG_QUERY_URL") or "").strip()
+    if not web_search_engine:
+        web_search_engine = "searxng" if searxng_query_url else "duckduckgo"
+
     return {
         "ENABLE_WEB_SEARCH": env_bool("ENABLE_WEB_SEARCH", True),
-        "WEB_SEARCH_ENGINE": (os.environ.get("WEB_SEARCH_ENGINE") or "duckduckgo").strip() or "duckduckgo",
+        "WEB_SEARCH_ENGINE": web_search_engine,
         "WEB_SEARCH_RESULT_COUNT": env_int("WEB_SEARCH_RESULT_COUNT", 5),
         "WEB_SEARCH_CONCURRENT_REQUESTS": env_int("WEB_SEARCH_CONCURRENT_REQUESTS", 2),
+        "SEARXNG_QUERY_URL": searxng_query_url,
         "WEB_SEARCH_DOMAIN_FILTER_LIST": env_list("WEB_SEARCH_DOMAIN_FILTER_LIST", []),
         "WEB_SEARCH_TRUST_ENV": env_bool("WEB_SEARCH_TRUST_ENV", False),
         "WEB_FETCH_MAX_CONTENT_LENGTH": env_int("WEB_FETCH_MAX_CONTENT_LENGTH", 50000),

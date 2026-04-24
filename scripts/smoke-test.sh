@@ -1377,6 +1377,13 @@ else
     fail ".env.example is missing OPENWEBUI_IMAGE"
 fi
 
+if grep -q '^SEARXNG_IMAGE=' "$PROJECT_DIR/.env.example" && \
+   grep -Fq 'searxng/searxng:latest@sha256:' "$PROJECT_DIR/.env.example"; then
+    pass ".env.example exposes the pinned SearXNG image"
+else
+    fail ".env.example is missing the pinned SearXNG image"
+fi
+
 if grep -q '^DROPZONE_ENABLE_PUBLIC_LANDING=' "$PROJECT_DIR/.env.example"; then
     pass ".env.example exposes DROPZONE_ENABLE_PUBLIC_LANDING"
 else
@@ -1393,6 +1400,8 @@ if grep -q '^ENABLE_WEB_SEARCH=' "$PROJECT_DIR/.env.example" && \
    grep -q '^WEB_SEARCH_ENGINE=' "$PROJECT_DIR/.env.example" && \
    grep -q '^WEB_SEARCH_RESULT_COUNT=' "$PROJECT_DIR/.env.example" && \
    grep -q '^WEB_SEARCH_CONCURRENT_REQUESTS=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^SEARXNG_QUERY_URL=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^SEARXNG_SECRET=' "$PROJECT_DIR/.env.example" && \
    grep -q '^WEB_SEARCH_DOMAIN_FILTER_LIST=' "$PROJECT_DIR/.env.example" && \
    grep -q '^WEB_SEARCH_TRUST_ENV=' "$PROJECT_DIR/.env.example" && \
    grep -q '^WEB_FETCH_MAX_CONTENT_LENGTH=' "$PROJECT_DIR/.env.example" && \
@@ -1429,9 +1438,12 @@ fi
 
 # shellcheck disable=SC2016
 if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}' "$PROJECT_DIR/docker-compose.yml" && \
-   grep -Fq 'WEB_SEARCH_ENGINE=${WEB_SEARCH_ENGINE:-duckduckgo}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'SEARXNG_IMAGE:-searxng/searxng:latest@sha256:' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'conf/searxng/settings.yml:/etc/searxng/settings.yml:ro' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'WEB_SEARCH_ENGINE=${WEB_SEARCH_ENGINE:-searxng}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'WEB_SEARCH_RESULT_COUNT=${WEB_SEARCH_RESULT_COUNT:-5}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'WEB_SEARCH_CONCURRENT_REQUESTS=${WEB_SEARCH_CONCURRENT_REQUESTS:-2}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'SEARXNG_QUERY_URL=${SEARXNG_QUERY_URL:-http://searxng:8080/search?q=<query>}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'WEB_SEARCH_DOMAIN_FILTER_LIST=${WEB_SEARCH_DOMAIN_FILTER_LIST:-[]}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'WEB_SEARCH_TRUST_ENV=${WEB_SEARCH_TRUST_ENV:-false}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'WEB_FETCH_MAX_CONTENT_LENGTH=${WEB_FETCH_MAX_CONTENT_LENGTH:-50000}' "$PROJECT_DIR/docker-compose.yml" && \
@@ -1456,6 +1468,8 @@ if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}' "$PROJECT_DIR/docker-
    grep -Fq 'IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE=${IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE:-}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'DROPZONE_IMAGE_GENERATION_PROVIDER=${DROPZONE_IMAGE_GENERATION_PROVIDER:-chutes}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'env_line ENABLE_WEB_SEARCH' "$PROJECT_DIR/deploy.sh" && \
+   grep -Fq 'env_line SEARXNG_QUERY_URL' "$PROJECT_DIR/deploy.sh" && \
+   grep -Fq 'env_line SEARXNG_SECRET' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line ENABLE_IMAGE_PROMPT_GENERATION' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line ENABLE_TITLE_GENERATION' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line ENABLE_FOLLOW_UP_GENERATION' "$PROJECT_DIR/deploy.sh" && \
@@ -1465,11 +1479,13 @@ if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}' "$PROJECT_DIR/docker-
    grep -Fq 'env_line IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE ' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line DROPZONE_IMAGE_GENERATION_PROVIDER' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line ENABLE_WEB_SEARCH' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'env_line SEARXNG_QUERY_URL' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'env_line CHUTES_PROXY_INTERNAL_URL' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'env_line WEB_LOADER_ENGINE' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'env_line OPENWEBUI_DEFAULT_FEATURE_IDS' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line OPENWEBUI_DEFAULT_FEATURE_IDS' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export ENABLE_WEB_SEARCH="${ENABLE_WEB_SEARCH:-true}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'export SEARXNG_QUERY_URL="${SEARXNG_QUERY_URL:-}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export OPENWEBUI_DEFAULT_FEATURE_IDS="${OPENWEBUI_DEFAULT_FEATURE_IDS:-web_search,image_generation}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export WEB_SEARCH_RESULT_COUNT="${WEB_SEARCH_RESULT_COUNT:-5}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export WEB_LOADER_ENGINE="${WEB_LOADER_ENGINE:-safe_web}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
@@ -1491,12 +1507,23 @@ fi
 
 if grep -Fq 'def sync_web_config' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq 'WEB_SEARCH_RESULT_COUNT' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'SEARXNG_QUERY_URL' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq 'DDGS_BACKEND' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq '/api/v1/retrieval/config/update' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq 'web search config mismatch' "$PROJECT_DIR/scripts/configure-openwebui.sh"; then
     pass "OpenWebUI web search defaults are runtime-synced and verified"
 else
     fail "OpenWebUI web search runtime sync or verification is incomplete"
+fi
+
+if grep -Fq 'use_default_settings:' "$PROJECT_DIR/conf/searxng/settings.yml" && \
+   grep -Fq 'keep_only:' "$PROJECT_DIR/conf/searxng/settings.yml" && \
+   grep -Fq 'duckduckgo' "$PROJECT_DIR/conf/searxng/settings.yml" && \
+   grep -Fq 'safe_search: 1' "$PROJECT_DIR/conf/searxng/settings.yml" && \
+   grep -Fq -- '- json' "$PROJECT_DIR/conf/searxng/settings.yml"; then
+    pass "SearXNG sidecar uses curated keyless engines and enables JSON search output"
+else
+    fail "SearXNG sidecar config is missing curated engines or JSON output"
 fi
 
 if grep -Fq 'MANAGED_AGENTIC_FEATURES = ("web_search", "image_generation")' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
