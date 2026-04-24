@@ -7,6 +7,7 @@ and translates between OpenAI's /v1/audio/* format and Chutes' invocation format
 Mounted by patch-openwebui-runtime.py into the OpenWebUI app.
 """
 
+import asyncio
 import base64
 import hmac
 import json
@@ -107,6 +108,7 @@ CHUTES_API_BASE = os.environ.get("CHUTES_IDP_BASE_URL", "https://api.chutes.ai")
 
 CACHE_TTL = 300  # 5 minutes
 WARMUP_COOLDOWN_SECONDS = 60
+TRANSIENT_AUDIO_HTTP_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 
 _cache: dict = {}
 _warmup_cache: dict[str, float] = {}
@@ -198,6 +200,39 @@ def _fetch_json(url: str, timeout: int = 15):
             return json.loads(resp.read().decode("utf-8"))
     except Exception:
         return None
+
+
+def _env_int(name: str, default: int, minimum: int = 1, maximum: int = 5) -> int:
+    try:
+        value = int(str(os.environ.get(name, default)).strip())
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+def _env_float(name: str, default: float, minimum: float = 0.0, maximum: float = 5.0) -> float:
+    try:
+        value = float(str(os.environ.get(name, default)).strip())
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+def _http_error_excerpt(error: urllib.error.HTTPError, limit: int = 512) -> str:
+    try:
+        body = error.read(limit + 1)
+    except Exception:
+        return ""
+    if not body:
+        return ""
+    text = body.decode("utf-8", errors="replace").strip()
+    lowered = text.lower()
+    gateway_markers = ("<html", "bad gateway", "service unavailable", "gateway timeout", "nginx")
+    if not any(marker in lowered for marker in gateway_markers):
+        return f"[redacted non-gateway error body, {len(body)} bytes]"
+    if len(text) > limit:
+        return f"{text[:limit]}..."
+    return text
 
 
 def _warmup_chute(name: str, token: str) -> None:
@@ -488,6 +523,47 @@ def _invoke_audio_request(
         return resp.read(), resp.headers.get("Content-Type", "")
 
 
+async def _invoke_tts_with_retries(tts: dict, payload: dict, token: str) -> tuple[bytes, str]:
+    attempts = _env_int("DROPZONE_AUDIO_TTS_RETRY_ATTEMPTS", 3, minimum=1, maximum=5)
+    base_delay = _env_float("DROPZONE_AUDIO_TTS_RETRY_BASE_DELAY_SECONDS", 0.4, maximum=3.0)
+
+    for attempt in range(1, attempts + 1):
+        try:
+            return _invoke_audio_request(tts, TTS_CORD, payload, token)
+        except HTTPException:
+            raise
+        except urllib.error.HTTPError as e:
+            body_excerpt = _http_error_excerpt(e)
+            log.warning(
+                "tts upstream http error via %s attempt %d/%d: status=%s reason=%s body=%s",
+                tts.get("name"),
+                attempt,
+                attempts,
+                e.code,
+                e.reason,
+                body_excerpt,
+            )
+            if e.code in TRANSIENT_AUDIO_HTTP_STATUS_CODES and attempt < attempts:
+                await asyncio.sleep(base_delay * attempt)
+                continue
+            detail = f"TTS chute error after {attempt} attempt(s): {e.reason}"
+            raise HTTPException(status_code=e.code, detail=detail)
+        except Exception as e:
+            log.warning(
+                "tts invocation error via %s attempt %d/%d: %s",
+                tts.get("name"),
+                attempt,
+                attempts,
+                e,
+            )
+            if attempt < attempts:
+                await asyncio.sleep(base_delay * attempt)
+                continue
+            raise HTTPException(status_code=502, detail=f"TTS invocation failed after {attempt} attempt(s): {e}")
+
+    raise HTTPException(status_code=502, detail="TTS invocation failed")
+
+
 MAX_TTS_INPUT_LENGTH = 10_000  # characters
 MAX_STT_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
 UPLOAD_READ_CHUNK_BYTES = 1024 * 1024  # 1 MB
@@ -535,28 +611,22 @@ async def text_to_speech(request: Request, body: TTSRequest, user=Depends(_resol
     if tts.get("score", 0) < 0.01:
         _warmup_chute(tts["name"], token)
 
-    try:
-        started = time.time()
-        raw, upstream_content_type = _invoke_audio_request(
-            tts,
-            TTS_CORD,
-            {
-                "text": body.input,
-                "voice": body.voice or "af_heart",
-                "response_format": body.response_format or "wav",
-            },
-            token,
-        )
-        log.info(
-            "tts generated via %s in %.2fs (%d bytes)",
-            tts.get("name"),
-            time.time() - started,
-            len(raw),
-        )
-    except urllib.error.HTTPError as e:
-        raise HTTPException(status_code=e.code, detail=f"TTS chute error: {e.reason}")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"TTS invocation failed: {e}")
+    started = time.time()
+    raw, upstream_content_type = await _invoke_tts_with_retries(
+        tts,
+        {
+            "text": body.input,
+            "voice": body.voice or "af_heart",
+            "response_format": body.response_format or "wav",
+        },
+        token,
+    )
+    log.info(
+        "tts generated via %s in %.2fs (%d bytes)",
+        tts.get("name"),
+        time.time() - started,
+        len(raw),
+    )
 
     # Chutes TTS returns raw audio bytes or JSON with base64
     content_type = _default_audio_content_type(body.response_format, upstream_content_type)

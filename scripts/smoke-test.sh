@@ -699,10 +699,12 @@ PY
     fi
 
     if python3 - <<'PY' >/dev/null 2>&1
+import asyncio
 import os
 import sys
 import types
 import importlib.util
+import urllib.error
 
 fastapi_mod = types.ModuleType("fastapi")
 
@@ -946,11 +948,51 @@ try:
     raise AssertionError("expected strict proxy requested-model rejection")
 except mod.HTTPException as exc:
     assert exc.status_code == 503
+
+os.environ["DROPZONE_AUDIO_TTS_RETRY_ATTEMPTS"] = "2"
+os.environ["DROPZONE_AUDIO_TTS_RETRY_BASE_DELAY_SECONDS"] = "0"
+retry_calls = []
+original_invoke_audio_request = mod._invoke_audio_request
+
+def flaky_tts(chute, cord, payload, token, **kwargs):
+    retry_calls.append(cord)
+    if len(retry_calls) == 1:
+        raise urllib.error.URLError("temporary gateway")
+    return b"audio", "audio/wav"
+
+mod._invoke_audio_request = flaky_tts
+try:
+    raw, content_type = asyncio.run(
+        mod._invoke_tts_with_retries({"name": "kokoro"}, {"text": "hello"}, "token")
+    )
+finally:
+    mod._invoke_audio_request = original_invoke_audio_request
+
+assert raw == b"audio"
+assert content_type == "audio/wav"
+assert retry_calls == [mod.TTS_CORD, mod.TTS_CORD]
+
+fatal_calls = []
+
+def fatal_tts(chute, cord, payload, token, **kwargs):
+    fatal_calls.append(cord)
+    raise mod.HTTPException(status_code=503, detail="proxy not configured")
+
+mod._invoke_audio_request = fatal_tts
+try:
+    asyncio.run(mod._invoke_tts_with_retries({"name": "kokoro"}, {"text": "hello"}, "token"))
+    raise AssertionError("expected fatal HTTPException to pass through")
+except mod.HTTPException as exc:
+    assert exc.status_code == 503
+finally:
+    mod._invoke_audio_request = original_invoke_audio_request
+
+assert fatal_calls == [mod.TTS_CORD]
 PY
     then
-        pass "Dropzone audio bridge honors proxy wire format, model selection, and strict-mode guardrails"
+        pass "Dropzone audio bridge honors proxy wire format, model selection, retries, and strict-mode guardrails"
     else
-        fail "Dropzone audio bridge proxy wire format/model selection/guardrails are incomplete"
+        fail "Dropzone audio bridge proxy wire format/model selection/retry/guardrails are incomplete"
     fi
 else
     skip "python3 not installed - cannot validate OpenWebUI model-order sync helper"
