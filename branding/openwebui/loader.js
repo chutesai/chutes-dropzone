@@ -1088,8 +1088,38 @@
     return true;
   }
 
+  function findToolsMenuPanel(button) {
+    if (!button) return null;
+
+    var current = button.parentElement;
+    for (var depth = 0; current && depth < 8; depth += 1) {
+      var text = normalizeText(current.innerText);
+      if (
+        text.indexOf("Web Search") !== -1 &&
+        text.indexOf("Image") !== -1 &&
+        text.indexOf("Code Interpreter") !== -1
+      ) {
+        return current;
+      }
+      current = current.parentElement;
+    }
+
+    return null;
+  }
+
   function findImageModelPickerAnchor(button) {
     if (!button) return null;
+
+    var panel = findToolsMenuPanel(button);
+    if (panel) {
+      var row = button;
+      while (row && row.parentElement !== panel) {
+        row = row.parentElement;
+      }
+      if (row && row !== panel && isVisible(row)) {
+        return row;
+      }
+    }
 
     var current = button.parentElement;
     for (var depth = 0; current && depth < 5; depth += 1) {
@@ -1114,7 +1144,11 @@
 
   function mountImageModelPicker(button, slot) {
     var anchor = findImageModelPickerAnchor(button) || button;
-    if (anchor && anchor.parentNode && slot.previousElementSibling !== anchor) {
+    if (
+      anchor &&
+      anchor.parentNode &&
+      (slot.parentNode !== anchor.parentNode || slot.previousElementSibling !== anchor)
+    ) {
       anchor.insertAdjacentElement("afterend", slot);
     }
   }

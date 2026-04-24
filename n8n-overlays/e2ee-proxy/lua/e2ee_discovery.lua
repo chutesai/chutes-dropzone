@@ -20,6 +20,7 @@ local model_map_expires = 0
 local MODEL_MAP_TTL = 300
 
 local nonce_cache = {}
+local chute_meta_cache = {}
 
 local API_BASE = "https://api.chutes.ai"
 local MODELS_BASE = "https://llm.chutes.ai"
@@ -57,10 +58,12 @@ local function decode_model_map(body)
     local map = {}
     for _, model in ipairs(data.data) do
         if model.id and model.chute_id then
-            map[model.id] = {
+            local entry = {
                 chute_id = model.chute_id,
                 confidential = model.confidential_compute == true,
             }
+            map[model.id] = entry
+            map[model.chute_id] = entry
         end
     end
 
@@ -100,24 +103,131 @@ local function check_confidential(model, entry)
     return entry.chute_id
 end
 
-function _M.resolve_chute_id(model, api_key)
-    if is_uuid(model) then
-        return model
+local function request_chute_metadata(chute_id, api_key)
+    local headers = {
+        ["Accept"] = "application/json",
+    }
+    if api_key and api_key ~= "" then
+        headers["Authorization"] = "Bearer " .. api_key
     end
 
+    local httpc = http.new()
+    httpc:set_timeout(10000)
+
+    local res, err = httpc:request_uri(API_BASE .. "/chutes/" .. ngx.escape_uri(chute_id), {
+        method = "GET",
+        headers = headers,
+        ssl_verify = true,
+    })
+
+    if not res then
+        return nil, "chute metadata request failed: " .. (err or "unknown")
+    end
+
+    if res.status ~= 200 then
+        return nil, "chute metadata returned " .. res.status .. ": " .. (res.body or ""):sub(1, 200)
+    end
+
+    local data = cjson.decode(res.body)
+    local chute = data and (data.chute or data)
+    if type(chute) ~= "table" then
+        return nil, "invalid chute metadata response"
+    end
+
+    return {
+        chute_id = chute.chute_id or chute.id or chute_id,
+        confidential = chute.tee == true or chute.confidential_compute == true,
+    }
+end
+
+local function fetch_chute_metadata(chute_id, api_key)
+    local now = ngx.now()
+    local cached = chute_meta_cache[chute_id]
+    if cached and now < cached.expires_at then
+        return cached.entry
+    end
+
+    local entry, err = request_chute_metadata(chute_id, api_key)
+    if not entry then
+        if cached then
+            return cached.entry
+        end
+        return nil, err
+    end
+
+    chute_meta_cache[chute_id] = {
+        entry = entry,
+        expires_at = now + MODEL_MAP_TTL,
+    }
+    return entry
+end
+
+local function cached_model_entry(model)
     local now = ngx.now()
 
     if model_map and now < model_map_expires then
         local entry = model_map[model]
         if entry then
-            return check_confidential(model, entry)
+            return entry
         end
     end
+    return nil
+end
 
+local function refresh_model_map(api_key)
+    local now = ngx.now()
     local map, err = fetch_model_map(api_key)
     if not map then
+        return nil, err
+    end
+
+    model_map = map
+    model_map_expires = now + MODEL_MAP_TTL
+    return map
+end
+
+local function resolve_uuid_chute_id(chute_id, api_key)
+    if allow_non_confidential then
+        return chute_id
+    end
+
+    local entry = cached_model_entry(chute_id)
+    if entry then
+        return check_confidential(chute_id, entry)
+    end
+
+    local map = refresh_model_map(api_key)
+    if map and map[chute_id] then
+        return check_confidential(chute_id, map[chute_id])
+    end
+    if not map and model_map and model_map[chute_id] then
+        return check_confidential(chute_id, model_map[chute_id])
+    end
+
+    entry = fetch_chute_metadata(chute_id, api_key)
+    if entry then
+        return check_confidential(chute_id, entry)
+    end
+
+    return nil, "chute '" .. chute_id .. "' is not known to be confidential compute (TEE); "
+        .. "refusing strict e2ee routing. Set ALLOW_NON_CONFIDENTIAL=true to override."
+end
+
+function _M.resolve_chute_id(model, api_key)
+    local base_model = (model or ""):match("^(.-):THINKING$") or model
+    if is_uuid(base_model) then
+        return resolve_uuid_chute_id(base_model, api_key)
+    end
+
+    local entry = cached_model_entry(base_model)
+    if entry then
+        return check_confidential(model, entry)
+    end
+
+    local map, err = refresh_model_map(api_key)
+    if not map then
         if model_map then
-            local entry = model_map[model]
+            entry = model_map[base_model]
             if entry then
                 return check_confidential(model, entry)
             end
@@ -125,10 +235,7 @@ function _M.resolve_chute_id(model, api_key)
         return nil, "failed to resolve model '" .. model .. "': " .. (err or "unknown")
     end
 
-    model_map = map
-    model_map_expires = now + MODEL_MAP_TTL
-
-    local entry = map[model]
+    entry = map[base_model]
     return check_confidential(model, entry)
 end
 

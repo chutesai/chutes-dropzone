@@ -425,6 +425,30 @@ assert "chutes/Qwen3-32B" not in ordered_ids
 rendered = mod.get_chutes_image_models()
 assert rendered[0]["id"] == "chutes/Qwen-Image-2512"
 assert rendered[-1]["id"] == mod.AUTO_IMAGE_MODEL_ID
+fallback_model, _ = mod._resolve_selected_model("chutes/Missing-Image", "")
+assert fallback_model["id"] == "chutes/Qwen-Image-2512"
+assert fallback_model["model_fallback"] is True
+assert fallback_model["fallback_from"] == "chutes/Missing-Image"
+assert fallback_model["fallback_to"] == "chutes/Qwen-Image-2512"
+assert fallback_model["fallback_reason"]
+
+cached_keys = set(mod._discovery_cache)
+assert any("mode:e2ee-proxy" in key for key in cached_keys)
+os.environ["CHUTES_TRAFFIC_MODE"] = "direct"
+mod._discover_models("")
+assert any("mode:direct" in key for key in mod._discovery_cache)
+assert len(mod._discovery_cache) > len(cached_keys)
+os.environ["CHUTES_TRAFFIC_MODE"] = "e2ee-proxy"
+
+sanitized = mod._sanitize_upstream_error(
+    b"<html><body><script>alert('secret')</script><h1>Bad Gateway</h1>" + (b"x" * 500) + b"</body></html>",
+    "raw fallback",
+    limit=80,
+)
+assert "<html" not in sanitized.lower()
+assert "<script" not in sanitized.lower()
+assert "alert" not in sanitized.lower()
+assert len(sanitized) <= 80
 
 request = types.SimpleNamespace(
     cookies={mod.IMAGE_MODEL_COOKIE_NAME: "chutes%2FJuggernautXL-Ragnarok"},
@@ -949,11 +973,13 @@ if grep -Fq 'function getImageModelOptionSignature(models)' "$PROJECT_DIR/brandi
    grep -Fq 'function findImageGenerationMenuButton()' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'function hideCollapsedFeatureChips()' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'function setImageModelPickerPlaceholder(selectNode, label)' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'function findToolsMenuPanel(button)' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'text.indexOf("Code Interpreter") !== -1' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'if (!button) {' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'if (!isImageGenerationEnabled(button)) {' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'function findImageModelPickerAnchor(button)' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'function mountImageModelPicker(button, slot)' "$PROJECT_DIR/branding/openwebui/loader.js" && \
-   grep -Fq 'slot.previousElementSibling !== anchor' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'slot.parentNode !== anchor.parentNode || slot.previousElementSibling !== anchor' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'anchor.insertAdjacentElement("afterend", slot);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'data-chutes-hidden-feature-chip' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'button.querySelectorAll("[aria-pressed], [aria-checked], [aria-selected], [data-state], [data-selected], [class]")' "$PROJECT_DIR/branding/openwebui/loader.js" && \
@@ -967,10 +993,11 @@ if grep -Fq 'function getImageModelOptionSignature(models)' "$PROJECT_DIR/brandi
    ! grep -Fq 'applyTooltip(slot, tooltipText);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'grid-column: 1 / -1;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq 'flex: 0 0 100%;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
-   grep -Fq 'grid-template-columns: 3rem minmax(0, 1fr);' "$PROJECT_DIR/branding/openwebui/custom.css" && \
+   grep -Fq 'display: block;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
+   grep -Fq 'padding-left: 3.05rem;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq 'max-width: 100%;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq '.chutes-image-model-picker::before' "$PROJECT_DIR/branding/openwebui/custom.css" && \
-   grep -Fq 'grid-template-columns: 2.35rem minmax(0, 1fr);' "$PROJECT_DIR/branding/openwebui/custom.css" && \
+   grep -Fq 'padding-left: 2.35rem;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq 'cursor: progress;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq 'lines.extend(["", "Top choices"])' "$PROJECT_DIR/branding/openwebui/dropzone_images.py" && \
    grep -Fq 'lines.append(f"+ {len(models) - 4} more live model(s)")' "$PROJECT_DIR/branding/openwebui/dropzone_images.py" && \
@@ -1067,6 +1094,12 @@ if printf '%s\n' "$proxy_openwebui_config" | grep -q 'OPENAI_API_BASE_URLS: http
     pass "e2ee-proxy mode renders OpenWebUI against the sidecar"
 else
     fail "e2ee-proxy mode did not render OpenWebUI against the sidecar"
+fi
+
+if printf '%s\n' "$proxy_openwebui_config" | grep -q 'IMAGES_OPENAI_API_BASE_URL: http://e2ee-proxy:80/v1'; then
+    pass "e2ee-proxy mode renders OpenWebUI image generation against the sidecar"
+else
+    fail "e2ee-proxy mode did not render OpenWebUI image generation against the sidecar"
 fi
 
 if printf '%s\n' "$proxy_openwebui_config" | grep -q 'CHUTES_PROXY_BASE_URL: http://e2ee-proxy:80'; then
@@ -1298,6 +1331,7 @@ if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}' "$PROJECT_DIR/docker-
    grep -Fq 'IMAGE_GENERATION_ENGINE=${IMAGE_GENERATION_ENGINE:-openai}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'IMAGE_GENERATION_MODEL=${IMAGE_GENERATION_MODEL:-chutes-auto-image}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'IMAGES_OPENAI_API_BASE_URL=${IMAGES_OPENAI_API_BASE_URL:-https://llm.chutes.ai/v1}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'IMAGES_OPENAI_API_BASE_URL=http://e2ee-proxy:80/v1' "$PROJECT_DIR/docker-compose.traffic-proxy.yml" && \
    grep -Fq 'TASK_MODEL=${TASK_MODEL:-}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'TASK_MODEL_EXTERNAL=${TASK_MODEL_EXTERNAL:-}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE=${IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE:-}' "$PROJECT_DIR/docker-compose.yml" && \
@@ -1312,6 +1346,7 @@ if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}' "$PROJECT_DIR/docker-
    grep -Fq 'env_line IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE ' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line DROPZONE_IMAGE_GENERATION_PROVIDER' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line ENABLE_WEB_SEARCH' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'env_line CHUTES_PROXY_INTERNAL_URL' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'env_line WEB_LOADER_ENGINE' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'env_line OPENWEBUI_DEFAULT_FEATURE_IDS' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line OPENWEBUI_DEFAULT_FEATURE_IDS' "$PROJECT_DIR/standalone/entrypoint.sh" && \
@@ -1321,6 +1356,7 @@ if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}' "$PROJECT_DIR/docker-
    grep -Fq 'export WEB_LOADER_ENGINE="${WEB_LOADER_ENGINE:-safe_web}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export DDGS_BACKEND="${DDGS_BACKEND:-duckduckgo}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export ENABLE_IMAGE_GENERATION="${ENABLE_IMAGE_GENERATION:-true}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'export IMAGES_OPENAI_API_BASE_URL="${CHUTES_PROXY_INTERNAL_URL%/}/v1"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export ENABLE_IMAGE_PROMPT_GENERATION="${ENABLE_IMAGE_PROMPT_GENERATION:-true}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export ENABLE_TITLE_GENERATION="${ENABLE_TITLE_GENERATION:-true}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export ENABLE_FOLLOW_UP_GENERATION="${ENABLE_FOLLOW_UP_GENERATION:-true}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
@@ -1417,6 +1453,18 @@ else
     fail "proxy Dockerfiles are missing digest-pinned e2ee-proxy images"
 fi
 
+if grep -Fq 'map[model.chute_id] = entry' "$PROJECT_DIR/n8n-overlays/e2ee-proxy/lua/e2ee_discovery.lua" && \
+   grep -Fq 'local function request_chute_metadata(chute_id, api_key)' "$PROJECT_DIR/n8n-overlays/e2ee-proxy/lua/e2ee_discovery.lua" && \
+   grep -Fq 'ngx.escape_uri(chute_id)' "$PROJECT_DIR/n8n-overlays/e2ee-proxy/lua/e2ee_discovery.lua" && \
+   grep -Fq 'local function resolve_uuid_chute_id(chute_id, api_key)' "$PROJECT_DIR/n8n-overlays/e2ee-proxy/lua/e2ee_discovery.lua" && \
+   grep -Fq 'chute.tee == true or chute.confidential_compute == true' "$PROJECT_DIR/n8n-overlays/e2ee-proxy/lua/e2ee_discovery.lua" && \
+   grep -Fq 'refusing strict e2ee routing' "$PROJECT_DIR/n8n-overlays/e2ee-proxy/lua/e2ee_discovery.lua" && \
+   ! grep -Fq 'return model' "$PROJECT_DIR/n8n-overlays/e2ee-proxy/lua/e2ee_discovery.lua"; then
+    pass "e2ee-proxy validates raw chute IDs against TEE metadata before strict routing"
+else
+    fail "e2ee-proxy raw chute ID resolution can bypass strict TEE validation"
+fi
+
 ci_nodes_ref="$(sed -n 's/^[[:space:]]*N8N_NODES_CHUTES_REF:[[:space:]]*//p' "$PROJECT_DIR/.github/workflows/ci.yml" | head -n 1)"
 release_nodes_ref="$(sed -n 's/^[[:space:]]*N8N_NODES_CHUTES_REF:[[:space:]]*//p' "$PROJECT_DIR/.github/workflows/release.yml" | head -n 1)"
 deploy_nodes_ref="$(awk -F'\"' '/^PROJECT_NODES_REF=/{print $2; exit}' "$PROJECT_DIR/deploy.sh")"
@@ -1433,6 +1481,19 @@ if grep -Fq 'name: Build release image stage' "$PROJECT_DIR/.github/workflows/ci
     pass "CI builds the release Docker stage before E2E"
 else
     fail "CI is missing release-stage Docker build coverage"
+fi
+
+if [ -s "$PROJECT_DIR/package-lock.json" ] && \
+   grep -Fq '"@playwright/test"' "$PROJECT_DIR/package.json" && \
+   grep -Fq '"test:browser": "playwright test"' "$PROJECT_DIR/package.json" && \
+   grep -Fq 'name: Run browser UI regression tests' "$PROJECT_DIR/.github/workflows/ci.yml" && \
+   grep -Fq 'npx playwright install --with-deps chromium' "$PROJECT_DIR/.github/workflows/ci.yml" && \
+   grep -Fq 'npm run test:browser' "$PROJECT_DIR/.github/workflows/ci.yml" && \
+   grep -Fq 'previousIsImageRow: true' "$PROJECT_DIR/tests/browser/openwebui-tools-menu.spec.js" && \
+   grep -Fq 'dropzone-image-model=chutes%2Fhunyuan-image-3' "$PROJECT_DIR/tests/browser/openwebui-tools-menu.spec.js"; then
+    pass "CI runs browser regression coverage for the OpenWebUI tools image picker"
+else
+    fail "CI is missing browser regression coverage for the OpenWebUI tools image picker"
 fi
 
 if [ "$SYNTAX_ONLY" = true ]; then

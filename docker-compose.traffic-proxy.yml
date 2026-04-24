@@ -29,6 +29,7 @@ services:
   openwebui:
     environment:
       - OPENAI_API_BASE_URLS=http://e2ee-proxy:80/v1
+      - IMAGES_OPENAI_API_BASE_URL=http://e2ee-proxy:80/v1
       - CHUTES_TRAFFIC_MODE=e2ee-proxy
       - CHUTES_PROXY_INTERNAL_URL=http://e2ee-proxy:80
     depends_on:
@@ -39,6 +40,7 @@ services:
     environment:
       - CHUTES_TRAFFIC_MODE=e2ee-proxy
       - CHUTES_PROXY_INTERNAL_URL=http://e2ee-proxy:80
+      - IMAGES_OPENAI_API_BASE_URL=http://e2ee-proxy:80/v1
     depends_on:
       e2ee-proxy:
         condition: service_healthy

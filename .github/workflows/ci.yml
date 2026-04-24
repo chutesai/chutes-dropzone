@@ -125,6 +125,14 @@ jobs:
             type=gha,scope=local-e2e-openwebui-runtime
           cache-to: type=gha,mode=max,scope=local-e2e-release-image
 
+      - name: Run browser UI regression tests
+        if: matrix.traffic_mode == 'direct'
+        working-directory: chutes-dropzone
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run test:browser
+
       - name: Run destructive test-IdP E2E
         working-directory: chutes-dropzone
         env:

@@ -12,9 +12,11 @@ import base64
 import binascii
 import hashlib
 import hmac
+import html
 import json
 import logging
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -101,6 +103,16 @@ def _token_cache_key(token: str) -> str:
         return "public"
     digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
     return f"oauth:{digest[:24]}"
+
+
+def _discovery_cache_key(token: str) -> str:
+    return "|".join(
+        (
+            _token_cache_key(token),
+            f"mode:{_traffic_mode()}",
+            f"allow_non_confidential:{str(_allow_non_confidential()).lower()}",
+        )
+    )
 
 
 def _fetch_json(url: str, token: str = "", timeout: int = 20):
@@ -254,7 +266,7 @@ def _build_auto_tooltip(selected: Optional[dict[str, Any]], models: list[dict[st
 
 
 def _discover_models(token: str = "") -> dict[str, Any]:
-    cache_key = _token_cache_key(token)
+    cache_key = _discovery_cache_key(token)
     now = time.time()
     ttl = _cache_ttl()
     cached = _discovery_cache.get(cache_key)
@@ -522,14 +534,75 @@ def _resolve_selected_model(model_id: str, token: str = "") -> tuple[dict[str, A
         raise HTTPException(status_code=503, detail=_no_image_models_detail())
 
     if model_id == AUTO_IMAGE_MODEL_ID:
-        return auto_selected, discovered
+        return _annotate_model_resolution(auto_selected, model_id, "auto"), discovered
 
     for item in items:
         if hmac.compare_digest(str(item.get("id") or ""), model_id):
-            return item, discovered
+            return _annotate_model_resolution(item, model_id, "exact"), discovered
 
     log.warning("image model %s was unavailable; falling back to auto", model_id)
-    return auto_selected, discovered
+    return _annotate_model_resolution(auto_selected, model_id, "fallback"), discovered
+
+
+def _annotate_model_resolution(
+    selected_model: dict[str, Any], requested_model: str, resolution: str
+) -> dict[str, Any]:
+    selected = dict(selected_model)
+    selected_id = str(selected.get("id") or "").strip()
+    requested_id = _normalize_model_id(requested_model) or AUTO_IMAGE_MODEL_ID
+    fell_back = resolution == "fallback" and requested_id != selected_id
+    selected["requested_model"] = requested_id
+    selected["resolved_model"] = selected_id
+    selected["model_resolution"] = resolution
+    selected["model_fallback"] = fell_back
+    if fell_back:
+        selected["fallback_from"] = requested_id
+        selected["fallback_to"] = selected_id
+        selected["fallback_reason"] = "requested image model is unavailable; using Chutes Auto Image"
+    return selected
+
+
+def _sanitize_upstream_error(raw: bytes, fallback: Any = "", limit: int = 320) -> str:
+    text = ""
+    try:
+        decoded = raw.decode("utf-8", errors="replace").strip()
+    except Exception:
+        decoded = ""
+
+    if decoded:
+        try:
+            payload = json.loads(decoded)
+        except Exception:
+            payload = None
+
+        if isinstance(payload, dict):
+            for key in ("detail", "message", "error"):
+                value = payload.get(key)
+                if isinstance(value, dict):
+                    text = str(value.get("message") or value.get("detail") or "").strip()
+                elif value is not None:
+                    text = str(value).strip()
+                if text:
+                    break
+        elif isinstance(payload, str):
+            text = payload.strip()
+
+        if not text:
+            text = decoded
+
+    if not text:
+        text = str(fallback or "").strip()
+
+    text = html.unescape(text)
+    text = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", text)
+    text = re.sub(r"(?s)<[^>]*>", " ", text)
+    text = re.sub(r"(?i)bearer\s+[a-z0-9._~+/=-]+", "Bearer [redacted]", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        text = "upstream service returned an error"
+    if len(text) > limit:
+        text = text[: max(0, limit - 3)].rstrip() + "..."
+    return text
 
 
 def _explicit_size(request: Request, form_data) -> tuple[int, int] | None:
@@ -605,6 +678,19 @@ async def describe_chutes_image_request(request: Request, form_data, user=None) 
             "name": selected_name,
             "slug": str(selected_model.get("slug") or "").strip(),
             "chute_id": str(selected_model.get("chute_id") or "").strip(),
+            "requested_model": str(selected_model.get("requested_model") or requested_model).strip(),
+            "resolved_model": str(selected_model.get("resolved_model") or selected_model.get("id") or "").strip(),
+            "model_resolution": str(selected_model.get("model_resolution") or "").strip(),
+            "model_fallback": bool(selected_model.get("model_fallback")),
+            **(
+                {
+                    "fallback_from": str(selected_model.get("fallback_from") or "").strip(),
+                    "fallback_to": str(selected_model.get("fallback_to") or "").strip(),
+                    "fallback_reason": str(selected_model.get("fallback_reason") or "").strip(),
+                }
+                if selected_model.get("model_fallback")
+                else {}
+            ),
         },
         "payload": dict(payload),
         "traffic_mode": _traffic_mode(),
@@ -794,11 +880,15 @@ def _generate_chutes_images_blocking(
                 if len(images) >= image_count:
                     break
         except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
+            raw_detail = exc.read()
+            detail = _sanitize_upstream_error(raw_detail, exc.reason)
             log.warning("image generation failed for %s: %s %s", selected_model["id"], exc.code, detail)
             raise HTTPException(
                 status_code=502,
-                detail=f"Chutes image generation failed for {selected_model['id']}: {detail or exc.reason}",
+                detail=(
+                    f"Chutes image generation failed for {selected_model['id']} "
+                    f"(HTTP {exc.code}): {detail}"
+                ),
             ) from exc
         except Exception as exc:
             log.warning("image generation failed for %s: %s", selected_model["id"], exc)

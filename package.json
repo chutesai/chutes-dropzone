@@ -1,0 +1,11 @@
+{
+  "name": "chutes-dropzone",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test:browser": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0"
+  }
+}
