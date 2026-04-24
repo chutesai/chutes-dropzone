@@ -994,10 +994,12 @@ if grep -Fq 'function getImageModelOptionSignature(models)' "$PROJECT_DIR/brandi
    grep -Fq 'grid-column: 1 / -1;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq 'flex: 0 0 100%;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq 'display: block;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
-   grep -Fq 'padding-left: 3.05rem;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
+   grep -Fq 'padding: 0 0.75rem;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
+   grep -Fq 'max-width: 24rem;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
+   grep -Fq 'margin: 0 auto;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq 'max-width: 100%;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq '.chutes-image-model-picker::before' "$PROJECT_DIR/branding/openwebui/custom.css" && \
-   grep -Fq 'padding-left: 2.35rem;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
+   grep -Fq 'padding: 0 0.45rem;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq 'cursor: progress;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq 'lines.extend(["", "Top choices"])' "$PROJECT_DIR/branding/openwebui/dropzone_images.py" && \
    grep -Fq 'lines.append(f"+ {len(models) - 4} more live model(s)")' "$PROJECT_DIR/branding/openwebui/dropzone_images.py" && \
@@ -1490,6 +1492,7 @@ if [ -s "$PROJECT_DIR/package-lock.json" ] && \
    grep -Fq 'npx playwright install --with-deps chromium' "$PROJECT_DIR/.github/workflows/ci.yml" && \
    grep -Fq 'npm run test:browser' "$PROJECT_DIR/.github/workflows/ci.yml" && \
    grep -Fq 'previousIsImageRow: true' "$PROJECT_DIR/tests/browser/openwebui-tools-menu.spec.js" && \
+   grep -Fq 'selectIsCentered: true' "$PROJECT_DIR/tests/browser/openwebui-tools-menu.spec.js" && \
    grep -Fq 'dropzone-image-model=chutes%2Fhunyuan-image-3' "$PROJECT_DIR/tests/browser/openwebui-tools-menu.spec.js"; then
     pass "CI runs browser regression coverage for the OpenWebUI tools image picker"
 else

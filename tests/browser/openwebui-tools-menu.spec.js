@@ -129,19 +129,22 @@ test("image model selector appears only as a stable sub-row when image mode is o
     const rowRect = imageRow.getBoundingClientRect();
     const slotRect = slotNode.getBoundingClientRect();
     const selectRect = slotNode.querySelector("select").getBoundingClientRect();
+    const panelRect = document.querySelector('[data-test-id="tools-menu"]').getBoundingClientRect();
+    const panelCenter = panelRect.left + panelRect.width / 2;
+    const selectCenter = selectRect.left + selectRect.width / 2;
 
     return {
       previousIsImageRow: slotNode.previousElementSibling === imageRow,
       slotStartsBelowRow: slotRect.top >= rowRect.bottom - 1,
-      selectIsIndented: selectRect.left > rowRect.left + 24,
-      selectFitsPanel: selectRect.right <= document.querySelector('[data-test-id="tools-menu"]').getBoundingClientRect().right + 1,
+      selectIsCentered: Math.abs(selectCenter - panelCenter) <= 1,
+      selectFitsPanel: selectRect.right <= panelRect.right + 1,
     };
   });
 
   expect(placement).toEqual({
     previousIsImageRow: true,
     slotStartsBelowRow: true,
-    selectIsIndented: true,
+    selectIsCentered: true,
     selectFitsPanel: true,
   });
 

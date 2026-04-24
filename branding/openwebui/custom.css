@@ -341,7 +341,7 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
   min-width: 0;
   max-width: 100%;
   margin: -0.05rem 0 0.45rem;
-  padding-left: 3.05rem;
+  padding: 0 0.75rem;
 }
 
 .chutes-image-model-picker::before {
@@ -351,7 +351,7 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
 .chutes-image-model-select {
   width: 100%;
   min-height: 2.15rem;
-  max-width: 100%;
+  max-width: 24rem;
   padding: 0.35rem 1.85rem 0.35rem 0.72rem;
   border: 1px solid var(--chutes-image-picker-border);
   border-radius: 0.5rem;
@@ -371,11 +371,17 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
     calc(100% - 0.58rem) calc(50% - 0.08rem);
   background-size: 0.33rem 0.33rem, 0.33rem 0.33rem;
   background-repeat: no-repeat;
+  display: block;
+  margin: 0 auto;
 }
 
 @media (max-width: 640px) {
   .chutes-image-model-picker {
-    padding-left: 2.35rem;
+    padding: 0 0.45rem;
+  }
+
+  .chutes-image-model-select {
+    max-width: 100%;
   }
 }
 
