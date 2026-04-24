@@ -1069,6 +1069,56 @@
     return buttons[0] || null;
   }
 
+  function rectsShareVisualRow(leftRect, rightRect) {
+    if (!leftRect || !rightRect) return false;
+    var leftCenter = leftRect.top + leftRect.height / 2;
+    var rightCenter = rightRect.top + rightRect.height / 2;
+    return Math.abs(leftCenter - rightCenter) <= Math.max(10, Math.min(leftRect.height, rightRect.height) / 2);
+  }
+
+  function isImageFeatureRowCandidate(node, button) {
+    if (!node || !button || !node.contains(button) || !node.getBoundingClientRect) return false;
+    var text = normalizeText(node.innerText);
+    if (!text || text.indexOf("Image") === -1) return false;
+    if (text.indexOf("Web Search") !== -1 || text.indexOf("Code Interpreter") !== -1) return false;
+
+    var rect = node.getBoundingClientRect();
+    if (!rect || rect.height > 96) return false;
+
+    return true;
+  }
+
+  function findImageModelPickerAnchor(button) {
+    if (!button) return null;
+
+    var current = button.parentElement;
+    for (var depth = 0; current && depth < 5; depth += 1) {
+      if (isImageFeatureRowCandidate(current, button)) {
+        return current;
+      }
+      current = current.parentElement;
+    }
+
+    var buttonRect = button.getBoundingClientRect ? button.getBoundingClientRect() : null;
+    var anchor = button;
+    var sibling = button.nextElementSibling;
+    for (var i = 0; sibling && i < 6; i += 1, sibling = sibling.nextElementSibling) {
+      if (!sibling.getBoundingClientRect) continue;
+      var siblingRect = sibling.getBoundingClientRect();
+      if (!rectsShareVisualRow(buttonRect, siblingRect)) break;
+      anchor = sibling;
+    }
+
+    return anchor;
+  }
+
+  function mountImageModelPicker(button, slot) {
+    var anchor = findImageModelPickerAnchor(button) || button;
+    if (anchor && anchor.parentNode && slot.previousElementSibling !== anchor) {
+      anchor.insertAdjacentElement("afterend", slot);
+    }
+  }
+
   function hideCollapsedFeatureChips() {
     var featureIcons = [
       IMAGE_ICON_PATH_PREFIX,
@@ -1225,18 +1275,14 @@
     if (!imageModelsLoaded) {
       setImageModelPickerPlaceholder(selectNode, "Loading image models...");
       clearTooltip(slot);
-      if (button.parentNode && slot.previousElementSibling !== button) {
-        button.insertAdjacentElement("afterend", slot);
-      }
+      mountImageModelPicker(button, slot);
       return;
     }
 
     if (!imageModels.length) {
       setImageModelPickerPlaceholder(selectNode, "Image models unavailable");
       clearTooltip(slot);
-      if (button.parentNode && slot.previousElementSibling !== button) {
-        button.insertAdjacentElement("afterend", slot);
-      }
+      mountImageModelPicker(button, slot);
       return;
     }
 
@@ -1274,10 +1320,7 @@
     persistImageModelId(selectedModel.id);
     selectNode.setAttribute("title", selectedModel.description || selectedModel.name || "");
     clearTooltip(slot);
-
-    if (button.parentNode && slot.previousElementSibling !== button) {
-      button.insertAdjacentElement("afterend", slot);
-    }
+    mountImageModelPicker(button, slot);
   }
 
   function ensureSettingsAboutHidden() {

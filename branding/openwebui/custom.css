@@ -331,13 +331,18 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
 }
 
 .chutes-image-model-picker {
+  grid-column: 1 / -1;
+  flex: 0 0 100%;
+  justify-self: stretch;
+  align-self: stretch;
+  box-sizing: border-box;
   display: grid;
-  grid-template-columns: 3rem minmax(18rem, 1fr);
+  grid-template-columns: 3rem minmax(0, 1fr);
   align-items: center;
-  width: min(28rem, calc(100vw - 1.5rem));
-  min-width: min(23rem, calc(100vw - 1.5rem));
-  max-width: calc(100vw - 1.5rem);
-  margin: -0.05rem 0.65rem 0.45rem 0;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin: -0.05rem 0 0.45rem;
 }
 
 .chutes-image-model-picker::before {
@@ -373,10 +378,6 @@ img.sidebar-new-chat-icon.chutes-brand-icon {
 @media (max-width: 640px) {
   .chutes-image-model-picker {
     grid-template-columns: 2.35rem minmax(0, 1fr);
-    width: calc(100% - 0.8rem);
-    min-width: 0;
-    max-width: calc(100vw - 1rem);
-    margin-right: 0.4rem;
   }
 }
 

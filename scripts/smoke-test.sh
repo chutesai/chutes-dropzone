@@ -951,7 +951,10 @@ if grep -Fq 'function getImageModelOptionSignature(models)' "$PROJECT_DIR/brandi
    grep -Fq 'function setImageModelPickerPlaceholder(selectNode, label)' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'if (!button) {' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'if (!isImageGenerationEnabled(button)) {' "$PROJECT_DIR/branding/openwebui/loader.js" && \
-   grep -Fq 'button.insertAdjacentElement("afterend", slot);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'function findImageModelPickerAnchor(button)' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'function mountImageModelPicker(button, slot)' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'slot.previousElementSibling !== anchor' "$PROJECT_DIR/branding/openwebui/loader.js" && \
+   grep -Fq 'anchor.insertAdjacentElement("afterend", slot);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'data-chutes-hidden-feature-chip' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'button.querySelectorAll("[aria-pressed], [aria-checked], [aria-selected], [data-state], [data-selected], [class]")' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'hideCollapsedFeatureChips();' "$PROJECT_DIR/branding/openwebui/loader.js" && \
@@ -962,8 +965,10 @@ if grep -Fq 'function getImageModelOptionSignature(models)' "$PROJECT_DIR/brandi
    grep -Fq 'setImageModelPickerPlaceholder(selectNode, "Image models unavailable");' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    grep -Fq 'clearTooltip(slot);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
    ! grep -Fq 'applyTooltip(slot, tooltipText);' "$PROJECT_DIR/branding/openwebui/loader.js" && \
-   grep -Fq 'grid-template-columns: 3rem minmax(18rem, 1fr);' "$PROJECT_DIR/branding/openwebui/custom.css" && \
-   grep -Fq 'width: min(28rem, calc(100vw - 1.5rem));' "$PROJECT_DIR/branding/openwebui/custom.css" && \
+   grep -Fq 'grid-column: 1 / -1;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
+   grep -Fq 'flex: 0 0 100%;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
+   grep -Fq 'grid-template-columns: 3rem minmax(0, 1fr);' "$PROJECT_DIR/branding/openwebui/custom.css" && \
+   grep -Fq 'max-width: 100%;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq '.chutes-image-model-picker::before' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq 'grid-template-columns: 2.35rem minmax(0, 1fr);' "$PROJECT_DIR/branding/openwebui/custom.css" && \
    grep -Fq 'cursor: progress;' "$PROJECT_DIR/branding/openwebui/custom.css" && \
