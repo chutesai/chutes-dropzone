@@ -1512,7 +1512,7 @@ if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}' "$PROJECT_DIR/docker-
    grep -Fq 'ENABLE_WEB_LOADER_SSL_VERIFICATION=${ENABLE_WEB_LOADER_SSL_VERIFICATION:-true}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=${BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL:-false}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'BYPASS_WEB_SEARCH_WEB_LOADER=${BYPASS_WEB_SEARCH_WEB_LOADER:-false}' "$PROJECT_DIR/docker-compose.yml" && \
-   grep -Fq 'DDGS_BACKEND=${DDGS_BACKEND:-duckduckgo}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'DDGS_BACKEND=${DDGS_BACKEND:-auto}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'OPENWEBUI_DEFAULT_FEATURE_IDS=${OPENWEBUI_DEFAULT_FEATURE_IDS:-web_search,image_generation}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'ENABLE_IMAGE_GENERATION=${ENABLE_IMAGE_GENERATION:-true}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'ENABLE_IMAGE_PROMPT_GENERATION=${ENABLE_IMAGE_PROMPT_GENERATION:-true}' "$PROJECT_DIR/docker-compose.yml" && \
@@ -1548,7 +1548,7 @@ if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}' "$PROJECT_DIR/docker-
    grep -Fq 'export OPENWEBUI_DEFAULT_FEATURE_IDS="${OPENWEBUI_DEFAULT_FEATURE_IDS:-web_search,image_generation}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export WEB_SEARCH_RESULT_COUNT="${WEB_SEARCH_RESULT_COUNT:-5}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export WEB_LOADER_ENGINE="${WEB_LOADER_ENGINE:-safe_web}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
-   grep -Fq 'export DDGS_BACKEND="${DDGS_BACKEND:-duckduckgo}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'export DDGS_BACKEND="${DDGS_BACKEND:-auto}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export ENABLE_IMAGE_GENERATION="${ENABLE_IMAGE_GENERATION:-true}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export IMAGES_OPENAI_API_BASE_URL="${CHUTES_PROXY_INTERNAL_URL%/}/v1"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export ENABLE_IMAGE_PROMPT_GENERATION="${ENABLE_IMAGE_PROMPT_GENERATION:-true}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
@@ -1569,6 +1569,9 @@ if grep -Fq 'def sync_web_config' "$PROJECT_DIR/scripts/openwebui-model-order-sy
    grep -Fq 'WEB_SEARCH_RESULT_COUNT' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq 'SEARXNG_QUERY_URL' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq 'DDGS_BACKEND' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'def patch_duckduckgo_search' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq 'def _dropzone_ddgs_backend_candidates' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq "candidates = [preferred, 'auto', 'duckduckgo', 'bing', 'brave']" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq '/api/v1/retrieval/config/update' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq '/api/v1/users/default/permissions' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq 'web search config mismatch' "$PROJECT_DIR/scripts/configure-openwebui.sh" && \
@@ -1857,7 +1860,7 @@ def searxng_results(query_url: str) -> list:
 def duckduckgo_results() -> list:
     from ddgs import DDGS
 
-    backend = (os.environ.get("DDGS_BACKEND") or "duckduckgo").strip() or "duckduckgo"
+    backend = (os.environ.get("DDGS_BACKEND") or "auto").strip() or "auto"
     with DDGS() as ddgs:
         return list(ddgs.text("Open WebUI", safesearch="moderate", max_results=1, backend=backend))
 

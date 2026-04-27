@@ -235,7 +235,7 @@ def expected_web_config() -> dict:
             "BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL", False
         ),
         "BYPASS_WEB_SEARCH_WEB_LOADER": env_bool("BYPASS_WEB_SEARCH_WEB_LOADER", False),
-        "DDGS_BACKEND": (os.environ.get("DDGS_BACKEND") or "duckduckgo").strip() or "duckduckgo",
+        "DDGS_BACKEND": (os.environ.get("DDGS_BACKEND") or "auto").strip() or "auto",
     }
 
 

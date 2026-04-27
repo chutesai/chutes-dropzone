@@ -843,6 +843,126 @@ def patch_images_router(path: Path) -> None:
     path.write_text(patched, encoding="utf-8")
 
 
+def patch_duckduckgo_search(path: Path) -> None:
+    original = path.read_text(encoding="utf-8")
+    patched = replace_one_of_or_keep(
+        original,
+        [
+            "from ddgs.exceptions import RatelimitException\n",
+        ],
+        "from ddgs.exceptions import DDGSException, RatelimitException\n",
+        "DDGS exception import",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "def search_duckduckgo(\n"
+            "    query: str,\n"
+            "    count: int,\n"
+            "    filter_list: Optional[list[str]] = None,\n"
+            "    concurrent_requests: Optional[int] = None,\n"
+            "    backend: Optional[str] = 'auto',\n"
+            ") -> list[SearchResult]:\n"
+            "    \"\"\"\n"
+            "    Search using DuckDuckGo's Search API and return the results as a list of SearchResult objects.\n"
+            "    Args:\n"
+            "        query (str): The query to search for\n"
+            "        count (int): The number of results to return\n"
+            "        backend (str): The search backend to use (auto, duckduckgo, google, brave, etc.)\n"
+            "\n"
+            "    Returns:\n"
+            "        list[SearchResult]: A list of search results\n"
+            "    \"\"\"\n"
+            "    # Use the DDGS context manager to create a DDGS object\n"
+            "    search_results = []\n"
+            "    with DDGS() as ddgs:\n"
+            "        if concurrent_requests:\n"
+            "            ddgs.threads = concurrent_requests\n"
+            "\n"
+            "        # Use the ddgs.text() method to perform the search\n"
+            "        try:\n"
+            "            search_results = ddgs.text(query, safesearch='moderate', max_results=count, backend=backend)\n"
+            "        except RatelimitException as e:\n"
+            "            log.error(f'RatelimitException: {e}')\n"
+            "    if filter_list:\n"
+            "        search_results = get_filtered_results(search_results, filter_list)\n"
+            "\n"
+            "    # Return the list of search results\n"
+            "    return [\n"
+            "        SearchResult(\n"
+            "            link=result['href'],\n"
+            "            title=result.get('title'),\n"
+            "            snippet=result.get('body'),\n"
+            "        )\n"
+            "        for result in search_results\n"
+            "    ]\n",
+        ],
+        "def _dropzone_ddgs_backend_candidates(backend: Optional[str]) -> list[str]:\n"
+        "    preferred = (backend or 'auto').strip() or 'auto'\n"
+        "    candidates = [preferred, 'auto', 'duckduckgo', 'bing', 'brave']\n"
+        "    rendered = []\n"
+        "    for candidate in candidates:\n"
+        "        if candidate and candidate not in rendered:\n"
+        "            rendered.append(candidate)\n"
+        "    return rendered\n"
+        "\n"
+        "\n"
+        "def search_duckduckgo(\n"
+        "    query: str,\n"
+        "    count: int,\n"
+        "    filter_list: Optional[list[str]] = None,\n"
+        "    concurrent_requests: Optional[int] = None,\n"
+        "    backend: Optional[str] = 'auto',\n"
+        ") -> list[SearchResult]:\n"
+        "    \"\"\"\n"
+        "    Search through DDGS and retry alternate no-key backends when one\n"
+        "    backend returns empty or gets blocked by the upstream search provider.\n"
+        "    \"\"\"\n"
+        "    search_results = []\n"
+        "    failures = []\n"
+        "    for candidate_backend in _dropzone_ddgs_backend_candidates(backend):\n"
+        "        try:\n"
+        "            with DDGS() as ddgs:\n"
+        "                if concurrent_requests:\n"
+        "                    ddgs.threads = concurrent_requests\n"
+        "                search_results = ddgs.text(\n"
+        "                    query,\n"
+        "                    safesearch='moderate',\n"
+        "                    max_results=count,\n"
+        "                    backend=candidate_backend,\n"
+        "                )\n"
+        "            if search_results:\n"
+        "                if failures:\n"
+        "                    log.warning(\n"
+        "                        'DDGS search recovered with backend %s after failures: %s',\n"
+        "                        candidate_backend,\n"
+        "                        '; '.join(failures),\n"
+        "                    )\n"
+        "                break\n"
+        "            failures.append(f'{candidate_backend}: no results')\n"
+        "        except (DDGSException, RatelimitException) as e:\n"
+        "            failures.append(f'{candidate_backend}: {e}')\n"
+        "            log.warning('DDGS backend %s failed: %s', candidate_backend, e)\n"
+        "        except Exception as e:\n"
+        "            failures.append(f'{candidate_backend}: {e}')\n"
+        "            log.warning('DDGS backend %s failed unexpectedly: %s', candidate_backend, e)\n"
+        "\n"
+        "    if filter_list:\n"
+        "        search_results = get_filtered_results(search_results, filter_list)\n"
+        "\n"
+        "    return [\n"
+        "        SearchResult(\n"
+        "            link=result['href'],\n"
+        "            title=result.get('title'),\n"
+        "            snippet=result.get('body'),\n"
+        "        )\n"
+        "        for result in search_results\n"
+        "    ]\n",
+        "DDGS backend fallback search",
+    )
+    path.write_text(patched, encoding="utf-8")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: patch-openwebui-runtime.py <openwebui-root>")
@@ -858,6 +978,9 @@ def main() -> int:
     patch_configs(root / "backend" / "open_webui" / "routers" / "configs.py")
     patch_auths_router(root / "backend" / "open_webui" / "routers" / "auths.py")
     patch_images_router(root / "backend" / "open_webui" / "routers" / "images.py")
+    patch_duckduckgo_search(
+        root / "backend" / "open_webui" / "retrieval" / "web" / "duckduckgo.py"
+    )
     return 0
 
 
