@@ -1009,6 +1009,7 @@ if [ -s "$PROJECT_DIR/branding/openwebui/dropzone_auth_page.html" ] && \
    grep -Fq 'stripWrappedCookieValue' "$PROJECT_DIR/branding/openwebui/dropzone_auth_page.html" && \
    grep -Fq 'OAUTH_STATE_SESSION_PREFIX = "_state_oidc_"' "$PROJECT_DIR/branding/openwebui/dropzone_auth.py" && \
    grep -Fq '_restore_oauth_states(request, previous_states)' "$PROJECT_DIR/branding/openwebui/dropzone_auth.py" && \
+   grep -Fq '_get_reusable_oauth_authorize_url(request)' "$PROJECT_DIR/branding/openwebui/dropzone_auth.py" && \
    grep -Fq '_build_fingerprint_form_context' "$PROJECT_DIR/branding/openwebui/dropzone_auth.py" && \
    grep -Fq 'urllib.parse.quote(target, safe="")' "$PROJECT_DIR/branding/openwebui/dropzone_auth.py"; then
     pass "Dropzone auth page is template-driven and bundled with OpenWebUI"

@@ -7,6 +7,7 @@ Mounted by patch-openwebui-runtime.py into the OpenWebUI app.
 import html
 import logging
 import os
+import time
 import urllib.parse
 from functools import lru_cache
 from pathlib import Path
@@ -132,6 +133,36 @@ def _restore_oauth_states(request: Request, previous_states: dict) -> None:
         session.pop(key, None)
 
 
+def _get_reusable_oauth_authorize_url(request: Request) -> str | None:
+    session = getattr(request, "session", None)
+    if not isinstance(session, dict):
+        return None
+
+    state_entries = []
+    now = time.time()
+    for key, value in session.items():
+        if not isinstance(key, str) or not key.startswith(OAUTH_STATE_SESSION_PREFIX):
+            continue
+        if not isinstance(value, dict):
+            continue
+        expires_at = _oauth_state_expiry(value)
+        if expires_at <= now + 5:
+            continue
+        data = value.get("data")
+        if not isinstance(data, dict):
+            continue
+        authorize_url = str(data.get("url") or "").strip()
+        if not authorize_url:
+            continue
+        state_entries.append((expires_at, authorize_url))
+
+    if not state_entries:
+        return None
+
+    state_entries.sort(key=lambda item: item[0], reverse=True)
+    return state_entries[0][1]
+
+
 @lru_cache(maxsize=1)
 def _load_auth_page_template() -> Template:
     return Template(AUTH_PAGE_TEMPLATE_PATH.read_text(encoding="utf-8"))
@@ -200,6 +231,10 @@ async def _begin_chutes_login(request: Request):
     if oauth_manager is None:
         log.warning("OpenWebUI oauth_manager is unavailable; falling back to native OIDC login")
         return None, RedirectResponse(url="/oauth/oidc/login", status_code=302)
+
+    reusable_authorize_url = _get_reusable_oauth_authorize_url(request)
+    if reusable_authorize_url:
+        return reusable_authorize_url, RedirectResponse(url=reusable_authorize_url, status_code=302)
 
     previous_states = _snapshot_oauth_states(request)
     oidc_response = await oauth_manager.handle_login(request, "oidc")
