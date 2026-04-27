@@ -56,6 +56,19 @@ def patch_env(path: Path) -> None:
     path.write_text(patched, encoding="utf-8")
 
 
+def patch_config_module(path: Path) -> None:
+    original = path.read_text(encoding="utf-8")
+    patched = replace_one_of_or_keep(
+        original,
+        [
+            "    def update(self):\n        new_value = get_config_value(self.config_path)\n        if new_value is not None:\n            self.value = new_value\n            log.info(f'Updated {self.env_name} to new value {self.value}')\n",
+        ],
+        "    def update(self):\n        if self.config_path.startswith('oauth.') and not globals().get('ENABLE_OAUTH_PERSISTENT_CONFIG', False):\n            self.value = self.env_value\n            return\n\n        new_value = get_config_value(self.config_path)\n        if new_value is not None:\n            self.value = new_value\n            log.info(f'Updated {self.env_name} to new value {self.value}')\n",
+        "OAuth persistent config refresh guard",
+    )
+    path.write_text(patched, encoding="utf-8")
+
+
 def patch_main(path: Path) -> None:
     original = path.read_text(encoding="utf-8")
     patched = insert_after_one_of(
@@ -770,6 +783,7 @@ def main() -> int:
 
     root = Path(sys.argv[1])
     patch_env(root / "backend" / "open_webui" / "env.py")
+    patch_config_module(root / "backend" / "open_webui" / "config.py")
     patch_main(root / "backend" / "open_webui" / "main.py")
     patch_openai_router(root / "backend" / "open_webui" / "routers" / "openai.py")
     patch_functions(root / "backend" / "open_webui" / "functions.py")

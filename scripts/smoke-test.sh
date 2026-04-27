@@ -1067,6 +1067,14 @@ else
     fail "OpenWebUI runtime patch is missing the OAuth session fallback"
 fi
 
+if grep -Fq 'patch_config_module(root / "backend" / "open_webui" / "config.py")' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq "self.config_path.startswith('oauth.')" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq "self.value = self.env_value" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
+    pass "OpenWebUI runtime patch keeps OAuth env authoritative after config saves"
+else
+    fail "OpenWebUI runtime patch can still reload persisted OAuth config after config saves"
+fi
+
 if grep -Fq "cookie_expires = datetime.utcnow() + expires_delta if expires_delta else None" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
     pass "OpenWebUI runtime patch fixes the undefined OAuth session cookie expiry"
 else
