@@ -705,6 +705,7 @@ PY
 
     if python3 - <<'PY' >/dev/null 2>&1
 import json
+import os
 import sys
 import types
 import importlib.util
@@ -744,6 +745,8 @@ spec = importlib.util.spec_from_file_location(
 )
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
+
+os.environ["CHUTES_TRAFFIC_MODE"] = "direct"
 
 standard_model = {
     "id": "chutes/Qwen-Image-2512",
