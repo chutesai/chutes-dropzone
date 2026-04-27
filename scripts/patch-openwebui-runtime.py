@@ -436,6 +436,116 @@ def patch_middleware(path: Path) -> None:
         "    return f'Image generation failed: {error_message or \"Unknown error\"}'\n",
         "dropzone image middleware helpers",
     )
+    patched = insert_after_one_of(
+        patched,
+        [
+            "def _dropzone_image_failure_content(error_message):\n"
+            "    return f'Image generation failed: {error_message or \"Unknown error\"}'\n",
+        ],
+        "\n\n"
+        "def _dropzone_parse_textual_image_action(text):\n"
+        "    cleaned = str(text or '').strip()\n"
+        "    if not cleaned:\n"
+        "        return None\n"
+        "\n"
+        "    if cleaned.startswith('```'):\n"
+        "        cleaned = re.sub(r'^```(?:json)?\\s*', '', cleaned, flags=re.IGNORECASE)\n"
+        "        cleaned = re.sub(r'\\s*```$', '', cleaned).strip()\n"
+        "\n"
+        "    candidates = [cleaned]\n"
+        "    try:\n"
+        "        extracted = _dropzone_last_json_object(cleaned)\n"
+        "        if extracted not in candidates:\n"
+        "            candidates.append(extracted)\n"
+        "    except Exception:\n"
+        "        pass\n"
+        "\n"
+        "    payload = None\n"
+        "    for candidate in candidates:\n"
+        "        try:\n"
+        "            payload = json.loads(candidate)\n"
+        "            break\n"
+        "        except Exception:\n"
+        "            try:\n"
+        "                payload = ast.literal_eval(candidate)\n"
+        "                break\n"
+        "            except Exception:\n"
+        "                payload = None\n"
+        "\n"
+        "    if not isinstance(payload, dict):\n"
+        "        return None\n"
+        "    if str(payload.get('action') or '').strip() != 'generate_image':\n"
+        "        return None\n"
+        "\n"
+        "    action_input = payload.get('action_input')\n"
+        "    if action_input is None:\n"
+        "        action_input = payload.get('arguments') or payload.get('input') or {}\n"
+        "    if isinstance(action_input, str):\n"
+        "        raw_action_input = action_input.strip()\n"
+        "        try:\n"
+        "            action_input = json.loads(raw_action_input)\n"
+        "        except Exception:\n"
+        "            try:\n"
+        "                action_input = ast.literal_eval(raw_action_input)\n"
+        "            except Exception:\n"
+        "                action_input = {'prompt': raw_action_input}\n"
+        "    if not isinstance(action_input, dict):\n"
+        "        action_input = {}\n"
+        "\n"
+        "    prompt = str(action_input.get('prompt') or payload.get('prompt') or '').strip()\n"
+        "    if not prompt:\n"
+        "        return None\n"
+        "\n"
+        "    tool_params = {'prompt': prompt}\n"
+        "    for key in ('model', 'size', 'negative_prompt', 'steps', 'n'):\n"
+        "        value = action_input.get(key)\n"
+        "        if value not in (None, ''):\n"
+        "            tool_params[key] = value\n"
+        "    return tool_params\n"
+        "\n\n"
+        "def _dropzone_output_textual_image_tool_call(output):\n"
+        "    for item in reversed(output or []):\n"
+        "        if item.get('type') != 'message':\n"
+        "            continue\n"
+        "        for part in reversed(item.get('content', []) or []):\n"
+        "            if part.get('type') != 'output_text':\n"
+        "                continue\n"
+        "            tool_params = _dropzone_parse_textual_image_action(part.get('text', ''))\n"
+        "            if tool_params:\n"
+        "                return {\n"
+        "                    'id': f'call_{uuid4().hex}',\n"
+        "                    'index': 0,\n"
+        "                    'function': {\n"
+        "                        'name': 'generate_image',\n"
+        "                        'arguments': json.dumps(tool_params),\n"
+        "                    },\n"
+        "                }\n"
+        "    return None\n"
+        "\n\n"
+        "def _dropzone_strip_textual_image_actions(output):\n"
+        "    stripped = []\n"
+        "    for item in output or []:\n"
+        "        if item.get('type') != 'message':\n"
+        "            stripped.append(item)\n"
+        "            continue\n"
+        "\n"
+        "        content_parts = []\n"
+        "        for part in item.get('content', []) or []:\n"
+        "            if part.get('type') == 'output_text' and _dropzone_parse_textual_image_action(part.get('text', '')):\n"
+        "                continue\n"
+        "            content_parts.append(part)\n"
+        "\n"
+        "        if content_parts:\n"
+        "            stripped.append({**item, 'content': content_parts})\n"
+        "    return stripped\n"
+        "\n\n"
+        "def _dropzone_output_has_image_tool(output):\n"
+        "    return any(\n"
+        "        item.get('type') == 'function_call' and item.get('name') == 'generate_image'\n"
+        "        for item in output or []\n"
+        "    )\n",
+        "dropzone textual image action helpers",
+    )
     patched = replace_one_of_or_keep(
         patched,
         [
@@ -588,6 +698,40 @@ def patch_middleware(path: Path) -> None:
         "                ]\n"
         "            }\n",
         "dropzone image failure override",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "                await stream_body_handler(response, form_data)\n\n                tool_call_retries = 0\n",
+        ],
+        "                await stream_body_handler(response, form_data)\n\n"
+        "                if not tool_calls and metadata.get('tools', {}).get('generate_image'):\n"
+        "                    textual_image_tool_call = _dropzone_output_textual_image_tool_call(output)\n"
+        "                    if textual_image_tool_call:\n"
+        "                        log.warning('Converting textual generate_image action into a native tool call')\n"
+        "                        tool_calls.append(_split_tool_calls([textual_image_tool_call]))\n"
+        "                        output = _dropzone_strip_textual_image_actions(output)\n"
+        "                        await event_emitter(\n"
+        "                            {\n"
+        "                                'type': 'chat:completion',\n"
+        "                                'data': {\n"
+        "                                    'content': serialize_output(full_output()),\n"
+        "                                    'output': full_output(),\n"
+        "                                },\n"
+        "                            }\n"
+        "                        )\n\n"
+        "                tool_call_retries = 0\n",
+        "dropzone textual image action tool-call conversion",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "                # Mark all in-progress items as completed\n",
+        ],
+        "                if _dropzone_output_has_image_tool(output):\n"
+        "                    output = _dropzone_strip_textual_image_actions(output)\n\n"
+        "                # Mark all in-progress items as completed\n",
+        "dropzone textual image action final cleanup",
     )
     path.write_text(patched, encoding="utf-8")
 

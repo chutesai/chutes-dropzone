@@ -1402,6 +1402,9 @@ if [ "$(grep -c 'COPY branding/openwebui/dropzone_images.py /app/backend/open_we
    grep -Fq '_dropzone_parse_image_prompt_response' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq '_dropzone_markdown_blockquote' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq '_dropzone_image_success_content' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq '_dropzone_parse_textual_image_action' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq 'Converting textual generate_image action into a native tool call' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq '_dropzone_strip_textual_image_actions(output)' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq 'Prompt planning' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq '**Prompt sent**' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq '**Parameters**' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
