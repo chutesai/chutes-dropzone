@@ -660,6 +660,40 @@ def patch_utils_oauth(path: Path) -> None:
     patched = replace_one_of_or_keep(
         patched,
         [
+            "                user_data: UserInfo = await client.userinfo(token=token)\n",
+        ],
+        "                user_data = None\n"
+        "                for userinfo_attempt in range(3):\n"
+        "                    try:\n"
+        "                        user_data: UserInfo = await client.userinfo(token=token)\n"
+        "                        break\n"
+        "                    except Exception as e:\n"
+        "                        provider_status = getattr(getattr(e, 'response', None), 'status_code', None)\n"
+        "                        try:\n"
+        "                            provider_status_code = int(provider_status) if provider_status is not None else None\n"
+        "                        except (TypeError, ValueError):\n"
+        "                            provider_status_code = None\n"
+        "\n"
+        "                        if provider_status_code is not None and provider_status_code >= 500 and userinfo_attempt < 2:\n"
+        "                            log.warning(\n"
+        "                                'OAuth userinfo returned provider status %s; retrying attempt %s/3',\n"
+        "                                provider_status_code,\n"
+        "                                userinfo_attempt + 2,\n"
+        "                            )\n"
+        "                            await asyncio.sleep(0.5 * (userinfo_attempt + 1))\n"
+        "                            continue\n"
+        "\n"
+        "                        if provider_status_code is not None and provider_status_code >= 500:\n"
+        "                            raise HTTPException(\n"
+        "                                502,\n"
+        "                                detail='OAuth provider is temporarily unavailable. Please try again in a minute.',\n"
+        "                            )\n"
+        "                        raise\n",
+        "oauth callback userinfo provider outage handling",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
             "        # Compute cookie expiry from JWT lifetime\n        expires_delta = parse_duration(auth_manager_config.JWT_EXPIRES_IN)\n        cookie_max_age = int(expires_delta.total_seconds()) if expires_delta else None\n",
         ],
         "        # Compute cookie expiry from JWT lifetime\n"
