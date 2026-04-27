@@ -1081,10 +1081,13 @@ else
     fail "OpenWebUI runtime patch is missing the OAuth session cookie expiry fix"
 fi
 
-if grep -Fq "detail='OAuth provider is temporarily unavailable. Please try again in a minute.'" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
-    pass "OpenWebUI runtime patch maps upstream OAuth 5xx errors to a retryable user-facing message"
+if grep -Fq 'import asyncio' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq 'OAuth token exchange returned provider status %s; retrying attempt %s/3' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq "await asyncio.sleep(0.5 * (token_attempt + 1))" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq "detail='OAuth provider is temporarily unavailable. Please try again in a minute.'" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
+    pass "OpenWebUI runtime patch retries transient upstream OAuth token errors"
 else
-    fail "OpenWebUI runtime patch still reports upstream OAuth outages as invalid credentials"
+    fail "OpenWebUI runtime patch does not retry transient upstream OAuth token errors"
 fi
 
 if grep -Fq 'ENABLE_OLLAMA_API=false' "$PROJECT_DIR/standalone/entrypoint.sh" && \

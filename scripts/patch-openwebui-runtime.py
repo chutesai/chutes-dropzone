@@ -596,6 +596,12 @@ def patch_utils_oauth(path: Path) -> None:
     original = path.read_text(encoding="utf-8")
     patched = insert_after_one_of(
         original,
+        ["import aiohttp\n"],
+        "import asyncio\n",
+        "asyncio import for OAuth retry",
+    )
+    patched = insert_after_one_of(
+        patched,
         ["from open_webui.utils.auth import get_password_hash, create_token\n"],
         "from open_webui.dropzone_auth import get_request_auth_redirect_path\n",
         "dropzone auth redirect import for oauth utils",
@@ -615,23 +621,40 @@ def patch_utils_oauth(path: Path) -> None:
             "            try:\n                token = await client.authorize_access_token(request, **auth_params)\n            except Exception as e:\n                detailed_error = _build_oauth_callback_error_message(e)\n                log.warning(\n                    'OAuth callback error during authorize_access_token for provider %s: %s',\n                    provider,\n                    detailed_error,\n                    exc_info=True,\n                )\n                raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)\n",
             '            try:\n                token = await client.authorize_access_token(request, **auth_params)\n            except Exception as e:\n                detailed_error = _build_oauth_callback_error_message(e)\n                log.warning(\n                    "OAuth callback error during authorize_access_token for provider %s: %s",\n                    provider,\n                    detailed_error,\n                    exc_info=True,\n                )\n                raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)\n',
         ],
-        "            try:\n"
-        "                token = await client.authorize_access_token(request, **auth_params)\n"
-        "            except Exception as e:\n"
-        "                detailed_error = _build_oauth_callback_error_message(e)\n"
-        "                log.warning(\n"
-        "                    'OAuth callback error during authorize_access_token for provider %s: %s',\n"
-        "                    provider,\n"
-        "                    detailed_error,\n"
-        "                    exc_info=True,\n"
-        "                )\n"
-        "                provider_status = getattr(getattr(e, 'response', None), 'status_code', None)\n"
-        "                if provider_status is not None and int(provider_status) >= 500:\n"
-        "                    raise HTTPException(\n"
-        "                        502,\n"
-        "                        detail='OAuth provider is temporarily unavailable. Please try again in a minute.',\n"
+        "            token = None\n"
+        "            for token_attempt in range(3):\n"
+        "                try:\n"
+        "                    token = await client.authorize_access_token(request, **auth_params)\n"
+        "                    break\n"
+        "                except Exception as e:\n"
+        "                    provider_status = getattr(getattr(e, 'response', None), 'status_code', None)\n"
+        "                    try:\n"
+        "                        provider_status_code = int(provider_status) if provider_status is not None else None\n"
+        "                    except (TypeError, ValueError):\n"
+        "                        provider_status_code = None\n"
+        "\n"
+        "                    if provider_status_code is not None and provider_status_code >= 500 and token_attempt < 2:\n"
+        "                        log.warning(\n"
+        "                            'OAuth token exchange returned provider status %s; retrying attempt %s/3',\n"
+        "                            provider_status_code,\n"
+        "                            token_attempt + 2,\n"
+        "                        )\n"
+        "                        await asyncio.sleep(0.5 * (token_attempt + 1))\n"
+        "                        continue\n"
+        "\n"
+        "                    detailed_error = _build_oauth_callback_error_message(e)\n"
+        "                    log.warning(\n"
+        "                        'OAuth callback error during authorize_access_token for provider %s: %s',\n"
+        "                        provider,\n"
+        "                        detailed_error,\n"
+        "                        exc_info=True,\n"
         "                    )\n"
-        "                raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)\n",
+        "                    if provider_status_code is not None and provider_status_code >= 500:\n"
+        "                        raise HTTPException(\n"
+        "                            502,\n"
+        "                            detail='OAuth provider is temporarily unavailable. Please try again in a minute.',\n"
+        "                        )\n"
+        "                    raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)\n",
         "oauth callback provider outage handling",
     )
     patched = replace_one_of_or_keep(
