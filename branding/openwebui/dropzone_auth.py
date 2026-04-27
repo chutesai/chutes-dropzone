@@ -25,6 +25,8 @@ AUTH_REDIRECT_COOKIE_MAX_AGE = 900
 DEFAULT_AUTH_REDIRECT = "/c/new"
 CHUTES_AUTH_URL = os.environ.get("CHUTES_AUTH_URL", "https://chutes.ai/auth").strip()
 AUTH_PAGE_TEMPLATE_PATH = Path(__file__).with_name("dropzone_auth_page.html")
+OAUTH_STATE_SESSION_PREFIX = "_state_oidc_"
+OAUTH_STATE_SESSION_LIMIT = 5
 
 
 def _normalize_redirect_path(value: str | None) -> str | None:
@@ -87,6 +89,47 @@ def _build_redirect_params(authorize_url: str, redirect_path: str | None) -> lis
     if redirect_path:
         params.append(("redirect-path", redirect_path))
     return params
+
+
+def _oauth_state_expiry(state_payload) -> float:
+    if not isinstance(state_payload, dict):
+        return 0.0
+    try:
+        return float(state_payload.get("exp") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _snapshot_oauth_states(request: Request) -> dict:
+    session = getattr(request, "session", None)
+    if not isinstance(session, dict):
+        return {}
+    return {
+        key: value
+        for key, value in session.items()
+        if isinstance(key, str) and key.startswith(OAUTH_STATE_SESSION_PREFIX)
+    }
+
+
+def _restore_oauth_states(request: Request, previous_states: dict) -> None:
+    session = getattr(request, "session", None)
+    if not isinstance(session, dict) or not previous_states:
+        return
+
+    for key, value in previous_states.items():
+        session.setdefault(key, value)
+
+    state_keys = [
+        key
+        for key in session
+        if isinstance(key, str) and key.startswith(OAUTH_STATE_SESSION_PREFIX)
+    ]
+    if len(state_keys) <= OAUTH_STATE_SESSION_LIMIT:
+        return
+
+    state_keys.sort(key=lambda key: _oauth_state_expiry(session.get(key)), reverse=True)
+    for key in state_keys[OAUTH_STATE_SESSION_LIMIT:]:
+        session.pop(key, None)
 
 
 @lru_cache(maxsize=1)
@@ -158,7 +201,9 @@ async def _begin_chutes_login(request: Request):
         log.warning("OpenWebUI oauth_manager is unavailable; falling back to native OIDC login")
         return None, RedirectResponse(url="/oauth/oidc/login", status_code=302)
 
+    previous_states = _snapshot_oauth_states(request)
     oidc_response = await oauth_manager.handle_login(request, "oidc")
+    _restore_oauth_states(request, previous_states)
     authorize_url = oidc_response.headers.get("location")
     if not authorize_url:
         return None, oidc_response
