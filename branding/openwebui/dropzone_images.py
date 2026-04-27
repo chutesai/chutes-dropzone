@@ -1,8 +1,8 @@
 """
-Chutes diffusion model discovery and image generation bridge for OpenWebUI.
+Chutes image model discovery and image generation bridge for OpenWebUI.
 
 This adapter keeps OpenWebUI's native image-generation UX while routing
-requests to live Chutes diffusion chutes discovered from the Chutes API.
+requests to live Chutes image chutes discovered from the Chutes API.
 """
 
 from __future__ import annotations
@@ -49,7 +49,11 @@ CHUTES_IMAGE_TIMEOUT = max(
 )
 CHUTES_IMAGE_FALLBACK_ATTEMPTS = max(
     1,
-    int((os.environ.get("DROPZONE_IMAGE_FALLBACK_ATTEMPTS") or "4").strip() or "4"),
+    int((os.environ.get("DROPZONE_IMAGE_FALLBACK_ATTEMPTS") or "8").strip() or "8"),
+)
+CHUTES_IMAGE_FAILURE_COOLDOWN = max(
+    0,
+    int((os.environ.get("DROPZONE_IMAGE_FAILURE_COOLDOWN_SECONDS") or "90").strip() or "90"),
 )
 TRANSIENT_IMAGE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
@@ -68,6 +72,7 @@ def _allow_non_confidential() -> bool:
 
 _discovery_cache: dict[str, dict[str, Any]] = {}
 _utilization_cache: dict[str, Any] = {"items": [], "ts": 0.0}
+_image_failure_cache: dict[str, dict[str, Any]] = {}
 
 
 def _cache_ttl() -> int:
@@ -186,6 +191,52 @@ def _model_score(utilization: dict[str, Any]) -> float:
 
 def _friendly_image_name(model: dict[str, Any]) -> str:
     return str(model.get("display_name") or model.get("name") or model.get("id") or "").strip()
+
+
+def _image_model_key(model: dict[str, Any]) -> str:
+    return str(model.get("id") or model.get("chute_id") or model.get("slug") or "").strip()
+
+
+def _image_model_failure_key(model: dict[str, Any]) -> str:
+    for key in ("id", "chute_id", "slug"):
+        value = str(model.get(key) or "").strip()
+        if value:
+            return f"{key}:{value}"
+    return _image_model_key(model)
+
+
+def _image_model_recent_failure(model: dict[str, Any], now: float | None = None) -> dict[str, Any] | None:
+    if CHUTES_IMAGE_FAILURE_COOLDOWN <= 0:
+        return None
+    key = _image_model_failure_key(model)
+    if not key:
+        return None
+    now = time.time() if now is None else now
+    failure = _image_failure_cache.get(key)
+    if not failure:
+        return None
+    if float(failure.get("ts", 0.0) or 0.0) + CHUTES_IMAGE_FAILURE_COOLDOWN <= now:
+        _image_failure_cache.pop(key, None)
+        return None
+    return failure
+
+
+def _mark_image_model_unhealthy(model: dict[str, Any], error: str) -> None:
+    if CHUTES_IMAGE_FAILURE_COOLDOWN <= 0:
+        return
+    key = _image_model_failure_key(model)
+    if key:
+        _image_failure_cache[key] = {
+            "ts": time.time(),
+            "model_id": str(model.get("id") or ""),
+            "error": str(error or ""),
+        }
+
+
+def _mark_image_model_healthy(model: dict[str, Any]) -> None:
+    key = _image_model_failure_key(model)
+    if key:
+        _image_failure_cache.pop(key, None)
 
 
 def _image_model_proxy_allowed(model: dict[str, Any]) -> bool:
@@ -374,6 +425,7 @@ def _discover_models(token: str = "") -> dict[str, Any]:
         name = str(item.get("name") or "").strip()
         slug = str(item.get("slug") or "").strip()
         user = item.get("user") if isinstance(item.get("user"), dict) else {}
+        image = item.get("image") if isinstance(item.get("image"), dict) else {}
         username = str(user.get("username") or item.get("username") or "").strip()
         if not name or not slug or not username:
             continue
@@ -393,6 +445,8 @@ def _discover_models(token: str = "") -> dict[str, Any]:
                 "slug": slug,
                 "score": score,
                 "tee": item.get("tee") is True,
+                "standard_template": str(item.get("standard_template") or "").strip(),
+                "image_name": str(image.get("name") or item.get("image") or "").strip(),
                 "active_instance_count": int(utilization.get("active_instance_count", 0) or 0),
                 "total_instance_count": int(utilization.get("total_instance_count", 0) or 0),
                 "utilization_5m": (
@@ -559,25 +613,31 @@ def _candidate_image_models(model_id: str, token: str = "") -> list[dict[str, An
     """
     selected_model, discovered = _resolve_selected_model(model_id, token)
     items = _routable_image_models(list(discovered.get("items") or []))
-    candidates: list[dict[str, Any]] = []
+    healthy_candidates: list[dict[str, Any]] = []
+    cooling_candidates: list[dict[str, Any]] = []
     seen: set[str] = set()
+    now = time.time()
 
     def add(model: dict[str, Any]) -> None:
-        if len(candidates) >= CHUTES_IMAGE_FALLBACK_ATTEMPTS:
+        if len(healthy_candidates) + len(cooling_candidates) >= CHUTES_IMAGE_FALLBACK_ATTEMPTS:
             return
-        key = str(model.get("id") or model.get("chute_id") or model.get("slug") or "").strip()
+        key = _image_model_key(model)
         if not key or key in seen:
             return
         seen.add(key)
-        candidates.append(dict(model))
+        model_copy = dict(model)
+        if _image_model_recent_failure(model_copy, now=now):
+            cooling_candidates.append(model_copy)
+        else:
+            healthy_candidates.append(model_copy)
 
     add(selected_model)
     for item in items:
         add(item)
-        if len(candidates) >= CHUTES_IMAGE_FALLBACK_ATTEMPTS:
+        if len(healthy_candidates) + len(cooling_candidates) >= CHUTES_IMAGE_FALLBACK_ATTEMPTS:
             break
 
-    return candidates
+    return healthy_candidates + cooling_candidates
 
 
 def _annotate_model_resolution(
@@ -717,6 +777,23 @@ def _generation_payload(request: Request, form_data) -> dict[str, Any]:
             payload["num_inference_steps"] = steps_value
 
     return payload
+
+
+def _model_accepts_standard_diffusion_payload(model: dict[str, Any]) -> bool:
+    """Only standard diffusion template chutes accept width/height/step overrides reliably."""
+
+    return str(model.get("standard_template") or "").strip().lower() == "diffusion"
+
+
+def _payload_for_image_model(model: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    if _model_accepts_standard_diffusion_payload(model):
+        return dict(payload)
+
+    # Some public image chutes are not registered as the standard diffusion
+    # template. They still expose /generate, but reject the template-specific
+    # width/height/num_inference_steps fields. Keep the prompt contract minimal.
+    allowed = {"prompt", "negative_prompt"}
+    return {key: value for key, value in payload.items() if key in allowed and value not in (None, "")}
 
 
 def _payload_size(payload: dict[str, Any]) -> str:
@@ -932,7 +1009,7 @@ def _generate_chutes_images_blocking(
         )
         last_model = selected_model
         url, extra_body, accept_header = _image_request_target(selected_model)
-        payload = {**extra_body, **base_payload}
+        payload = {**extra_body, **_payload_for_image_model(selected_model, base_payload)}
         candidate_images: list[tuple[bytes, str]] = []
 
         try:
@@ -959,6 +1036,7 @@ def _generate_chutes_images_blocking(
                     if len(candidate_images) >= image_count:
                         break
             if len(candidate_images) >= image_count:
+                _mark_image_model_healthy(selected_model)
                 if failures:
                     log.warning(
                         "image generation recovered with %s after %d transient failure(s)",
@@ -974,6 +1052,8 @@ def _generate_chutes_images_blocking(
             error_label = f"HTTP {exc.code}: {detail}"
             failure = {"model_id": str(selected_model.get("id") or ""), "error": error_label}
             can_fallback = exc.code in TRANSIENT_IMAGE_STATUS_CODES and candidate is not candidates[-1]
+            if exc.code in TRANSIENT_IMAGE_STATUS_CODES:
+                _mark_image_model_unhealthy(selected_model, error_label)
             log.warning(
                 "image generation failed for %s: %s %s%s",
                 selected_model.get("id"),
@@ -989,6 +1069,7 @@ def _generate_chutes_images_blocking(
             detail = _sanitize_upstream_error(b"", exc)
             failure = {"model_id": str(selected_model.get("id") or ""), "error": detail}
             can_fallback = candidate is not candidates[-1]
+            _mark_image_model_unhealthy(selected_model, detail)
             log.warning(
                 "image generation failed for %s: %s%s",
                 selected_model.get("id"),
@@ -1011,8 +1092,7 @@ def _generate_chutes_images_blocking(
         for failure in failures
         if failure.get("model_id") or failure.get("error")
     )
-    selected_id = str(last_model.get("id") or "selected model")
-    detail = f"Chutes image generation failed for {selected_id}"
+    detail = "Chutes image generation failed after trying all available fallback image models"
     if attempted:
         detail = f"{detail}. Attempted image models: {attempted}"
     raise HTTPException(status_code=502, detail=detail)

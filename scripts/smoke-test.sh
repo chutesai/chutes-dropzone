@@ -317,24 +317,27 @@ assert images == [(b"hello", "image/png")]
 
 mod._discovery_cache.clear()
 mod._fetch_diffusion_chutes = lambda token: [
-    {
-        "chute_id": "juggernaut",
-        "name": "JuggernautXL-Ragnarok",
-        "slug": "chutes-juggernautxl-ragnarok",
-        "user": {"username": "chutes"},
-    },
-    {
-        "chute_id": "flux",
-        "name": "FLUX.1-schnell",
-        "slug": "chutes-flux-1-schnell",
-        "user": {"username": "chutes"},
-    },
-    {
-        "chute_id": "qwen",
-        "name": "Qwen-Image-2512",
-        "slug": "chutes-qwen-image-2512",
-        "user": {"username": "chutes"},
-    },
+        {
+            "chute_id": "juggernaut",
+            "name": "JuggernautXL-Ragnarok",
+            "slug": "chutes-juggernautxl-ragnarok",
+            "standard_template": "diffusion",
+            "user": {"username": "chutes"},
+        },
+        {
+            "chute_id": "flux",
+            "name": "FLUX.1-schnell",
+            "slug": "chutes-flux-1-schnell",
+            "standard_template": "diffusion",
+            "user": {"username": "chutes"},
+        },
+        {
+            "chute_id": "qwen",
+            "name": "Qwen-Image-2512",
+            "slug": "chutes-qwen-image-2512",
+            "standard_template": "diffusion",
+            "user": {"username": "chutes"},
+        },
 ]
 mod._fetch_public_chutes = lambda token: (
     [
@@ -640,12 +643,14 @@ mod._candidate_image_models = lambda model_id, token="": [
         "id": "chutes/FLUX.1-schnell",
         "slug": "chutes-flux-1-schnell",
         "chute_id": "flux",
+        "standard_template": "diffusion",
         "tee": True,
     },
     {
         "id": "chutes/Qwen-Image-2512",
         "slug": "chutes-qwen-image-2512",
         "chute_id": "qwen",
+        "standard_template": "diffusion",
         "tee": True,
     },
 ]
@@ -696,6 +701,154 @@ PY
         pass "Dropzone image generation falls through to the next live image model on transient chute failures"
     else
         fail "Dropzone image generation does not recover from transient chute failures"
+    fi
+
+    if python3 - <<'PY' >/dev/null 2>&1
+import json
+import sys
+import types
+import importlib.util
+
+fastapi_mod = types.ModuleType("fastapi")
+
+class HTTPException(Exception):
+    def __init__(self, status_code, detail=""):
+        self.status_code = status_code
+        self.detail = detail
+        super().__init__(detail)
+
+class Request:
+    pass
+
+fastapi_mod.HTTPException = HTTPException
+fastapi_mod.Request = Request
+sys.modules["fastapi"] = fastapi_mod
+
+pkg = types.ModuleType("open_webui")
+oauth_mod = types.ModuleType("open_webui.dropzone_oauth")
+
+async def _stub_get_request_oauth_token(*args, **kwargs):
+    return None
+
+def _stub_get_user_oauth_access_token(*args, **kwargs):
+    return ""
+
+oauth_mod.get_request_oauth_token = _stub_get_request_oauth_token
+oauth_mod.get_user_oauth_access_token = _stub_get_user_oauth_access_token
+sys.modules["open_webui"] = pkg
+sys.modules["open_webui.dropzone_oauth"] = oauth_mod
+
+spec = importlib.util.spec_from_file_location(
+    "dropzone_images",
+    "branding/openwebui/dropzone_images.py",
+)
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+standard_model = {
+    "id": "chutes/Qwen-Image-2512",
+    "slug": "chutes-qwen-image-2512",
+    "chute_id": "qwen",
+    "standard_template": "diffusion",
+    "tee": True,
+}
+rescued_model = {
+    "id": "chutes/z-image-turbo",
+    "slug": "chutes-z-image-turbo",
+    "chute_id": "z-image",
+    "standard_template": "",
+    "image_name": "z-image-turbo",
+    "tee": True,
+}
+payload = {
+    "prompt": "a surfer in Hawaii",
+    "negative_prompt": "blurry",
+    "width": 512,
+    "height": 512,
+    "num_inference_steps": 6,
+}
+
+assert mod._payload_for_image_model(standard_model, payload) == payload
+assert mod._payload_for_image_model(rescued_model, payload) == {
+    "prompt": "a surfer in Hawaii",
+    "negative_prompt": "blurry",
+}
+
+class FakeResponse:
+    headers = {"Content-Type": "image/png"}
+
+    def read(self):
+        return b"\x89PNG\r\n\x1a\n"
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+sent_payloads = []
+real_candidate_image_models = mod._candidate_image_models
+
+def fake_urlopen(request, timeout=0):
+    sent_payloads.append(json.loads(request.data.decode("utf-8")))
+    return FakeResponse()
+
+mod.urllib.request.urlopen = fake_urlopen
+mod._candidate_image_models = lambda model_id, token="": [rescued_model]
+images, selected = mod._generate_chutes_images_blocking("chutes/z-image-turbo", "token", payload, 1)
+assert len(images) == 1
+assert selected["id"] == "chutes/z-image-turbo"
+assert sent_payloads[-1] == {
+    "prompt": "a surfer in Hawaii",
+    "negative_prompt": "blurry",
+}
+
+mod._candidate_image_models = lambda model_id, token="": [standard_model]
+images, selected = mod._generate_chutes_images_blocking("chutes/Qwen-Image-2512", "token", payload, 1)
+assert len(images) == 1
+assert selected["id"] == "chutes/Qwen-Image-2512"
+assert sent_payloads[-1] == payload
+
+mod._image_failure_cache.clear()
+mod._candidate_image_models = real_candidate_image_models
+mod.CHUTES_IMAGE_FALLBACK_ATTEMPTS = 3
+mod.CHUTES_IMAGE_FAILURE_COOLDOWN = 90
+hunyuan_model = {
+    "id": "chutes/hunyuan-image-3",
+    "slug": "chutes-hunyuan-image-3",
+    "chute_id": "hunyuan",
+    "standard_template": "",
+    "tee": True,
+}
+flux_model = {
+    "id": "chutes/FLUX.1-schnell",
+    "slug": "chutes-flux-1-schnell",
+    "chute_id": "flux",
+    "standard_template": "diffusion",
+    "tee": True,
+}
+mod._resolve_selected_model = lambda model_id, token="": (
+    standard_model,
+    {"items": [standard_model, hunyuan_model, flux_model]},
+)
+assert [candidate["id"] for candidate in mod._candidate_image_models("chutes/Qwen-Image-2512", "token")] == [
+    "chutes/Qwen-Image-2512",
+    "chutes/hunyuan-image-3",
+    "chutes/FLUX.1-schnell",
+]
+mod._mark_image_model_unhealthy(standard_model, "HTTP 502: temporary")
+assert [candidate["id"] for candidate in mod._candidate_image_models("chutes/Qwen-Image-2512", "token")] == [
+    "chutes/hunyuan-image-3",
+    "chutes/FLUX.1-schnell",
+    "chutes/Qwen-Image-2512",
+]
+mod._mark_image_model_healthy(standard_model)
+assert [candidate["id"] for candidate in mod._candidate_image_models("chutes/Qwen-Image-2512", "token")][0] == "chutes/Qwen-Image-2512"
+PY
+    then
+        pass "Dropzone image generation shapes payloads by chute capability and cools transiently failing models"
+    else
+        fail "Dropzone image generation still overfits image model payloads or retries unhealthy chutes first"
     fi
 
     if python3 - <<'PY' >/dev/null 2>&1
@@ -1487,7 +1640,9 @@ if grep -q '^ENABLE_WEB_SEARCH=' "$PROJECT_DIR/.env.example" && \
    grep -q '^TASK_MODEL=' "$PROJECT_DIR/.env.example" && \
    grep -q '^TASK_MODEL_EXTERNAL=' "$PROJECT_DIR/.env.example" && \
    grep -q '^IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE=' "$PROJECT_DIR/.env.example" && \
-   grep -q '^DROPZONE_IMAGE_GENERATION_PROVIDER=' "$PROJECT_DIR/.env.example"; then
+   grep -q '^DROPZONE_IMAGE_GENERATION_PROVIDER=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^DROPZONE_IMAGE_FALLBACK_ATTEMPTS=' "$PROJECT_DIR/.env.example" && \
+   grep -q '^DROPZONE_IMAGE_FAILURE_COOLDOWN_SECONDS=' "$PROJECT_DIR/.env.example"; then
     pass ".env.example exposes native OpenWebUI web search, image generation, and image prompt task knobs"
 else
     fail ".env.example is missing native OpenWebUI web search, image generation, or image prompt task settings"
@@ -1530,6 +1685,8 @@ if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}' "$PROJECT_DIR/docker-
    grep -Fq 'TASK_MODEL_EXTERNAL=${TASK_MODEL_EXTERNAL:-}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE=${IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE:-}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'DROPZONE_IMAGE_GENERATION_PROVIDER=${DROPZONE_IMAGE_GENERATION_PROVIDER:-chutes}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'DROPZONE_IMAGE_FALLBACK_ATTEMPTS=${DROPZONE_IMAGE_FALLBACK_ATTEMPTS:-8}' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'DROPZONE_IMAGE_FAILURE_COOLDOWN_SECONDS=${DROPZONE_IMAGE_FAILURE_COOLDOWN_SECONDS:-90}' "$PROJECT_DIR/docker-compose.yml" && \
    grep -Fq 'env_line ENABLE_WEB_SEARCH' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line SEARXNG_QUERY_URL' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line SEARXNG_SECRET' "$PROJECT_DIR/deploy.sh" && \
@@ -1541,6 +1698,8 @@ if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}' "$PROJECT_DIR/docker-
    grep -Fq 'env_line TASK_MODEL_EXTERNAL ' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE ' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line DROPZONE_IMAGE_GENERATION_PROVIDER' "$PROJECT_DIR/deploy.sh" && \
+   grep -Fq 'env_line DROPZONE_IMAGE_FALLBACK_ATTEMPTS' "$PROJECT_DIR/deploy.sh" && \
+   grep -Fq 'env_line DROPZONE_IMAGE_FAILURE_COOLDOWN_SECONDS' "$PROJECT_DIR/deploy.sh" && \
    grep -Fq 'env_line ENABLE_WEB_SEARCH' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'env_line SEARXNG_QUERY_URL' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'env_line CHUTES_PROXY_INTERNAL_URL' "$PROJECT_DIR/standalone/entrypoint.sh" && \
@@ -1562,7 +1721,9 @@ if grep -Fq 'ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}' "$PROJECT_DIR/docker-
    grep -Fq 'export TASK_MODEL="${TASK_MODEL:-}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export TASK_MODEL_EXTERNAL="${TASK_MODEL_EXTERNAL:-}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
    grep -Fq 'export IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE="${IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE:-' "$PROJECT_DIR/standalone/entrypoint.sh" && \
-   grep -Fq 'export DROPZONE_IMAGE_GENERATION_PROVIDER="${DROPZONE_IMAGE_GENERATION_PROVIDER:-chutes}"' "$PROJECT_DIR/standalone/entrypoint.sh"; then
+   grep -Fq 'export DROPZONE_IMAGE_GENERATION_PROVIDER="${DROPZONE_IMAGE_GENERATION_PROVIDER:-chutes}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'export DROPZONE_IMAGE_FALLBACK_ATTEMPTS="${DROPZONE_IMAGE_FALLBACK_ATTEMPTS:-8}"' "$PROJECT_DIR/standalone/entrypoint.sh" && \
+   grep -Fq 'export DROPZONE_IMAGE_FAILURE_COOLDOWN_SECONDS="${DROPZONE_IMAGE_FAILURE_COOLDOWN_SECONDS:-90}"' "$PROJECT_DIR/standalone/entrypoint.sh"; then
     pass "Dropzone deploy scaffolding exposes native OpenWebUI web search, image generation, and image prompt task wiring"
 else
     fail "Dropzone deploy scaffolding is missing native OpenWebUI web search, image generation, or image prompt task wiring"
