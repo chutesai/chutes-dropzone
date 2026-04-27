@@ -621,6 +621,13 @@ def patch_utils_oauth(path: Path) -> None:
             "            try:\n                token = await client.authorize_access_token(request, **auth_params)\n            except Exception as e:\n                detailed_error = _build_oauth_callback_error_message(e)\n                log.warning(\n                    'OAuth callback error during authorize_access_token for provider %s: %s',\n                    provider,\n                    detailed_error,\n                    exc_info=True,\n                )\n                raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)\n",
             '            try:\n                token = await client.authorize_access_token(request, **auth_params)\n            except Exception as e:\n                detailed_error = _build_oauth_callback_error_message(e)\n                log.warning(\n                    "OAuth callback error during authorize_access_token for provider %s: %s",\n                    provider,\n                    detailed_error,\n                    exc_info=True,\n                )\n                raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)\n',
         ],
+        "            callback_state = request.query_params.get('state')\n"
+        "            callback_state_key = f'_state_{provider}_{callback_state}' if callback_state else None\n"
+        "            callback_state_data = (\n"
+        "                request.session.get(callback_state_key)\n"
+        "                if callback_state_key and hasattr(request, 'session')\n"
+        "                else None\n"
+        "            )\n"
         "            token = None\n"
         "            for token_attempt in range(3):\n"
         "                try:\n"
@@ -634,6 +641,8 @@ def patch_utils_oauth(path: Path) -> None:
         "                        provider_status_code = None\n"
         "\n"
         "                    if provider_status_code is not None and provider_status_code >= 500 and token_attempt < 2:\n"
+        "                        if callback_state_key and callback_state_data is not None:\n"
+        "                            request.session[callback_state_key] = callback_state_data\n"
         "                        log.warning(\n"
         "                            'OAuth token exchange returned provider status %s; retrying attempt %s/3',\n"
         "                            provider_status_code,\n"

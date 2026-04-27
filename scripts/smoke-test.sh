@@ -1087,6 +1087,7 @@ fi
 
 if grep -Fq 'import asyncio' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq 'OAuth token exchange returned provider status %s; retrying attempt %s/3' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq "request.session[callback_state_key] = callback_state_data" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq 'OAuth userinfo returned provider status %s; retrying attempt %s/3' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq "await asyncio.sleep(0.5 * (token_attempt + 1))" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq "detail='OAuth provider is temporarily unavailable. Please try again in a minute.'" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
