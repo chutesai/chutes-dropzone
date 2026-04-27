@@ -206,26 +206,52 @@ def _fetch_utilization() -> list[dict[str, Any]]:
     return list(items)
 
 
+def _items_with_cord_refs(payload) -> list[dict[str, Any]]:
+    items = payload.get("items", []) if isinstance(payload, dict) else payload
+    if not isinstance(items, list):
+        return []
+
+    cord_refs = payload.get("cord_refs", {}) if isinstance(payload, dict) else {}
+    if not isinstance(cord_refs, dict):
+        cord_refs = {}
+
+    hydrated: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        item = dict(item)
+        cords = item.get("cords")
+        cord_ref_id = str(item.get("cord_ref_id") or "").strip()
+        if not isinstance(cords, list) and cord_ref_id:
+            referenced_cords = cord_refs.get(cord_ref_id)
+            if isinstance(referenced_cords, list):
+                item["cords"] = referenced_cords
+        hydrated.append(item)
+    return hydrated
+
+
 def _fetch_diffusion_chutes(token: str = "") -> list[dict[str, Any]]:
     query = urllib.parse.urlencode(
         {
             "include_public": "true",
             "template": "diffusion",
             "limit": "500",
+            "include_schemas": "true",
         }
     )
     url = f"{CHUTES_LIST_URL}/?{query}" if not CHUTES_LIST_URL.endswith("/") else f"{CHUTES_LIST_URL}?{query}"
     payload = _fetch_json(url, token=token)
-    items = payload.get("items", []) if isinstance(payload, dict) else payload
-    return items if isinstance(items, list) else []
+    return _items_with_cord_refs(payload)
 
 
 def _fetch_public_chutes(token: str = "") -> list[dict[str, Any]]:
-    query = urllib.parse.urlencode({"include_public": "true", "limit": 500})
+    query = urllib.parse.urlencode(
+        {"include_public": "true", "limit": 500, "include_schemas": "true"}
+    )
     url = f"{CHUTES_LIST_URL}/?{query}" if not CHUTES_LIST_URL.endswith("/") else f"{CHUTES_LIST_URL}?{query}"
     payload = _fetch_json(url, token=token)
-    items = payload.get("items", []) if isinstance(payload, dict) else payload
-    return items if isinstance(items, list) else []
+    return _items_with_cord_refs(payload)
 
 
 def _model_score(utilization: dict[str, Any]) -> float:
@@ -299,6 +325,70 @@ def _image_model_proxy_allowed(model: dict[str, Any]) -> bool:
 
 def _routable_image_models(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [model for model in models if _image_model_proxy_allowed(model)]
+
+
+def _resolve_schema_ref(schema: dict[str, Any], ref: str) -> dict[str, Any]:
+    if not isinstance(schema, dict) or not ref.startswith("#/"):
+        return {}
+
+    value: Any = schema
+    for raw_part in ref[2:].split("/"):
+        part = raw_part.replace("~1", "/").replace("~0", "~")
+        if not isinstance(value, dict):
+            return {}
+        value = value.get(part)
+    return value if isinstance(value, dict) else {}
+
+
+def _schema_has_prompt(schema: dict[str, Any]) -> bool:
+    properties = schema.get("properties") if isinstance(schema, dict) else {}
+    return isinstance(properties, dict) and "prompt" in properties
+
+
+def _input_arg_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(schema, dict):
+        return {}
+
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        input_args = properties.get("input_args")
+        if isinstance(input_args, dict):
+            ref = str(input_args.get("$ref") or "").strip()
+            resolved = _resolve_schema_ref(schema, ref) if ref else input_args
+            if _schema_has_prompt(resolved):
+                return resolved
+        if _schema_has_prompt(schema):
+            return schema
+
+    for definitions_key in ("definitions", "$defs"):
+        definitions = schema.get(definitions_key)
+        if not isinstance(definitions, dict):
+            continue
+        for definition in definitions.values():
+            if isinstance(definition, dict) and _schema_has_prompt(definition):
+                return definition
+
+    return {}
+
+
+def _generate_input_schema(item: dict[str, Any]) -> dict[str, Any]:
+    cords = item.get("cords")
+    if not isinstance(cords, list):
+        return {}
+
+    fallback: dict[str, Any] = {}
+    for cord in cords:
+        if not isinstance(cord, dict):
+            continue
+        path = str(cord.get("public_api_path") or cord.get("path") or "").strip().rstrip("/")
+        function_name = str(cord.get("function") or "").strip().lower()
+        schema = _input_arg_schema(cord.get("input_schema") or {})
+        if not schema:
+            continue
+        if path == "/generate" or function_name == "generate":
+            return schema
+        fallback = fallback or schema
+    return fallback
 
 
 def _is_rescued_public_image_candidate(item: dict[str, Any]) -> bool:
@@ -487,6 +577,7 @@ def _discover_models(token: str = "") -> dict[str, Any]:
         utilization = utilization_by_chute_id.get(chute_id) or utilization_by_name.get(name, {})
         score = _model_score(utilization)
         display_name = name if name_counts.get(name, 0) <= 1 else model_id
+        generate_input_schema = _generate_input_schema(item)
 
         models.append(
             {
@@ -500,6 +591,7 @@ def _discover_models(token: str = "") -> dict[str, Any]:
                 "tee": item.get("tee") is True,
                 "standard_template": str(item.get("standard_template") or "").strip(),
                 "image_name": str(image.get("name") or item.get("image") or "").strip(),
+                "generate_input_schema": generate_input_schema,
                 "active_instance_count": int(utilization.get("active_instance_count", 0) or 0),
                 "total_instance_count": int(utilization.get("total_instance_count", 0) or 0),
                 "utilization_5m": (
@@ -838,7 +930,122 @@ def _model_accepts_standard_diffusion_payload(model: dict[str, Any]) -> bool:
     return str(model.get("standard_template") or "").strip().lower() == "diffusion"
 
 
+def _schema_properties(schema: dict[str, Any]) -> dict[str, Any]:
+    properties = schema.get("properties") if isinstance(schema, dict) else {}
+    return properties if isinstance(properties, dict) else {}
+
+
+def _schema_numeric_kind(property_schema: dict[str, Any]) -> str:
+    if not isinstance(property_schema, dict):
+        return ""
+
+    declared_type = property_schema.get("type")
+    if declared_type in ("integer", "number"):
+        return str(declared_type)
+    if isinstance(declared_type, list):
+        for candidate in declared_type:
+            if candidate in ("integer", "number"):
+                return str(candidate)
+
+    for group_key in ("anyOf", "oneOf", "allOf"):
+        candidates = property_schema.get(group_key)
+        if not isinstance(candidates, list):
+            continue
+        for candidate in candidates:
+            kind = _schema_numeric_kind(candidate)
+            if kind:
+                return kind
+    return ""
+
+
+def _schema_bound(property_schema: dict[str, Any], key: str) -> float | None:
+    if not isinstance(property_schema, dict):
+        return None
+    value = property_schema.get(key)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
+
+
+def _schema_number(property_schema: dict[str, Any], value: Any) -> int | float | None:
+    kind = _schema_numeric_kind(property_schema)
+    if not kind:
+        return None
+
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    minimum = _schema_bound(property_schema, "minimum")
+    maximum = _schema_bound(property_schema, "maximum")
+    if minimum is not None and number < minimum:
+        number = minimum
+    if maximum is not None and number > maximum:
+        number = maximum
+
+    if kind == "integer":
+        return int(number)
+    return number
+
+
+def _schema_size_value(width: Any, height: Any, property_schema: dict[str, Any]) -> str:
+    try:
+        size = f"{int(width)}x{int(height)}"
+    except (TypeError, ValueError):
+        return ""
+
+    enum_values = property_schema.get("enum") if isinstance(property_schema, dict) else None
+    if isinstance(enum_values, list) and enum_values and size not in enum_values:
+        return ""
+    return size
+
+
+def _payload_from_generate_schema(
+    model: dict[str, Any], payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    properties = _schema_properties(model.get("generate_input_schema") or {})
+    if not properties or "prompt" not in properties:
+        return None
+
+    shaped: dict[str, Any] = {"prompt": payload.get("prompt")}
+
+    negative_prompt = payload.get("negative_prompt")
+    if "negative_prompt" in properties and negative_prompt not in (None, ""):
+        shaped["negative_prompt"] = negative_prompt
+
+    width = payload.get("width")
+    height = payload.get("height")
+    if width is not None and height is not None:
+        if "width" in properties and "height" in properties:
+            coerced_width = _schema_number(properties.get("width") or {}, width)
+            coerced_height = _schema_number(properties.get("height") or {}, height)
+            if coerced_width is not None and coerced_height is not None:
+                shaped["width"] = coerced_width
+                shaped["height"] = coerced_height
+        elif "size" in properties:
+            size_value = _schema_size_value(width, height, properties.get("size") or {})
+            if size_value:
+                shaped["size"] = size_value
+
+    steps = payload.get("num_inference_steps")
+    if steps is not None:
+        for field_name in ("num_inference_steps", "steps"):
+            if field_name not in properties:
+                continue
+            coerced_steps = _schema_number(properties.get(field_name) or {}, steps)
+            if coerced_steps is not None:
+                shaped[field_name] = coerced_steps
+            break
+
+    return {key: value for key, value in shaped.items() if value not in (None, "")}
+
+
 def _payload_for_image_model(model: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    schema_payload = _payload_from_generate_schema(model, payload)
+    if schema_payload:
+        return schema_payload
+
     if _model_accepts_standard_diffusion_payload(model):
         return dict(payload)
 

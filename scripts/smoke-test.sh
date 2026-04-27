@@ -795,6 +795,65 @@ assert mod._payload_for_image_model(rescued_model, payload) == {
     "negative_prompt": "blurry",
 }
 
+hydrated_items = mod._items_with_cord_refs(
+    {
+        "items": [{"cord_ref_id": "generate-cord"}],
+        "cord_refs": {
+            "generate-cord": [
+                {
+                    "path": "/generate",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "input_args": {"$ref": "#/definitions/GenerateInput"},
+                        },
+                        "definitions": {
+                            "GenerateInput": {
+                                "type": "object",
+                                "properties": {
+                                    "prompt": {"type": "string"},
+                                    "negative_prompt": {"type": "string"},
+                                    "width": {"type": "integer", "minimum": 576, "maximum": 2048},
+                                    "height": {"type": "integer", "minimum": 576, "maximum": 2048},
+                                    "num_inference_steps": {
+                                        "type": "integer",
+                                        "minimum": 9,
+                                        "maximum": 100,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            ],
+        },
+    }
+)
+schema_model = {"generate_input_schema": mod._generate_input_schema(hydrated_items[0])}
+assert mod._payload_for_image_model(schema_model, payload) == {
+    "prompt": "a surfer in Hawaii",
+    "negative_prompt": "blurry",
+    "width": 576,
+    "height": 576,
+    "num_inference_steps": 9,
+}
+
+size_schema_model = {
+    "generate_input_schema": {
+        "type": "object",
+        "properties": {
+            "prompt": {"type": "string"},
+            "size": {"type": "string"},
+            "steps": {"type": "integer", "minimum": 10, "maximum": 100},
+        },
+    },
+}
+assert mod._payload_for_image_model(size_schema_model, payload) == {
+    "prompt": "a surfer in Hawaii",
+    "size": "512x512",
+    "steps": 10,
+}
+
 class FakeResponse:
     headers = {"Content-Type": "image/png"}
 
