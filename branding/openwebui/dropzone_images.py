@@ -36,7 +36,59 @@ log = logging.getLogger(__name__)
 
 AUTO_IMAGE_MODEL_ID = "chutes-auto-image"
 IMAGE_MODEL_COOKIE_NAME = "dropzone-image-model"
-PREFERRED_IMAGE_MODEL_ORDER = ("qwen", "hunyuan", "z-image", "flux")
+TEXT_TO_IMAGE_KEYWORDS = (
+    "text-to-image",
+    "text to image",
+    "txt2img",
+    "t2i",
+    "image generation",
+    "image generator",
+    "generate image",
+    "generate images",
+    "generates image",
+    "generates images",
+)
+IMAGE_RUNTIME_KEYWORDS = (
+    "image",
+    "diffusion",
+    "comfyui",
+    "automatic1111",
+    "a1111",
+    "stable-diffusion",
+    "stable diffusion",
+    "sdxl",
+    "sd3",
+    "txt2img",
+    "t2i",
+)
+NON_TEXT_TO_IMAGE_KEYWORDS = (
+    "image edit",
+    "edit image",
+    "image-to-image",
+    "image to image",
+    "img2img",
+    "i2i",
+    "inpaint",
+    "outpaint",
+    "i2v",
+    "image-to-video",
+    "image to video",
+    "text-to-video",
+    "text to video",
+    "video",
+    "classifier",
+    "nsfw",
+    "upscaler",
+    "upscale",
+)
+TEXT_RUNTIME_IMAGE_NAMES = {
+    "vllm",
+    "sglang",
+    "tei",
+    "tgi",
+    "text-embeddings-inference",
+    "nsfw-classifier",
+}
 
 CHUTES_LIST_URL = os.environ.get(
     "CHUTES_LIST_URL", "https://api.chutes.ai/chutes/"
@@ -256,24 +308,23 @@ def _is_rescued_public_image_candidate(item: dict[str, Any]) -> bool:
 
     name = str(item.get("name") or "").strip().lower()
     slug = str(item.get("slug") or "").strip().lower()
+    tagline = str(item.get("tagline") or "").strip().lower()
     readme = str(item.get("readme") or "").strip().lower()
     image = item.get("image") if isinstance(item.get("image"), dict) else {}
     image_name = str(image.get("name") or "").strip().lower()
-    blob = " ".join(part for part in (name, slug, readme, image_name) if part)
+    image_runtime_blob = " ".join(part for part in (image_name, str(item.get("image") or "").lower()) if part)
+    metadata_blob = " ".join(part for part in (name, slug, tagline, readme, image_name) if part)
 
-    if not any(keyword in blob for keyword in PREFERRED_IMAGE_MODEL_ORDER):
+    if any(token in metadata_blob for token in NON_TEXT_TO_IMAGE_KEYWORDS):
         return False
 
-    if any(token in blob for token in ("edit", "i2v", "video", "classifier", "nsfw")):
+    if image_name in TEXT_RUNTIME_IMAGE_NAMES:
         return False
 
-    if image_name in {"vllm", "sglang", "tei", "tgi", "text-embeddings-inference", "nfsw-classifier"}:
-        return False
+    has_image_runtime = any(token in image_runtime_blob for token in IMAGE_RUNTIME_KEYWORDS)
+    has_text_to_image_metadata = any(token in metadata_blob for token in TEXT_TO_IMAGE_KEYWORDS)
 
-    if not any(token in image_name for token in ("image", "diffusion", "comfyui", "wan")):
-        return False
-
-    return True
+    return has_image_runtime and has_text_to_image_metadata
 
 
 def _no_image_models_detail() -> str:
@@ -285,12 +336,14 @@ def _no_image_models_detail() -> str:
     return "No Chutes image models are available right now"
 
 
-def _preferred_image_rank(model_name: str) -> int:
-    normalized = str(model_name or "").strip().lower()
-    for index, keyword in enumerate(PREFERRED_IMAGE_MODEL_ORDER):
-        if keyword in normalized:
-            return index
-    return len(PREFERRED_IMAGE_MODEL_ORDER)
+def _image_capability_rank(model: dict[str, Any]) -> int:
+    standard_template = str(model.get("standard_template") or "").strip().lower()
+    if standard_template == "diffusion":
+        return 0
+    image_name = str(model.get("image_name") or "").strip().lower()
+    if any(token in image_name for token in IMAGE_RUNTIME_KEYWORDS):
+        return 1
+    return 2
 
 
 def _build_auto_description(selected: Optional[dict[str, Any]]) -> str:
@@ -470,9 +523,9 @@ def _discover_models(token: str = "") -> dict[str, Any]:
 
     models.sort(
         key=lambda model: (
-            _preferred_image_rank(model.get("name") or model.get("id") or ""),
+            _image_capability_rank(model),
             -int(model.get("active_instance_count", 0) or 0),
-            -float(model.get("utilization_1h", 0.0) or 0.0),
+            float(model.get("utilization_5m", 1.0) or 1.0),
             -int(model.get("total_instance_count", 0) or 0),
             _friendly_image_name(model).lower(),
         )

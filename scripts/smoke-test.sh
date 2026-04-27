@@ -364,8 +364,18 @@ mod._fetch_public_chutes = lambda token: (
             "chute_id": "hunyuan",
             "name": "hunyuan-image-3",
             "slug": "chutes-hunyuan-image-3",
-            "readme": "Tencent Hunyuan Image 3.0",
+            "tagline": "Fast text-to-image generation",
+            "readme": "Image generation model",
             "image": {"name": "hunyuan-image"},
+            "user": {"username": "chutes"},
+        },
+        {
+            "chute_id": "canvas",
+            "name": "CanvasGen XL",
+            "slug": "chutes-canvasgen-xl",
+            "tagline": "Text-to-image generator",
+            "readme": "Generate images from natural language prompts.",
+            "image": {"name": "comfyui"},
             "user": {"username": "chutes"},
         },
         {
@@ -409,6 +419,13 @@ mod._fetch_utilization = lambda: [
         "utilization_1h": 0.50,
     },
     {
+        "chute_id": "canvas",
+        "name": "CanvasGen XL",
+        "active_instance_count": 4,
+        "total_instance_count": 4,
+        "utilization_1h": 0.30,
+    },
+    {
         "chute_id": "qwen",
         "name": "Qwen-Image-2512",
         "active_instance_count": 2,
@@ -417,22 +434,23 @@ mod._fetch_utilization = lambda: [
     },
 ]
 ordered_ids = [model["id"] for model in mod._discover_models("")["items"]]
-assert ordered_ids[:4] == [
-    "chutes/Qwen-Image-2512",
-    "chutes/hunyuan-image-3",
-    "chutes/FLUX.1-schnell",
+assert ordered_ids[:3] == [
     "chutes/JuggernautXL-Ragnarok",
+    "chutes/FLUX.1-schnell",
+    "chutes/Qwen-Image-2512",
 ]
+assert "chutes/hunyuan-image-3" in ordered_ids
+assert "chutes/CanvasGen XL" in ordered_ids
 assert "chutes/qwen-image-edit-2509" not in ordered_ids
 assert "chutes/Qwen3-32B" not in ordered_ids
 rendered = mod.get_chutes_image_models()
-assert rendered[0]["id"] == "chutes/Qwen-Image-2512"
+assert rendered[0]["id"] == "chutes/JuggernautXL-Ragnarok"
 assert rendered[-1]["id"] == mod.AUTO_IMAGE_MODEL_ID
 fallback_model, _ = mod._resolve_selected_model("chutes/Missing-Image", "")
-assert fallback_model["id"] == "chutes/Qwen-Image-2512"
+assert fallback_model["id"] == "chutes/JuggernautXL-Ragnarok"
 assert fallback_model["model_fallback"] is True
 assert fallback_model["fallback_from"] == "chutes/Missing-Image"
-assert fallback_model["fallback_to"] == "chutes/Qwen-Image-2512"
+assert fallback_model["fallback_to"] == "chutes/JuggernautXL-Ragnarok"
 assert fallback_model["fallback_reason"]
 
 cached_keys = set(mod._discovery_cache)
@@ -478,9 +496,9 @@ except mod.HTTPException as exc:
     assert exc.status_code == 503
 PY
     then
-        pass "Dropzone image bridge keeps Chutes routing in proxy mode, decodes encoded picker cookies, and prefers Qwen-first concrete defaults"
+        pass "Dropzone image bridge keeps Chutes routing in proxy mode, decodes encoded picker cookies, and prefers capability-ranked concrete defaults"
     else
-        fail "Dropzone image bridge proxy routing/default selection handling is incomplete"
+        fail "Dropzone image bridge proxy routing/default selection or capability ranking is incomplete"
     fi
 
     if python3 - <<'PY' >/dev/null 2>&1
