@@ -571,6 +571,8 @@ def desired_web_config() -> dict:
     searxng_query_url = (os.environ.get("SEARXNG_QUERY_URL") or "").strip()
     if not web_search_engine:
         web_search_engine = "searxng" if searxng_query_url else "duckduckgo"
+    elif web_search_engine == "searxng" and not searxng_query_url:
+        web_search_engine = "duckduckgo"
 
     return {
         "ENABLE_WEB_SEARCH": env_bool("ENABLE_WEB_SEARCH", True),
@@ -590,6 +592,13 @@ def desired_web_config() -> dict:
         ),
         "BYPASS_WEB_SEARCH_WEB_LOADER": env_bool("BYPASS_WEB_SEARCH_WEB_LOADER", False),
         "DDGS_BACKEND": (os.environ.get("DDGS_BACKEND") or "duckduckgo").strip() or "duckduckgo",
+    }
+
+
+def desired_feature_permissions() -> dict[str, bool]:
+    return {
+        "web_search": bool(desired_web_config()["ENABLE_WEB_SEARCH"]),
+        "image_generation": desired_image_generation_enabled(),
     }
 
 
@@ -720,6 +729,31 @@ def sync_web_config(token: str) -> bool:
         token,
         {"web": updated},
     )
+    return True
+
+
+def sync_user_permissions(token: str) -> bool:
+    """Keep default user feature permissions aligned with managed tools."""
+
+    permissions = request_json("GET", "/api/v1/users/default/permissions", token)
+    if not isinstance(permissions, dict):
+        return False
+
+    updated = dict(permissions)
+    features = dict(updated.get("features") or {})
+    desired = desired_feature_permissions()
+    changed = False
+
+    for key, expected in desired.items():
+        if bool(features.get(key)) != expected:
+            features[key] = expected
+            changed = True
+
+    if not changed:
+        return False
+
+    updated["features"] = features
+    request_json("POST", "/api/v1/users/default/permissions", token, updated)
     return True
 
 
@@ -957,6 +991,9 @@ def sync_runtime(configure_openai_auth: bool) -> tuple[int, list[str], int, bool
 
     if sync_web_config(token):
         updates.append(f"WEB_SEARCH({desired_web_config()['WEB_SEARCH_ENGINE']})")
+
+    if sync_user_permissions(token):
+        updates.append("USER_PERMISSIONS(web/image)")
 
     if sync_audio_config(token):
         updates.append(f"AUDIO_STT({desired_stt_engine_mode()})")

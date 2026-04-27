@@ -215,6 +215,8 @@ def expected_web_config() -> dict:
     searxng_query_url = (os.environ.get("SEARXNG_QUERY_URL") or "").strip()
     if not web_search_engine:
         web_search_engine = "searxng" if searxng_query_url else "duckduckgo"
+    elif web_search_engine == "searxng" and not searxng_query_url:
+        web_search_engine = "duckduckgo"
 
     return {
         "ENABLE_WEB_SEARCH": env_bool("ENABLE_WEB_SEARCH", True),
@@ -234,6 +236,15 @@ def expected_web_config() -> dict:
         ),
         "BYPASS_WEB_SEARCH_WEB_LOADER": env_bool("BYPASS_WEB_SEARCH_WEB_LOADER", False),
         "DDGS_BACKEND": (os.environ.get("DDGS_BACKEND") or "duckduckgo").strip() or "duckduckgo",
+    }
+
+
+def expected_feature_permissions() -> dict[str, bool]:
+    return {
+        "web_search": bool(expected_web_config()["ENABLE_WEB_SEARCH"]),
+        "image_generation": (
+            os.environ.get("ENABLE_IMAGE_GENERATION") or "true"
+        ).strip().lower() == "true",
     }
 
 
@@ -267,6 +278,18 @@ for key, expected in expected_web_config().items():
     if current != expected:
         raise SystemExit(
             f"web search config mismatch for {key}: expected {expected!r} got {current!r}"
+        )
+
+permissions = request_json("/api/v1/users/default/permissions", token)
+features = permissions.get("features", {}) if isinstance(permissions, dict) else {}
+if not isinstance(features, dict):
+    raise SystemExit("default user feature permissions are unavailable")
+
+for key, expected in expected_feature_permissions().items():
+    current = bool(features.get(key))
+    if current != expected:
+        raise SystemExit(
+            f"default user feature permission mismatch for {key}: expected {expected!r} got {current!r}"
         )
 
 audio_config = request_json("/api/v1/audio/config", token)

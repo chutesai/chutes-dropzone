@@ -1548,14 +1548,17 @@ else
 fi
 
 if grep -Fq 'def sync_web_config' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'def sync_user_permissions' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq 'WEB_SEARCH_RESULT_COUNT' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq 'SEARXNG_QUERY_URL' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq 'DDGS_BACKEND' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
    grep -Fq '/api/v1/retrieval/config/update' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
-   grep -Fq 'web search config mismatch' "$PROJECT_DIR/scripts/configure-openwebui.sh"; then
-    pass "OpenWebUI web search defaults are runtime-synced and verified"
+   grep -Fq '/api/v1/users/default/permissions' "$PROJECT_DIR/scripts/openwebui-model-order-sync.py" && \
+   grep -Fq 'web search config mismatch' "$PROJECT_DIR/scripts/configure-openwebui.sh" && \
+   grep -Fq 'default user feature permission mismatch' "$PROJECT_DIR/scripts/configure-openwebui.sh"; then
+    pass "OpenWebUI web search defaults and feature permissions are runtime-synced and verified"
 else
-    fail "OpenWebUI web search runtime sync or verification is incomplete"
+    fail "OpenWebUI web search runtime sync, permissions sync, or verification is incomplete"
 fi
 
 if grep -Fq 'use_default_settings:' "$PROJECT_DIR/conf/searxng/settings.yml" && \
@@ -1795,6 +1798,85 @@ if openwebui_enabled; then
     fi
 else
     skip "OpenWebUI is disabled - skipping OpenWebUI health probe"
+fi
+
+if openwebui_enabled; then
+    if compose exec -T openwebui python - <<'PY' >/dev/null 2>&1
+import json
+import os
+import sys
+import urllib.parse
+import urllib.request
+
+
+def enabled(name: str, default: str = "true") -> bool:
+    return (os.environ.get(name) or default).strip().lower() == "true"
+
+
+def searxng_results(query_url: str) -> list:
+    if not query_url:
+        raise RuntimeError("SEARXNG_QUERY_URL is empty")
+
+    if "<query>" in query_url:
+        query_url = query_url.split("?", 1)[0]
+
+    params = {
+        "q": "Open WebUI",
+        "format": "json",
+        "pageno": "1",
+        "safesearch": "1",
+        "language": "all",
+        "theme": "simple",
+        "image_proxy": "0",
+    }
+    separator = "&" if "?" in query_url else "?"
+    url = query_url + separator + urllib.parse.urlencode(params)
+    request = urllib.request.Request(url, headers={"Accept": "application/json"})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    return payload.get("results", []) if isinstance(payload, dict) else []
+
+
+def duckduckgo_results() -> list:
+    from ddgs import DDGS
+
+    backend = (os.environ.get("DDGS_BACKEND") or "duckduckgo").strip() or "duckduckgo"
+    with DDGS() as ddgs:
+        return list(ddgs.text("Open WebUI", safesearch="moderate", max_results=1, backend=backend))
+
+
+if not enabled("ENABLE_WEB_SEARCH"):
+    sys.exit(77)
+
+engine = (os.environ.get("WEB_SEARCH_ENGINE") or "").strip()
+query_url = (os.environ.get("SEARXNG_QUERY_URL") or "").strip()
+if not engine:
+    engine = "searxng" if query_url else "duckduckgo"
+elif engine == "searxng" and not query_url:
+    engine = "duckduckgo"
+
+if engine == "searxng":
+    results = searxng_results(query_url)
+elif engine == "duckduckgo":
+    results = duckduckgo_results()
+else:
+    sys.exit(77)
+
+if not results:
+    raise RuntimeError(f"{engine} returned no web search results")
+PY
+    then
+        pass "OpenWebUI web search backend returns live results"
+    else
+        web_probe_status=$?
+        if [ "$web_probe_status" = "77" ]; then
+            skip "OpenWebUI web search backend probe is disabled or uses a custom engine"
+        else
+            fail "OpenWebUI web search backend did not return live results"
+        fi
+    fi
+else
+    skip "OpenWebUI is disabled - skipping OpenWebUI web search backend probe"
 fi
 
 landing_headers="$(curl_edge -skI "$LANDING_EDGE_URL" 2>/dev/null | tr -d '\r' || true)"

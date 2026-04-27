@@ -10,6 +10,7 @@
   var VERSION_UPDATES_URL = "/api/version/updates";
   var ACCOUNT_SUMMARY_POLL_MS = 60000;
   var ACCOUNT_SUMMARY_RETRY_MS = 5000;
+  var IMAGE_MODELS_RETRY_MS = 5000;
   var AUTO_MODEL_HINT_LABEL = "Models";
   var IMAGE_MODEL_DEFAULT_ID = "chutes-auto-image";
   var IMAGE_MODEL_STORAGE_KEY = "chutes.dropzone.image.model";
@@ -38,6 +39,8 @@
   var imageModels = [];
   var imageModelsLoaded = false;
   var imageModelsPromise = null;
+  var imageModelsFetchFailed = false;
+  var imageModelsLastFailureAt = 0;
   var imageModelOptionSignature = "";
   var n8nConfirmed = false;
   var tooltipLayer = null;
@@ -754,6 +757,7 @@
           accountSummary = summary;
           accountSummaryFailureCount = 0;
           syncCurrentUserAvatar(summary);
+          queueImageModelFetch();
           if (summary.links && summary.links.n8nUrl) {
             n8nConfirmed = true;
           }
@@ -870,7 +874,10 @@
 
   function queueImageModelFetch(force) {
     if (imageModelsPromise) return;
-    if (!force && imageModelsLoaded) return;
+    if (!force && imageModelsLoaded) {
+      if (!imageModelsFetchFailed) return;
+      if (Date.now() - imageModelsLastFailureAt < IMAGE_MODELS_RETRY_MS) return;
+    }
 
     imageModelsPromise = window
       .fetch(IMAGE_MODELS_URL, {
@@ -887,6 +894,8 @@
       .then(function (payload) {
         var models = (payload && payload.data) || payload || [];
         imageModels = Array.isArray(models) ? models : [];
+        imageModelsFetchFailed = false;
+        imageModelsLastFailureAt = 0;
 
         var storedModelId = getStoredImageModelId();
         if (!findImageModelById(storedModelId) || storedModelId === IMAGE_MODEL_DEFAULT_ID) {
@@ -898,6 +907,8 @@
       })
       .catch(function () {
         imageModels = [];
+        imageModelsFetchFailed = true;
+        imageModelsLastFailureAt = Date.now();
       })
       .finally(function () {
         imageModelsLoaded = true;
@@ -1883,6 +1894,7 @@
     ensureSettingsAboutHidden();
     if (accountSummary && accountSummary.username) {
       syncCurrentUserAvatar(accountSummary);
+      queueImageModelFetch();
     }
     ensureChutesAutoHint();
     hideCollapsedFeatureChips();
