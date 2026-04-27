@@ -852,8 +852,16 @@ def patch_utils_oauth(path: Path) -> None:
         "        # Compute cookie expiry from JWT lifetime\n"
         "        expires_delta = parse_duration(auth_manager_config.JWT_EXPIRES_IN)\n"
         "        cookie_max_age = int(expires_delta.total_seconds()) if expires_delta else None\n"
-        "        cookie_expires = datetime.utcnow() + expires_delta if expires_delta else None\n",
+        "        cookie_expires = datetime.now(timezone.utc) + expires_delta if expires_delta else None\n",
         "oauth session cookie expiry fix",
+    )
+    patched = replace_one_of_or_keep(
+        patched,
+        [
+            "from datetime import datetime, timedelta\n",
+        ],
+        "from datetime import datetime, timedelta, timezone\n",
+        "oauth session UTC timezone import",
     )
     path.write_text(patched, encoding="utf-8")
 

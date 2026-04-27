@@ -1079,10 +1079,11 @@ else
     fail "OpenWebUI runtime patch can still reload persisted OAuth config after config saves"
 fi
 
-if grep -Fq "cookie_expires = datetime.utcnow() + expires_delta if expires_delta else None" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
-    pass "OpenWebUI runtime patch fixes the undefined OAuth session cookie expiry"
+if grep -Fq "cookie_expires = datetime.now(timezone.utc) + expires_delta if expires_delta else None" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq "from datetime import datetime, timedelta, timezone" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
+    pass "OpenWebUI runtime patch fixes the OAuth session cookie expiry with an aware UTC datetime"
 else
-    fail "OpenWebUI runtime patch is missing the OAuth session cookie expiry fix"
+    fail "OpenWebUI runtime patch is missing the aware UTC OAuth session cookie expiry fix"
 fi
 
 if grep -Fq 'import asyncio' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
