@@ -4,6 +4,7 @@ Dropzone auth handoff routes for Chutes-first login.
 Mounted by patch-openwebui-runtime.py into the OpenWebUI app.
 """
 
+import asyncio
 import html
 import logging
 import os
@@ -133,6 +134,14 @@ def _restore_oauth_states(request: Request, previous_states: dict) -> None:
         session.pop(key, None)
 
 
+def _provider_status_code(exc: Exception) -> int | None:
+    status_code = getattr(getattr(exc, "response", None), "status_code", None)
+    try:
+        return int(status_code) if status_code is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _get_reusable_oauth_authorize_url(request: Request) -> str | None:
     session = getattr(request, "session", None)
     if not isinstance(session, dict):
@@ -237,7 +246,37 @@ async def _begin_chutes_login(request: Request):
         return reusable_authorize_url, RedirectResponse(url=reusable_authorize_url, status_code=302)
 
     previous_states = _snapshot_oauth_states(request)
-    oidc_response = await oauth_manager.handle_login(request, "oidc")
+    oidc_response = None
+    for login_attempt in range(3):
+        try:
+            oidc_response = await oauth_manager.handle_login(request, "oidc")
+            break
+        except Exception as exc:
+            provider_status = _provider_status_code(exc)
+            if provider_status is not None and provider_status >= 500 and login_attempt < 2:
+                log.warning(
+                    "OAuth authorize setup returned provider status %s; retrying attempt %s/3",
+                    provider_status,
+                    login_attempt + 2,
+                )
+                await asyncio.sleep(0.5 * (login_attempt + 1))
+                continue
+            if provider_status is not None and provider_status >= 500:
+                log.warning("OpenWebUI OAuth authorize setup failed", exc_info=True)
+                return None, HTMLResponse(
+                    "OAuth provider is temporarily unavailable. Please try again in a minute.",
+                    status_code=503,
+                    headers={"Cache-Control": "no-store"},
+                )
+            raise
+
+    if oidc_response is None:
+        return None, HTMLResponse(
+            "OAuth provider is temporarily unavailable. Please try again in a minute.",
+            status_code=503,
+            headers={"Cache-Control": "no-store"},
+        )
+
     _restore_oauth_states(request, previous_states)
     authorize_url = oidc_response.headers.get("location")
     if not authorize_url:
