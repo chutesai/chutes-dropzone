@@ -1243,14 +1243,15 @@ else
 fi
 
 if grep -Fq 'import asyncio' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
-   grep -Fq 'OAuth token exchange returned provider status %s; retrying attempt %s/3' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq 'OAuth token exchange returned provider status %s; retrying attempt %s/5' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq "request.session[callback_state_key] = callback_state_data" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
-   grep -Fq 'OAuth userinfo returned provider status %s; retrying attempt %s/3' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
-   grep -Fq "await asyncio.sleep(0.5 * (token_attempt + 1))" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq 'OAuth userinfo returned provider status %s; retrying attempt %s/5' "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq "await asyncio.sleep(0.75 * (token_attempt + 1))" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
+   grep -Fq "OAuth userinfo unavailable; used Chutes account profile fallback" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py" && \
    grep -Fq "detail='OAuth provider is temporarily unavailable. Please try again in a minute.'" "$PROJECT_DIR/scripts/patch-openwebui-runtime.py"; then
-    pass "OpenWebUI runtime patch retries transient upstream OAuth token and userinfo errors"
+    pass "OpenWebUI runtime patch retries transient upstream OAuth token/userinfo errors and falls back to Chutes profile data"
 else
-    fail "OpenWebUI runtime patch does not retry transient upstream OAuth token and userinfo errors"
+    fail "OpenWebUI runtime patch does not retry transient upstream OAuth token/userinfo errors or fall back to Chutes profile data"
 fi
 
 if grep -Fq 'ENABLE_OLLAMA_API=false' "$PROJECT_DIR/standalone/entrypoint.sh" && \
