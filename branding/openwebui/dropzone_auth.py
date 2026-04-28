@@ -30,6 +30,30 @@ AUTH_PAGE_TEMPLATE_PATH = Path(__file__).with_name("dropzone_auth_page.html")
 OAUTH_STATE_SESSION_PREFIX = "_state_oidc_"
 OAUTH_STATE_SESSION_LIMIT = 5
 OAUTH_AUTHORIZE_SETUP_ATTEMPTS = 5
+CHUTES_OIDC_SCOPES_SUPPORTED = [
+    "admin",
+    "profile",
+    "profile:read",
+    "balance",
+    "balance:read",
+    "billing:read",
+    "quota",
+    "quota:read",
+    "usage",
+    "usage:read",
+    "account:read",
+    "account:write",
+    "secrets:read",
+    "secrets:write",
+    "chutes:read",
+    "chutes:write",
+    "chutes:delete",
+    "chutes:invoke",
+    "images:read",
+    "images:write",
+    "images:delete",
+    "invocations:read",
+]
 
 
 def _normalize_redirect_path(value: str | None) -> str | None:
@@ -141,6 +165,43 @@ def _provider_status_code(exc: Exception) -> int | None:
         return int(status_code) if status_code is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _oidc_issuer_base_url() -> str:
+    provider_url = os.environ.get("OPENID_PROVIDER_URL", "").strip()
+    well_known_suffix = "/.well-known/openid-configuration"
+    if provider_url.endswith(well_known_suffix):
+        return provider_url[: -len(well_known_suffix)].rstrip("/")
+
+    idp_base = os.environ.get("CHUTES_IDP_BASE_URL", "https://api.chutes.ai").strip()
+    return (idp_base or "https://api.chutes.ai").rstrip("/")
+
+
+def _seed_static_oidc_metadata(oauth_manager) -> bool:
+    get_client = getattr(oauth_manager, "get_client", None)
+    if not callable(get_client):
+        return False
+
+    client = get_client("oidc")
+    server_metadata = getattr(client, "server_metadata", None)
+    if not isinstance(server_metadata, dict):
+        return False
+
+    issuer = _oidc_issuer_base_url()
+    server_metadata.update(
+        {
+            "issuer": issuer,
+            "authorization_endpoint": f"{issuer}/idp/authorize",
+            "token_endpoint": f"{issuer}/idp/token",
+            "userinfo_endpoint": f"{issuer}/idp/userinfo",
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code", "refresh_token"],
+            "code_challenge_methods_supported": ["plain", "S256"],
+            "scopes_supported": CHUTES_OIDC_SCOPES_SUPPORTED,
+            "_loaded_at": time.time(),
+        }
+    )
+    return True
 
 
 def _get_reusable_oauth_authorize_url(request: Request) -> str | None:
@@ -269,6 +330,18 @@ async def _begin_chutes_login(request: Request):
                 continue
             if provider_status is not None and provider_status >= 500:
                 log.warning("OpenWebUI OAuth authorize setup failed", exc_info=True)
+                if _seed_static_oidc_metadata(oauth_manager):
+                    log.warning(
+                        "Retrying OAuth authorize setup with static Chutes OIDC metadata"
+                    )
+                    try:
+                        oidc_response = await oauth_manager.handle_login(request, "oidc")
+                        break
+                    except Exception:
+                        log.warning(
+                            "OpenWebUI OAuth authorize setup failed after static metadata fallback",
+                            exc_info=True,
+                        )
                 return None, HTMLResponse(
                     "OAuth provider is temporarily unavailable. Please try again in a minute.",
                     status_code=503,
