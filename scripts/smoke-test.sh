@@ -1255,6 +1255,45 @@ assert raw == b"offloaded-audio"
 assert content_type == "audio/wav"
 assert to_thread_calls == ["offloaded_tts"]
 
+original_invoke_audio_request_async = mod._invoke_audio_request_async
+old_tts_max_concurrency = os.environ.get("DROPZONE_AUDIO_TTS_MAX_CONCURRENCY")
+os.environ["DROPZONE_AUDIO_TTS_MAX_CONCURRENCY"] = "1"
+mod._tts_limiters.clear()
+parallel_state = {"active": 0, "max_active": 0}
+
+async def slow_tts(chute, cord, payload, token, **kwargs):
+    parallel_state["active"] += 1
+    parallel_state["max_active"] = max(parallel_state["max_active"], parallel_state["active"])
+    await asyncio.sleep(0.01)
+    parallel_state["active"] -= 1
+    return f"audio-{payload['text']}".encode(), "audio/wav"
+
+async def run_limited_tts():
+    return await asyncio.gather(
+        *[
+            mod._invoke_tts_with_retries(
+                {"name": "kokoro", "active_instance_count": 8},
+                {"text": str(index)},
+                "token",
+            )
+            for index in range(4)
+        ]
+    )
+
+mod._invoke_audio_request_async = slow_tts
+try:
+    limited_results = asyncio.run(run_limited_tts())
+finally:
+    mod._invoke_audio_request_async = original_invoke_audio_request_async
+    mod._tts_limiters.clear()
+    if old_tts_max_concurrency is None:
+        os.environ.pop("DROPZONE_AUDIO_TTS_MAX_CONCURRENCY", None)
+    else:
+        os.environ["DROPZONE_AUDIO_TTS_MAX_CONCURRENCY"] = old_tts_max_concurrency
+
+assert parallel_state["max_active"] == 1
+assert [raw for raw, _ in limited_results] == [b"audio-0", b"audio-1", b"audio-2", b"audio-3"]
+
 fatal_calls = []
 
 def fatal_tts(chute, cord, payload, token, **kwargs):
@@ -1273,9 +1312,9 @@ finally:
 assert fatal_calls == [mod.TTS_CORD]
 PY
     then
-        pass "Dropzone audio bridge honors proxy wire format, model selection, retries, async offload, and strict-mode guardrails"
+        pass "Dropzone audio bridge honors proxy wire format, model selection, retries, async offload, async concurrency gating, and strict-mode guardrails"
     else
-        fail "Dropzone audio bridge proxy wire format/model selection/retry/async offload/guardrails are incomplete"
+        fail "Dropzone audio bridge proxy wire format/model selection/retry/async offload/async concurrency gating/guardrails are incomplete"
     fi
 else
     skip "python3 not installed - cannot validate OpenWebUI model-order sync helper"

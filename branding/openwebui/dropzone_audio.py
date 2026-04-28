@@ -112,6 +112,7 @@ TRANSIENT_AUDIO_HTTP_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 
 _cache: dict = {}
 _warmup_cache: dict[str, float] = {}
+_tts_limiters: dict[str, tuple[int, asyncio.Semaphore]] = {}
 
 
 def _traffic_mode() -> str:
@@ -216,6 +217,29 @@ def _env_float(name: str, default: float, minimum: float = 0.0, maximum: float =
     except (TypeError, ValueError):
         value = default
     return max(minimum, min(maximum, value))
+
+
+def _audio_concurrency_limit(chute: dict, env_name: str, default_cap: int = 4) -> int:
+    configured = _env_int(env_name, 0, minimum=0, maximum=32)
+    if configured > 0:
+        return configured
+
+    active_instances = int(chute.get("active_instance_count") or 0)
+    if active_instances > 0:
+        return max(1, min(active_instances, default_cap))
+    return 1
+
+
+def _tts_limiter(chute: dict) -> asyncio.Semaphore:
+    name = str(chute.get("name") or chute.get("id") or "default")
+    limit = _audio_concurrency_limit(chute, "DROPZONE_AUDIO_TTS_MAX_CONCURRENCY")
+    cached = _tts_limiters.get(name)
+    if cached and cached[0] == limit:
+        return cached[1]
+
+    limiter = asyncio.Semaphore(limit)
+    _tts_limiters[name] = (limit, limiter)
+    return limiter
 
 
 def _http_error_excerpt(error: urllib.error.HTTPError, limit: int = 512) -> str:
@@ -567,39 +591,40 @@ async def _invoke_tts_with_retries(tts: dict, payload: dict, token: str) -> tupl
     attempts = _env_int("DROPZONE_AUDIO_TTS_RETRY_ATTEMPTS", 3, minimum=1, maximum=5)
     base_delay = _env_float("DROPZONE_AUDIO_TTS_RETRY_BASE_DELAY_SECONDS", 0.4, maximum=3.0)
 
-    for attempt in range(1, attempts + 1):
-        try:
-            return await _invoke_audio_request_async(tts, TTS_CORD, payload, token)
-        except HTTPException:
-            raise
-        except urllib.error.HTTPError as e:
-            body_excerpt = _http_error_excerpt(e)
-            log.warning(
-                "tts upstream http error via %s attempt %d/%d: status=%s reason=%s body=%s",
-                tts.get("name"),
-                attempt,
-                attempts,
-                e.code,
-                e.reason,
-                body_excerpt,
-            )
-            if e.code in TRANSIENT_AUDIO_HTTP_STATUS_CODES and attempt < attempts:
-                await asyncio.sleep(base_delay * attempt)
-                continue
-            detail = f"TTS chute error after {attempt} attempt(s): {e.reason}"
-            raise HTTPException(status_code=e.code, detail=detail)
-        except Exception as e:
-            log.warning(
-                "tts invocation error via %s attempt %d/%d: %s",
-                tts.get("name"),
-                attempt,
-                attempts,
-                e,
-            )
-            if attempt < attempts:
-                await asyncio.sleep(base_delay * attempt)
-                continue
-            raise HTTPException(status_code=502, detail=f"TTS invocation failed after {attempt} attempt(s): {e}")
+    async with _tts_limiter(tts):
+        for attempt in range(1, attempts + 1):
+            try:
+                return await _invoke_audio_request_async(tts, TTS_CORD, payload, token)
+            except HTTPException:
+                raise
+            except urllib.error.HTTPError as e:
+                body_excerpt = _http_error_excerpt(e)
+                log.warning(
+                    "tts upstream http error via %s attempt %d/%d: status=%s reason=%s body=%s",
+                    tts.get("name"),
+                    attempt,
+                    attempts,
+                    e.code,
+                    e.reason,
+                    body_excerpt,
+                )
+                if e.code in TRANSIENT_AUDIO_HTTP_STATUS_CODES and attempt < attempts:
+                    await asyncio.sleep(base_delay * attempt)
+                    continue
+                detail = f"TTS chute error after {attempt} attempt(s): {e.reason}"
+                raise HTTPException(status_code=e.code, detail=detail)
+            except Exception as e:
+                log.warning(
+                    "tts invocation error via %s attempt %d/%d: %s",
+                    tts.get("name"),
+                    attempt,
+                    attempts,
+                    e,
+                )
+                if attempt < attempts:
+                    await asyncio.sleep(base_delay * attempt)
+                    continue
+                raise HTTPException(status_code=502, detail=f"TTS invocation failed after {attempt} attempt(s): {e}")
 
     raise HTTPException(status_code=502, detail="TTS invocation failed")
 
