@@ -256,17 +256,40 @@ def _audio_lock_path(kind: str, chute: dict) -> str:
     return os.path.join(tempfile.gettempdir(), f"dropzone-{kind}-{safe_name}.lock")
 
 
+def _read_timestamp(path: str) -> float:
+    try:
+        with open(path, "r", encoding="utf-8") as infile:
+            return float(infile.read().strip() or "0")
+    except Exception:
+        return 0.0
+
+
+def _write_timestamp(path: str, value: float) -> None:
+    with open(path, "w", encoding="utf-8") as outfile:
+        outfile.write(f"{value:.6f}")
+
+
 @contextlib.asynccontextmanager
 async def _tts_process_lock(chute: dict):
     if _tts_concurrency_limit(chute) > 1:
         yield
         return
 
-    lock_file = await asyncio.to_thread(open, _audio_lock_path("tts", chute), "a")
+    lock_path = _audio_lock_path("tts", chute)
+    stamp_path = f"{lock_path}.last"
+    min_interval = _env_float("DROPZONE_AUDIO_TTS_MIN_INTERVAL_SECONDS", 2.0, maximum=30.0)
+    lock_file = await asyncio.to_thread(open, lock_path, "a")
     try:
         await asyncio.to_thread(fcntl.flock, lock_file.fileno(), fcntl.LOCK_EX)
+        if min_interval > 0:
+            last_completed = await asyncio.to_thread(_read_timestamp, stamp_path)
+            delay = min_interval - (time.time() - last_completed)
+            if delay > 0:
+                await asyncio.sleep(delay)
         yield
     finally:
+        if min_interval > 0:
+            await asyncio.to_thread(_write_timestamp, stamp_path, time.time())
         try:
             await asyncio.to_thread(fcntl.flock, lock_file.fileno(), fcntl.LOCK_UN)
         finally:

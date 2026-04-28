@@ -296,6 +296,7 @@ assert mod.is_chutes_image_backend(req) is True
 os.environ["CHUTES_TRAFFIC_MODE"] = "e2ee-proxy"
 os.environ["CHUTES_PROXY_INTERNAL_URL"] = "http://e2ee-proxy:80"
 os.environ["ALLOW_NON_CONFIDENTIAL"] = "true"
+os.environ["DROPZONE_AUDIO_TTS_MIN_INTERVAL_SECONDS"] = "0"
 url, body, accept = mod._image_request_target(
     {
         "id": "chutes/Qwen-Image-2512",
