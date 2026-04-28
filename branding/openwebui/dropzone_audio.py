@@ -642,8 +642,8 @@ def _schedule_warmup_chute(name: str, token: str) -> None:
 
 
 async def _invoke_tts_with_retries(tts: dict, payload: dict, token: str) -> tuple[bytes, str]:
-    attempts = _env_int("DROPZONE_AUDIO_TTS_RETRY_ATTEMPTS", 5, minimum=1, maximum=5)
-    base_delay = _env_float("DROPZONE_AUDIO_TTS_RETRY_BASE_DELAY_SECONDS", 1.0, maximum=3.0)
+    attempts = _env_int("DROPZONE_AUDIO_TTS_RETRY_ATTEMPTS", 8, minimum=1, maximum=10)
+    base_delay = _env_float("DROPZONE_AUDIO_TTS_RETRY_BASE_DELAY_SECONDS", 2.0, maximum=5.0)
 
     async with _tts_limiter(tts), _tts_process_lock(tts):
         for attempt in range(1, attempts + 1):
