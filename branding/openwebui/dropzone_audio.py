@@ -219,7 +219,7 @@ def _env_float(name: str, default: float, minimum: float = 0.0, maximum: float =
     return max(minimum, min(maximum, value))
 
 
-def _audio_concurrency_limit(chute: dict, env_name: str, default_cap: int = 4) -> int:
+def _audio_concurrency_limit(chute: dict, env_name: str, default_cap: int = 1) -> int:
     configured = _env_int(env_name, 0, minimum=0, maximum=32)
     if configured > 0:
         return configured
