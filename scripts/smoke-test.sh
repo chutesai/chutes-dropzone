@@ -1066,6 +1066,18 @@ assert discovery_result["tts"]["name"] == "kokoro"
 assert discovery_result["stt"]["name"] == "whisper-large-v3"
 assert discover_to_thread_calls == ["fake_discover_chutes"]
 
+old_tts_limit_env = os.environ.get("DROPZONE_AUDIO_TTS_MAX_CONCURRENCY")
+os.environ.pop("DROPZONE_AUDIO_TTS_MAX_CONCURRENCY", None)
+try:
+    assert mod._tts_concurrency_limit({"name": "kokoro", "active_instance_count": 8}) == 1
+    os.environ["DROPZONE_AUDIO_TTS_MAX_CONCURRENCY"] = "3"
+    assert mod._tts_concurrency_limit({"name": "kokoro", "active_instance_count": 8}) == 3
+finally:
+    if old_tts_limit_env is None:
+        os.environ.pop("DROPZONE_AUDIO_TTS_MAX_CONCURRENCY", None)
+    else:
+        os.environ["DROPZONE_AUDIO_TTS_MAX_CONCURRENCY"] = old_tts_limit_env
+
 url, body = mod._audio_request_target(
     {
         "name": "kokoro",
@@ -1253,7 +1265,7 @@ finally:
 
 assert raw == b"offloaded-audio"
 assert content_type == "audio/wav"
-assert to_thread_calls == ["offloaded_tts"]
+assert to_thread_calls.count("offloaded_tts") == 1
 
 original_invoke_audio_request_async = mod._invoke_audio_request_async
 old_tts_max_concurrency = os.environ.get("DROPZONE_AUDIO_TTS_MAX_CONCURRENCY")

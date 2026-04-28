@@ -9,10 +9,14 @@ Mounted by patch-openwebui-runtime.py into the OpenWebUI app.
 
 import asyncio
 import base64
+import contextlib
+import fcntl
 import hmac
 import json
 import logging
 import os
+import re
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -230,9 +234,13 @@ def _audio_concurrency_limit(chute: dict, env_name: str, default_cap: int = 1) -
     return 1
 
 
+def _tts_concurrency_limit(chute: dict) -> int:
+    return _audio_concurrency_limit(chute, "DROPZONE_AUDIO_TTS_MAX_CONCURRENCY")
+
+
 def _tts_limiter(chute: dict) -> asyncio.Semaphore:
     name = str(chute.get("name") or chute.get("id") or "default")
-    limit = _audio_concurrency_limit(chute, "DROPZONE_AUDIO_TTS_MAX_CONCURRENCY")
+    limit = _tts_concurrency_limit(chute)
     cached = _tts_limiters.get(name)
     if cached and cached[0] == limit:
         return cached[1]
@@ -240,6 +248,29 @@ def _tts_limiter(chute: dict) -> asyncio.Semaphore:
     limiter = asyncio.Semaphore(limit)
     _tts_limiters[name] = (limit, limiter)
     return limiter
+
+
+def _audio_lock_path(kind: str, chute: dict) -> str:
+    name = str(chute.get("name") or chute.get("id") or "default")
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", name).strip("._") or "default"
+    return os.path.join(tempfile.gettempdir(), f"dropzone-{kind}-{safe_name}.lock")
+
+
+@contextlib.asynccontextmanager
+async def _tts_process_lock(chute: dict):
+    if _tts_concurrency_limit(chute) > 1:
+        yield
+        return
+
+    lock_file = await asyncio.to_thread(open, _audio_lock_path("tts", chute), "a")
+    try:
+        await asyncio.to_thread(fcntl.flock, lock_file.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            await asyncio.to_thread(fcntl.flock, lock_file.fileno(), fcntl.LOCK_UN)
+        finally:
+            await asyncio.to_thread(lock_file.close)
 
 
 def _http_error_excerpt(error: urllib.error.HTTPError, limit: int = 512) -> str:
@@ -591,7 +622,7 @@ async def _invoke_tts_with_retries(tts: dict, payload: dict, token: str) -> tupl
     attempts = _env_int("DROPZONE_AUDIO_TTS_RETRY_ATTEMPTS", 3, minimum=1, maximum=5)
     base_delay = _env_float("DROPZONE_AUDIO_TTS_RETRY_BASE_DELAY_SECONDS", 0.4, maximum=3.0)
 
-    async with _tts_limiter(tts):
+    async with _tts_limiter(tts), _tts_process_lock(tts):
         for attempt in range(1, attempts + 1):
             try:
                 return await _invoke_audio_request_async(tts, TTS_CORD, payload, token)
