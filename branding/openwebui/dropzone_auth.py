@@ -29,6 +29,7 @@ CHUTES_AUTH_URL = os.environ.get("CHUTES_AUTH_URL", "https://chutes.ai/auth").st
 AUTH_PAGE_TEMPLATE_PATH = Path(__file__).with_name("dropzone_auth_page.html")
 OAUTH_STATE_SESSION_PREFIX = "_state_oidc_"
 OAUTH_STATE_SESSION_LIMIT = 5
+OAUTH_AUTHORIZE_SETUP_ATTEMPTS = 5
 
 
 def _normalize_redirect_path(value: str | None) -> str | None:
@@ -247,19 +248,24 @@ async def _begin_chutes_login(request: Request):
 
     previous_states = _snapshot_oauth_states(request)
     oidc_response = None
-    for login_attempt in range(3):
+    for login_attempt in range(OAUTH_AUTHORIZE_SETUP_ATTEMPTS):
         try:
             oidc_response = await oauth_manager.handle_login(request, "oidc")
             break
         except Exception as exc:
             provider_status = _provider_status_code(exc)
-            if provider_status is not None and provider_status >= 500 and login_attempt < 2:
+            if (
+                provider_status is not None
+                and provider_status >= 500
+                and login_attempt < OAUTH_AUTHORIZE_SETUP_ATTEMPTS - 1
+            ):
                 log.warning(
-                    "OAuth authorize setup returned provider status %s; retrying attempt %s/3",
+                    "OAuth authorize setup returned provider status %s; retrying attempt %s/%s",
                     provider_status,
                     login_attempt + 2,
+                    OAUTH_AUTHORIZE_SETUP_ATTEMPTS,
                 )
-                await asyncio.sleep(0.5 * (login_attempt + 1))
+                await asyncio.sleep(1.0 * (login_attempt + 1))
                 continue
             if provider_status is not None and provider_status >= 500:
                 log.warning("OpenWebUI OAuth authorize setup failed", exc_info=True)
