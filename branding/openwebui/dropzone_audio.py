@@ -379,6 +379,12 @@ def _discover_chutes() -> dict:
     return result
 
 
+async def _discover_chutes_async() -> dict:
+    """Run blocking chute discovery off the FastAPI event loop."""
+
+    return await asyncio.to_thread(_discover_chutes)
+
+
 def _get_oauth_token(user, db) -> str:
     """Get the user's OAuth access token for Chutes API calls."""
     try:
@@ -523,13 +529,47 @@ def _invoke_audio_request(
         return resp.read(), resp.headers.get("Content-Type", "")
 
 
+async def _invoke_audio_request_async(
+    chute: dict,
+    cord: str,
+    payload: dict,
+    token: str,
+    timeout: int = 30,
+    file_bytes: Optional[bytes] = None,
+    filename: Optional[str] = None,
+    file_content_type: Optional[str] = None,
+) -> tuple[bytes, str]:
+    """Run blocking stdlib HTTP off the FastAPI event loop."""
+
+    return await asyncio.to_thread(
+        _invoke_audio_request,
+        chute,
+        cord,
+        payload,
+        token,
+        timeout=timeout,
+        file_bytes=file_bytes,
+        filename=filename,
+        file_content_type=file_content_type,
+    )
+
+
+def _schedule_warmup_chute(name: str, token: str) -> None:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        _warmup_chute(name, token)
+        return
+    loop.create_task(asyncio.to_thread(_warmup_chute, name, token))
+
+
 async def _invoke_tts_with_retries(tts: dict, payload: dict, token: str) -> tuple[bytes, str]:
     attempts = _env_int("DROPZONE_AUDIO_TTS_RETRY_ATTEMPTS", 3, minimum=1, maximum=5)
     base_delay = _env_float("DROPZONE_AUDIO_TTS_RETRY_BASE_DELAY_SECONDS", 0.4, maximum=3.0)
 
     for attempt in range(1, attempts + 1):
         try:
-            return _invoke_audio_request(tts, TTS_CORD, payload, token)
+            return await _invoke_audio_request_async(tts, TTS_CORD, payload, token)
         except HTTPException:
             raise
         except urllib.error.HTTPError as e:
@@ -600,7 +640,7 @@ async def text_to_speech(request: Request, body: TTSRequest, user=Depends(_resol
     if len(body.input) > MAX_TTS_INPUT_LENGTH:
         raise HTTPException(status_code=413, detail=f"TTS input exceeds {MAX_TTS_INPUT_LENGTH} characters")
 
-    discovery = _discover_chutes()
+    discovery = await _discover_chutes_async()
     tts = _select_audio_chute("tts", body.model, discovery)
 
     token = _get_oauth_token(user, db)
@@ -609,7 +649,7 @@ async def text_to_speech(request: Request, body: TTSRequest, user=Depends(_resol
 
     # On-demand warmup: if the chute looks cold, nudge it with the user's own token
     if tts.get("score", 0) < 0.01:
-        _warmup_chute(tts["name"], token)
+        _schedule_warmup_chute(tts["name"], token)
 
     started = time.time()
     raw, upstream_content_type = await _invoke_tts_with_retries(
@@ -664,7 +704,7 @@ async def speech_to_text(
     user=Depends(_resolve_user),
     db: Session = Depends(get_session),
 ):
-    discovery = _discover_chutes()
+    discovery = await _discover_chutes_async()
     stt = _select_audio_chute("stt", model, discovery)
 
     token = _get_oauth_token(user, db)
@@ -672,7 +712,7 @@ async def speech_to_text(
         raise HTTPException(status_code=401, detail="No Chutes session — sign in with Chutes SSO")
 
     if stt.get("score", 0) < 0.01:
-        _warmup_chute(stt["name"], token)
+        _schedule_warmup_chute(stt["name"], token)
 
     upload_filename = file.filename or "audio"
     upload_content_type = file.content_type or "application/octet-stream"
@@ -685,7 +725,7 @@ async def speech_to_text(
 
     try:
         started = time.time()
-        raw, _ = _invoke_audio_request(
+        raw, _ = await _invoke_audio_request_async(
             stt,
             STT_CORD,
             {
@@ -726,7 +766,7 @@ async def speech_to_text(
 @router.get("/discovery")
 async def audio_discovery(user=Depends(get_verified_user)):
     """Show currently discovered TTS/STT chutes."""
-    discovery = _discover_chutes()
+    discovery = await _discover_chutes_async()
     return {
         "tts": discovery.get("tts"),
         "stt": discovery.get("stt"),

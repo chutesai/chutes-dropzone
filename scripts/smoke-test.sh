@@ -1040,6 +1040,32 @@ os.environ["CHUTES_TRAFFIC_MODE"] = "e2ee-proxy"
 os.environ["CHUTES_PROXY_INTERNAL_URL"] = "http://e2ee-proxy:80"
 os.environ["ALLOW_NON_CONFIDENTIAL"] = "true"
 
+discover_to_thread_calls = []
+original_discover_chutes = mod._discover_chutes
+original_to_thread_discovery = mod.asyncio.to_thread
+
+def fake_discover_chutes():
+    return {
+        "tts": {"name": "kokoro"},
+        "stt": {"name": "whisper-large-v3"},
+    }
+
+async def fake_discover_to_thread(fn, *args, **kwargs):
+    discover_to_thread_calls.append(fn.__name__)
+    return fn(*args, **kwargs)
+
+mod._discover_chutes = fake_discover_chutes
+mod.asyncio.to_thread = fake_discover_to_thread
+try:
+    discovery_result = asyncio.run(mod._discover_chutes_async())
+finally:
+    mod._discover_chutes = original_discover_chutes
+    mod.asyncio.to_thread = original_to_thread_discovery
+
+assert discovery_result["tts"]["name"] == "kokoro"
+assert discovery_result["stt"]["name"] == "whisper-large-v3"
+assert discover_to_thread_calls == ["fake_discover_chutes"]
+
 url, body = mod._audio_request_target(
     {
         "name": "kokoro",
@@ -1205,6 +1231,30 @@ assert raw == b"audio"
 assert content_type == "audio/wav"
 assert retry_calls == [mod.TTS_CORD, mod.TTS_CORD]
 
+to_thread_calls = []
+original_to_thread = mod.asyncio.to_thread
+
+def offloaded_tts(chute, cord, payload, token, **kwargs):
+    return b"offloaded-audio", "audio/wav"
+
+async def fake_to_thread(fn, *args, **kwargs):
+    to_thread_calls.append(fn.__name__)
+    return fn(*args, **kwargs)
+
+mod._invoke_audio_request = offloaded_tts
+mod.asyncio.to_thread = fake_to_thread
+try:
+    raw, content_type = asyncio.run(
+        mod._invoke_tts_with_retries({"name": "kokoro"}, {"text": "hello"}, "token")
+    )
+finally:
+    mod._invoke_audio_request = original_invoke_audio_request
+    mod.asyncio.to_thread = original_to_thread
+
+assert raw == b"offloaded-audio"
+assert content_type == "audio/wav"
+assert to_thread_calls == ["offloaded_tts"]
+
 fatal_calls = []
 
 def fatal_tts(chute, cord, payload, token, **kwargs):
@@ -1223,9 +1273,9 @@ finally:
 assert fatal_calls == [mod.TTS_CORD]
 PY
     then
-        pass "Dropzone audio bridge honors proxy wire format, model selection, retries, and strict-mode guardrails"
+        pass "Dropzone audio bridge honors proxy wire format, model selection, retries, async offload, and strict-mode guardrails"
     else
-        fail "Dropzone audio bridge proxy wire format/model selection/retry/guardrails are incomplete"
+        fail "Dropzone audio bridge proxy wire format/model selection/retry/async offload/guardrails are incomplete"
     fi
 else
     skip "python3 not installed - cannot validate OpenWebUI model-order sync helper"
