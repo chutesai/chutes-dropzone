@@ -123,7 +123,8 @@ jobs:
             type=gha,scope=local-e2e-release-image
             type=gha,scope=local-e2e-n8n-runtime
             type=gha,scope=local-e2e-openwebui-runtime
-          cache-to: type=gha,mode=max,scope=local-e2e-release-image
+          provenance: false
+          sbom: false
 
       - name: Run browser UI regression tests
         if: matrix.traffic_mode == 'direct'
